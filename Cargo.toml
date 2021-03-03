@@ -1,0 +1,26 @@
+# Top level virtual manifest that ties uno rust software together.
+#
+# Most of the time you would work out of this directory. The virtual manifest
+# serves to keep dependencies in sync across projects and allows team members
+# to build and test related rust components all at once. This is our mono-
+# tree and mono-build.
+
+# The following is a list of all the projects to include.
+[workspace]
+members = ["adi", "api", "cli", "djb", "lib"]
+
+# While cargo supports specifying both a path and version dependency, doing so
+# in any one of the sibling projects here would impose a file-system structure
+# upon anybody working independently in an isolated project. Patching the deps
+# in the virtual manifest allows for the projects to be published without any
+# required structure (in other words without ugly `../` paths, which also
+# fail if the repo is checked out individually). 
+
+# Each member should also be patched so that building happens from the local
+# filesystem.
+[patch.crates-io]
+adi = { path = "adi" }
+api = { path = "api" }
+cli = { path = "cli" }
+djb = { path = "djb" }
+uno = { path = "lib" }

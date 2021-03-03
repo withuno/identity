@@ -1,0 +1,17 @@
+[package]
+name = "uno"
+version = "0.1.0"
+authors = ["David Cowden <david@withuno.com>"]
+edition = "2018"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+# uno libs
+adi = "0.1"
+djb = "0.1"
+
+blake3 = "0.3"
+rand = "0.8"
+strum = "0.20"
+strum_macros = "0.20"

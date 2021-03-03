@@ -1,0 +1,16 @@
+[package]
+name = "api"
+version = "0.1.0"
+authors = ["David Cowden <david@withuno.com>"]
+edition = "2018"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+uno = "0.1.0"
+base64 = "0.13"
+bytes = "1.0.1"
+tempfile = "3.2"
+tide = "0.16"
+async-std = { version = "1.8.0", features = ["attributes"] }
+serde = { version = "1.0", features = ["derive"] }

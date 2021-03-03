@@ -1,0 +1,16 @@
+[package]
+name = "cli"
+version = "0.1.0"
+authors = ["David Cowden <david@withuno.com>"]
+edition = "2018"
+
+[[bin]]
+name = "uno"
+path = "src/main.rs"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+uno = "0.1.0"
+base64 = "0.13"
+clap = "3.0.0-beta.2"
