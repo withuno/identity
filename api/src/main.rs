@@ -1,3 +1,8 @@
+//
+// Copyright 2021 WithUno, Inc.
+// SPDX-License-Identifier: AGPL-3.0-only
+//
+
 use std::convert::TryFrom;
 use std::future::Future;
 use std::pin::Pin; 

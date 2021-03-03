@@ -1,3 +1,8 @@
+//
+// Copyright 2021 WithUno, Inc.
+// SPDX-License-Identifier: AGPL-3.0-only
+//
+
 use std::fs;
 use std::io::Error;
 use std::path::Path;

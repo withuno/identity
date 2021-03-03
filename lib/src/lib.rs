@@ -1,3 +1,8 @@
+//
+// Copyright 2021 WithUno, Inc.
+// SPDX-License-Identifier: AGPL-3.0-only
+//
+
 /// The uno identity is 32 bytes of entropy.
 pub const ID_LENGTH: usize = 32;
 

@@ -1,3 +1,8 @@
+//
+// Copyright 2021 WithUno, Inc.
+// SPDX-License-Identifier: AGPL-3.0-only
+//
+
 use chacha20poly1305::{ChaCha20Poly1305, Nonce};
 use chacha20poly1305::aead;
 use chacha20poly1305::aead::{Aead, NewAead, Payload};

@@ -1,3 +1,9 @@
+//
+// Copyright 2021 WithUno, Inc.
+// SPDX-License-Identifier: AGPL-3.0-only
+//
+
+// Referenced implementation:
 // https://github.com/hashicorp/vault/blob/v1.6.2/shamir/shamir.go
 
 use std::collections::HashSet;

@@ -1,3 +1,8 @@
+//
+// Copyright 2021 WithUno, Inc.
+// SPDX-License-Identifier: AGPL-3.0-only
+//
+
 /// The uno utility is a cli frontend to operations that can be performed with an uno identity.
 
 use clap::Clap;
