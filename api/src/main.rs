@@ -5,9 +5,10 @@
 
 use std::convert::TryFrom;
 use std::future::Future;
+use std::path::Path;
 use std::pin::Pin; 
 
-use tide::{Error, Next, Request, Result, StatusCode};
+use tide::{Body, Error, Next, Request, Result, StatusCode};
 use api::{pubkey_from_id, signature_from_header};
 use api::FileStore;
 
@@ -16,21 +17,36 @@ use uno::Verifier;
 #[async_std::main]
 async fn main() -> Result<()>
 {
-    let fs = State{ fs: FileStore::new("vaults"), };
-
-    let mut app = tide::with_state(fs);
-    app
-        .at("vaults/:pub")
+    let vault = State{ fs: FileStore::new("api/example/vaults"), };
+    let mut vaults = tide::with_state(vault);
+    vaults
+        .at(":pub")
         .with(vault_id)
         .with(pubkey)
         .get(fetch_vault)
         .put(store_vault);
 
+    let mut services = tide::new();
+    services
+        .at(":name")
+        .get(fetch_service);
+
+    let mut api = tide::new();
+    api
+        .at("vaults")
+        .nest(vaults);
+
+    api
+        .at("services")
+        .nest(services);
+
     let mut srv = tide::new();
     srv
         .at("/api/v1")
-        .nest(app);
+        .nest(api);
 
+
+    tide::log::start();
     srv.listen("localhost:3000").await?;
     Ok(())
 }
@@ -116,3 +132,22 @@ async fn store_vault(mut req: Request<State>) -> Result<String>
         Err(e) => Err(Error::from_str(StatusCode::Unauthorized, e)),
     }
 }
+
+async fn fetch_service(req: Request<()>) -> Result<Body>
+{
+    let p = req.param("name");
+    if p.is_err() {
+        return Err(Error::from_str(StatusCode::Unauthorized, p.unwrap_err()));
+    }
+    let name = p.unwrap();
+    let path = Path::new("api/example/services").join(name);
+    println!("{:#?}", path);
+    let r = Body::from_file(path).await;
+    if r.is_err() {
+        let e = r.unwrap_err();
+        return Err(Error::from_str(StatusCode::NotFound, e));
+    }
+    let body = r.unwrap();
+    Ok(body)
+}
+
