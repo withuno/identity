@@ -4,6 +4,7 @@
 //
 
 use std::convert::TryFrom;
+use std::fmt::{Debug, Display};
 use std::future::Future;
 use std::path::Path;
 use std::pin::Pin; 
@@ -31,7 +32,24 @@ async fn main() -> Result<()>
         .at(":name")
         .get(fetch_service);
 
+    let mut sss = tide::new();
+    sss
+        .with(session_id);
+
+    sss.at("split/:sid")
+        .get(split_get)
+        .put(split_put)
+        .patch(split_patch);
+
+    sss.at("combine/:sid")
+        .get(combine_get)
+        .put(combine_put)
+        .patch(combine_patch);
+
     let mut api = tide::new();
+    // TODO
+    //  .with(proof_of_work_token);
+
     api
         .at("vaults")
         .nest(vaults);
@@ -40,11 +58,14 @@ async fn main() -> Result<()>
         .at("services")
         .nest(services);
 
+    api
+        .at("sss")
+        .nest(sss);
+
     let mut srv = tide::new();
     srv
         .at("/api/v1")
         .nest(api);
-
 
     tide::log::start();
     srv.listen("localhost:3000").await?;
@@ -62,14 +83,10 @@ fn vault_id<'a>(mut req: Request<State>, next: Next<'a, State>)
 -> Pin<Box<dyn Future<Output = Result> + Send + 'a>>
 {
     Box::pin(async {
-        match req.param("pub") {
-            Ok(id) => {
-                let vid = VaultId(String::from(id));
-                req.set_ext(vid);
-                Ok(next.run(req).await)
-            },
-            Err(e) => Err(Error::from_str(StatusCode::BadRequest, e)),
-        }
+        let p = req.param("pub").map_err(bad_request)?;
+        let vid = VaultId(String::from(p));
+        req.set_ext(vid);
+        Ok(next.run(req).await)
     })
 }
 
@@ -78,13 +95,9 @@ fn pubkey<'a>(mut req: Request<State>, next: Next<'a, State>)
 {
     Box::pin(async {
         let id = req.ext::<VaultId>().unwrap();
-        match pubkey_from_id(&id.0) {
-            Ok(pk) => {
-                req.set_ext(pk);
-                Ok(next.run(req).await)
-            },
-            Err(e) => Err(Error::from_str(StatusCode::BadRequest, e)),
-        }
+        let pk = pubkey_from_id(&id.0).map_err(bad_request)?;
+        req.set_ext(pk);
+        Ok(next.run(req).await)
     })
 }
 
@@ -94,60 +107,139 @@ async fn fetch_vault<'a>(req: Request<State>) -> Result<String>
     let id = &req.ext::<VaultId>().unwrap().0;
     let pk = req.ext::<uno::Verification>().unwrap();
 
-    let signature = req.header("x-uno-signature").unwrap().as_str();
-    let timestamp = req.header("x-uno-timestamp").unwrap().as_str();
-    let rawsig = signature_from_header(&signature).unwrap();
+    let signature = req.header("x-uno-signature")
+        .ok_or_else(|| bad_request("missing signature"))?.as_str();
+    let timestamp = req.header("x-uno-timestamp")
+        .ok_or_else(|| bad_request("missing timestamp"))?.as_str();
+    let rawsig = signature_from_header(&signature)
+        .map_err(bad_request)?;
+    pk.verify(timestamp.as_bytes(), &rawsig)
+        .map_err(unauthorized)?;
 
-    let authz = pk.verify(timestamp.as_bytes(), &rawsig);
-    match authz {
-        Ok(_) => match fs.get(id) {
-            Ok(vault) => Ok(vault),
-            Err(e) => Err(Error::from_str(StatusCode::InternalServerError, e)),
-        }
-        Err(e) => Err(Error::from_str(StatusCode::Unauthorized, e)),
-    }
+    fs.get(id).map_err(server_err)
 }
 
 async fn store_vault(mut req: Request<State>) -> Result<String>
 {
     // Read the body first because it's a mutating operation. Why? I don't
     // know...
-    let body = req.body_bytes().await.unwrap();
+    let body = req.body_bytes().await.map_err(server_err)?;
 
     let fs = &req.state().fs;
     let id = &req.ext::<VaultId>().unwrap().0;
     let pk = req.ext::<uno::Verification>().unwrap();
 
-    let raw_sig = &body[..64];
-    let blob = &body[64..];
-    let arr_sig = <[u8; uno::SIGNATURE_LENGTH]>::try_from(raw_sig).unwrap();
+    if body.len() < 65 {
+        return Err(bad_request("body too short"));
+    }
+    let (raw_sig, blob) = body.split_at(64);
+    let arr_sig = <[u8; uno::SIGNATURE_LENGTH]>::try_from(raw_sig)
+        .map_err(bad_request)?;
     let signature = uno::Signature::new(arr_sig);
 
-    let authz = pk.verify(blob, &signature);
-    match authz {
-        Ok(_) => match fs.put(id, blob) {
-            Ok(_) => Ok("ok".into()),
-            Err(e) => Err(Error::from_str(StatusCode::InternalServerError, e)),
-        }
-        Err(e) => Err(Error::from_str(StatusCode::Unauthorized, e)),
-    }
+    pk.verify(blob, &signature).map_err(unauthorized)?;
+    fs.put(id, blob).map_err(server_err)?;
+
+    fs.get(id).map_err(server_err)
 }
 
 async fn fetch_service(req: Request<()>) -> Result<Body>
 {
-    let p = req.param("name");
-    if p.is_err() {
-        return Err(Error::from_str(StatusCode::Unauthorized, p.unwrap_err()));
-    }
-    let name = p.unwrap();
+    let name = req.param("name").map_err(bad_request)?;
     let path = Path::new("api/example/services").join(name);
-    println!("{:#?}", path);
-    let r = Body::from_file(path).await;
-    if r.is_err() {
-        let e = r.unwrap_err();
-        return Err(Error::from_str(StatusCode::NotFound, e));
-    }
-    let body = r.unwrap();
-    Ok(body)
+
+    Body::from_file(path).await.map_err(not_found)
 }
 
+struct SessionId(String);
+
+fn session_id<'a>(mut req: Request<()>, next: Next<'a, ()>)
+-> Pin<Box<dyn Future<Output = Result> + Send + 'a>>
+{
+    Box::pin(async {
+        let p = req.param("sid").map_err(bad_request)?;
+        let sid = SessionId(String::from(p));
+        req.set_ext(sid);
+        Ok(next.run(req).await)
+    })
+}
+
+async fn split_get(req: Request<()>) -> Result<Body>
+{
+    let sid = &req.ext::<SessionId>().unwrap().0;
+    let path = Path::new("api/example/sessions").join(sid);
+
+    Body::from_file(path).await.map_err(not_found)
+}
+
+async fn split_put(mut req: Request<()>) -> Result<Body>
+{
+    let body = req.body_bytes().await.map_err(server_err)?;
+    let sid = &req.ext::<SessionId>().unwrap().0;
+    let path = Path::new("api/example/sessions").join(sid);
+
+    async_std::fs::write(&path, body).await.map_err(server_err)?;
+
+    Body::from_file(&path).await.map_err(not_found)
+}
+
+async fn split_patch(req: Request<()>) -> Result<Body>
+{
+    let _sid = &req.ext::<SessionId>().unwrap().0;
+
+    Ok(Body::from_bytes(b"todo".to_vec()))
+}
+
+async fn combine_get(req: Request<()>) -> Result<Body>
+{
+    let sid = &req.ext::<SessionId>().unwrap().0;
+    let path = Path::new("api/example/sessions").join(sid);
+
+    Body::from_file(path).await.map_err(not_found)
+}
+
+async fn combine_put(mut req: Request<()>) -> Result<Body>
+{
+    let body = req.body_bytes().await.map_err(server_err)?;
+    let sid = &req.ext::<SessionId>().unwrap().0;
+    let path = Path::new("api/example/sessions").join(sid);
+
+    async_std::fs::write(&path, body).await.map_err(server_err)?;
+
+    Body::from_file(&path).await.map_err(not_found)
+}
+
+async fn combine_patch(req: Request<()>) -> Result<Body>
+{
+    let _sid = &req.ext::<SessionId>().unwrap().0;
+
+    Ok(Body::from_bytes(b"todo".to_vec()))
+}
+
+fn bad_request<M>(msg: M) -> Error
+    where
+        M: Display + Debug + Send + Sync + 'static,
+{
+    Error::from_str(StatusCode::BadRequest, msg)
+}
+
+fn not_found<M>(msg: M) -> Error
+    where
+        M: Display + Debug + Send + Sync + 'static,
+{
+    Error::from_str(StatusCode::NotFound, msg)
+}
+
+fn server_err<M>(msg: M) -> Error
+    where
+        M: Display + Debug + Send + Sync + 'static,
+{
+    Error::from_str(StatusCode::InternalServerError, msg)
+}
+
+fn unauthorized<M>(msg: M) -> Error
+    where
+        M: Display + Debug + Send + Sync + 'static,
+{
+    Error::from_str(StatusCode::Unauthorized, msg)
+}
