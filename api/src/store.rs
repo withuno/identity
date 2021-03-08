@@ -3,34 +3,42 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 //
 
-use std::fs;
-use std::io::Error;
-use std::path::Path;
-use std::path::PathBuf;
+use async_std::fs;
+use async_std::io::Error;
+use async_std::path::Path;
+use async_std::path::PathBuf;
 
 #[derive(Clone)]
-pub struct FileStore {
+pub struct FileStore
+{
     dir: PathBuf,
 }
 
-impl FileStore {
-    pub fn new(root: &str) -> FileStore {
+impl FileStore
+{
+    pub fn new(root: &str) -> FileStore
+    {
         return Self { dir: PathBuf::from(root), };
     }
 
-    pub fn get(&self, vault: &str) -> Result<String, Error> {
+    pub async fn get(&self, vault: &str) -> Result<Vec<u8>, Error>
+    {
         let path = self.dir.join(vault);
-        fs::read_to_string(path)
+        fs::read(path).await
     }
 
-    pub fn put(&self, vault: &str, content: &[u8]) -> Result<(), Error> {
+    pub async fn put(&self, vault: &str, content: &[u8])
+    -> Result<(), Error>
+    {
         let path = self.dir.join(vault);
-        fs::write(path, content)
+        fs::write(path, content).await
     }
 }
 
-impl From<&Path> for FileStore {
-    fn from(p: &Path) -> FileStore {
+impl From<&Path> for FileStore
+{
+    fn from(p: &Path) -> FileStore
+    {
         FileStore {
            dir: p.to_path_buf(),
         }
@@ -39,13 +47,14 @@ impl From<&Path> for FileStore {
 
 
 #[cfg(test)]
-mod tests {
+mod tests
+{
     use super::*;
-
     use tempfile::TempDir;
 
     #[test]
-    fn file_store() {
+    fn file_store()
+    {
         let dir = TempDir::new().unwrap();
 
         let f = FileStore::from(dir.path());

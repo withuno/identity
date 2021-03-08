@@ -101,7 +101,7 @@ fn pubkey<'a>(mut req: Request<State>, next: Next<'a, State>)
     })
 }
 
-async fn fetch_vault<'a>(req: Request<State>) -> Result<String>
+async fn fetch_vault<'a>(req: Request<State>) -> Result<Body>
 {
     let fs = &req.state().fs;
     let id = &req.ext::<VaultId>().unwrap().0;
@@ -116,10 +116,12 @@ async fn fetch_vault<'a>(req: Request<State>) -> Result<String>
     pk.verify(timestamp.as_bytes(), &rawsig)
         .map_err(unauthorized)?;
 
-    fs.get(id).map_err(server_err)
+    let vault = fs.get(id).await.map_err(not_found)?;
+
+    Ok(Body::from_bytes(vault))
 }
 
-async fn store_vault(mut req: Request<State>) -> Result<String>
+async fn store_vault(mut req: Request<State>) -> Result<Body>
 {
     // Read the body first because it's a mutating operation. Why? I don't
     // know...
@@ -138,9 +140,10 @@ async fn store_vault(mut req: Request<State>) -> Result<String>
     let signature = uno::Signature::new(arr_sig);
 
     pk.verify(blob, &signature).map_err(unauthorized)?;
-    fs.put(id, blob).map_err(server_err)?;
+    fs.put(id, blob).await.map_err(server_err)?;
+    let vault = fs.get(id).await.map_err(server_err)?;
 
-    fs.get(id).map_err(server_err)
+    Ok(Body::from_bytes(vault))
 }
 
 async fn fetch_service(req: Request<()>) -> Result<Body>
