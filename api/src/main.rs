@@ -9,9 +9,13 @@ use std::future::Future;
 use std::path::Path;
 use std::pin::Pin; 
 
-use tide::{Body, Error, Next, Request, Result, StatusCode};
 use api::{pubkey_from_id, signature_from_header};
 use api::FileStore;
+
+use json_patch::merge;
+use serde_json::Value;
+
+use tide::{Body, Error, Next, Request, Result, StatusCode};
 
 use uno::Verifier;
 
@@ -186,11 +190,26 @@ async fn split_put(mut req: Request<()>) -> Result<Body>
     Body::from_file(&path).await.map_err(not_found)
 }
 
-async fn split_patch(req: Request<()>) -> Result<Body>
+async fn split_patch(mut req: Request<()>) -> Result<Body>
 {
-    let _sid = &req.ext::<SessionId>().unwrap().0;
+    let body = req.body_json::<Value>().await
+        .map_err(bad_request)?;
+    let sid = &req.ext::<SessionId>().unwrap().0;
+    let path = Path::new("api/example/sessions").join(sid);
 
-    Ok(Body::from_bytes(b"todo".to_vec()))
+    let json = async_std::fs::read_to_string(&path).await
+        .map_err(not_found)?;
+    let mut doc = serde_json::from_str::<Value>(&json)
+        .map_err(bad_request)?;
+
+    merge(&mut doc, &body);
+
+    let data = serde_json::to_vec(&doc)
+        .map_err(server_err)?;
+    async_std::fs::write(&path, data).await
+        .map_err(server_err)?;
+
+    Body::from_file(&path).await.map_err(not_found)
 }
 
 async fn combine_get(req: Request<()>) -> Result<Body>
@@ -212,11 +231,26 @@ async fn combine_put(mut req: Request<()>) -> Result<Body>
     Body::from_file(&path).await.map_err(not_found)
 }
 
-async fn combine_patch(req: Request<()>) -> Result<Body>
+async fn combine_patch(mut req: Request<()>) -> Result<Body>
 {
-    let _sid = &req.ext::<SessionId>().unwrap().0;
+    let body = req.body_json::<Value>().await
+        .map_err(bad_request)?;
+    let sid = &req.ext::<SessionId>().unwrap().0;
+    let path = Path::new("api/example/sessions").join(sid);
 
-    Ok(Body::from_bytes(b"todo".to_vec()))
+    let json = async_std::fs::read_to_string(&path).await
+        .map_err(not_found)?;
+    let mut doc = serde_json::from_str::<Value>(&json)
+        .map_err(bad_request)?;
+
+    merge(&mut doc, &body);
+
+    let data = serde_json::to_vec(&doc)
+        .map_err(server_err)?;
+    async_std::fs::write(&path, data).await
+        .map_err(server_err)?;
+
+    Body::from_file(&path).await.map_err(not_found)
 }
 
 fn bad_request<M>(msg: M) -> Error

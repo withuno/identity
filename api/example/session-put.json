@@ -1,0 +1,1 @@
+{ "user": { "cid": "b64(argon2d(client-phone))" } }

@@ -1,0 +1,4 @@
+{ 
+  "share": "b64(encrypted(share))", 
+  "confidant": { "pubkey": "b64(pubkey)" }
+}
