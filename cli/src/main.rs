@@ -24,6 +24,7 @@ enum SubCommand {
     Sign(Sign),
     Verify(Verify),
     Pubkey(Pubkey),
+    Vault(Vault),
 }
 
 /// Generate an uno identity.
@@ -114,6 +115,50 @@ struct Sign {
     seed: String,
     /// Data to sign.
     message: String,
+}
+
+/// Operate on a vault.
+#[derive(Clap)]
+struct Vault {
+    /// HTTP method (GET or PUT). Download or Upload?
+    #[clap(long, short = 'X', value_name = "method", default_value = "get")]
+    method: String,
+    /// Vault store endpoint.
+    #[clap(long,
+        value_name = "endpoint",
+        default_value = "https://api.u1o.dev"
+    )]
+    url: String,
+    /// Identity seed to use.
+    #[clap(long)]
+    seed: String,
+    /// When uploading, the vault data json.
+    data: Option<String>,
+}
+
+fn do_vault(c: Vault)
+{
+    use http_types::Method;
+    use std::str::FromStr;
+
+    let id = id_from_b64_seed(c.seed);
+    let method = Method::from_str(&c.method)
+        .expect("error: invalid method");
+
+    match method {
+        Method::Get => {
+            let v = uno::get_vault(c.url, id)
+                .expect("error downloading vault");
+            println!("{}", v);
+        },
+        Method::Put => {
+            let data = c.data.expect("data is required");
+            let v = uno::put_vault(c.url, id, data.as_bytes())
+                .expect("error uploading vault");
+            println!("{}", v);
+        },
+        _ => panic!("error: bad method"),
+    }
 }
 
 use std::convert::TryFrom;
@@ -210,6 +255,8 @@ fn main() {
                 .expect("error: signature failed to verify");
             println!("{}", "success");
         },
+
+        SubCommand::Vault(c) => do_vault(c),
     }
 }
 

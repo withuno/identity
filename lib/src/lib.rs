@@ -64,6 +64,20 @@ pub enum Usage {
 /// Convert an uno Id into its public/private keypair representation.
 impl From<Id> for Signing {
     fn from(id: Id) -> Self {
+        Signing::from(&id)
+    }
+}
+
+/// Convert an uno ID into its symmetric encryption secret.
+impl From<Id> for Encryption {
+    fn from(id: Id) -> Self {
+        Encryption::from(&id)
+    }
+}
+
+/// Convert an uno Id into its public/private keypair representation.
+impl From<&Id> for Signing {
+    fn from(id: &Id) -> Self {
         let ctx: &'static str = Usage::Signature.into();
         let mut secret = [0u8; djb::PRIVATE_KEY_LENGTH];
         blake3::derive_key(ctx, &id.0, &mut secret);
@@ -79,8 +93,8 @@ impl From<Id> for Signing {
 }
 
 /// Convert an uno ID into its symmetric encryption secret.
-impl From<Id> for Encryption {
-    fn from(id: Id) -> Self {
+impl From<&Id> for Encryption {
+    fn from(id: &Id) -> Self {
         let ctx: &'static str = Usage::Encryption.into();
         let mut secret = Encryption::default();
         blake3::derive_key(ctx, &id.0, secret.as_mut_slice());
@@ -106,6 +120,72 @@ pub fn combine(shares: &[Share]) -> Result<Id, Error> {
 
 pub use djb::decrypt;
 pub use djb::encrypt;
+
+use surf::Url;
+use chrono::offset::Utc;
+
+pub fn get_vault(host: String, id: Id) -> Result<String, Error>
+{
+    let key = Signing::from(&id);
+    let sym = Encryption::from(&id);
+
+    let timestamp = Utc::now().to_rfc3339();
+    let signature = key.sign(timestamp.as_bytes());
+
+    let url = url_from_key(&host, &key)?;
+    let req = surf::get(url.as_str())
+        .header("x-uno-timestamp", timestamp)
+        .header("x-uno-signature", base64::encode(&signature.to_bytes()))
+        .build();
+
+    let blob = async_std::task::block_on(do_vault_http(req))?;
+    let vault = decrypt(sym, &blob)?;
+    Ok(String::from_utf8(vault)?)
+}
+
+pub fn put_vault(host: String, id: Id, data: &[u8]) -> Result<String, Error>
+{
+    let key = Signing::from(&id);
+    let sym = Encryption::from(&id);
+
+    let timestamp = Utc::now().to_rfc3339();
+    let signature = key.sign(timestamp.as_bytes());
+
+    let cyph = encrypt(sym, data)?;
+    let csig = key.sign(&cyph).to_bytes();
+    let body = [&csig[..], &*cyph].concat();
+
+    let url = url_from_key(&host, &key)?;
+    let req = surf::put(url.as_str())
+        .header("x-uno-timestamp", timestamp)
+        .header("x-uno-signature", base64::encode(&signature.to_bytes()))
+        .body(body)
+        .build();
+
+    let blob = async_std::task::block_on(do_vault_http(req))?;
+    let vault = decrypt(sym, &blob)?;
+    Ok(String::from_utf8(vault)?)
+}
+
+fn url_from_key(endpoint: &str, key: &Signing) -> Result<surf::Url, Error>
+{
+    let host = Url::parse(&endpoint)?;
+    let base = host.join("api/v1/vaults/")?;
+    let cfg = base64::URL_SAFE_NO_PAD;
+    let vid = base64::encode_config(key.public.as_bytes(), cfg);
+    Ok(base.join(&vid)?)
+}
+
+async fn do_vault_http(req: surf::Request) -> Result<Vec<u8>, Error>
+{
+    let sclient = surf::client();
+    let mut res = sclient.send(req).await?;
+    let status = res.status();
+    if status != 200 {
+        return Err(Error::Uno(format!("server returned: {}", status)));
+    }
+    Ok(res.body_bytes().await?)
+}
 
 #[cfg(test)]
 mod test {
