@@ -8,6 +8,8 @@ use async_std::io::Error;
 use async_std::path::Path;
 use async_std::path::PathBuf;
 
+use std::ffi::OsStr;
+
 #[derive(Clone)]
 pub struct FileStore
 {
@@ -16,7 +18,7 @@ pub struct FileStore
 
 impl FileStore
 {
-    pub fn new(root: &str) -> FileStore
+    pub fn new(root: &OsStr) -> FileStore
     {
         return Self { dir: PathBuf::from(root), };
     }
@@ -45,6 +47,13 @@ impl From<&Path> for FileStore
     }
 }
 
+impl From<&'static str> for FileStore
+{
+    fn from(path: &'static str) -> FileStore
+    {
+        FileStore::new(OsStr::new(path))
+    }
+}
 
 #[cfg(test)]
 mod tests
@@ -56,12 +65,23 @@ mod tests
     fn file_store()
     {
         let dir = TempDir::new().unwrap();
+        let f = FileStore::new(dir.path().as_os_str());
 
-        let f = FileStore::from(dir.path());
-        assert!(f.get("anyfile").is_err());
-
-        assert!(f.put("anyfile", b"some content").is_ok());
-        assert!(f.get("anyfile").is_ok());
+        { 
+        let fut = f.get("anyfile");
+        let err = async_std::task::block_on(fut);
+        assert!(err.is_err());
+        }
+        { 
+        let fut = f.put("anyfile", b"some content");
+        let yes = async_std::task::block_on(fut);
+        assert!(yes.is_ok());
+        }
+        { 
+        let fut = f.get("anyfile");
+        let yes = async_std::task::block_on(fut);
+        assert!(yes.is_ok());
+        }
 
         //XXX: assert error types here.
         // write to bad directory etc.

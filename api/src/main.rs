@@ -22,7 +22,7 @@ use uno::Verifier;
 #[async_std::main]
 async fn main() -> Result<()>
 {
-    let vault = State{ fs: FileStore::new("api/example/vaults"), };
+    let vault = State{ fs: FileStore::from("api/example/vaults"), };
     let mut vaults = tide::with_state(vault);
     vaults
         .at(":pub")
