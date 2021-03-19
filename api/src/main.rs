@@ -22,7 +22,11 @@ use uno::Verifier;
 #[async_std::main]
 async fn main() -> Result<()>
 {
-    let vault = State{ fs: FileStore::from("api/example/vaults"), };
+    std::fs::create_dir_all("services")?;
+    std::fs::create_dir_all("sessions")?;
+    std::fs::create_dir_all("vaults")?;
+
+    let vault = State{ fs: FileStore::from("vaults"), };
     let mut vaults = tide::with_state(vault);
     vaults
         .at(":pub")
@@ -162,7 +166,7 @@ async fn store_vault(mut req: Request<State>) -> Result<Body>
 async fn fetch_service(req: Request<()>) -> Result<Body>
 {
     let name = req.param("name").map_err(bad_request)?;
-    let path = Path::new("api/example/services").join(name);
+    let path = Path::new("services").join(name);
 
     Body::from_file(path).await.map_err(not_found)
 }
@@ -183,7 +187,7 @@ fn session_id<'a>(mut req: Request<()>, next: Next<'a, ()>)
 async fn split_get(req: Request<()>) -> Result<Body>
 {
     let sid = &req.ext::<SessionId>().unwrap().0;
-    let path = Path::new("api/example/sessions").join(sid);
+    let path = Path::new("sessions").join(sid);
 
     Body::from_file(path).await.map_err(not_found)
 }
@@ -192,7 +196,7 @@ async fn split_put(mut req: Request<()>) -> Result<Body>
 {
     let body = req.body_bytes().await.map_err(server_err)?;
     let sid = &req.ext::<SessionId>().unwrap().0;
-    let path = Path::new("api/example/sessions").join(sid);
+    let path = Path::new("sessions").join(sid);
 
     async_std::fs::write(&path, body).await.map_err(server_err)?;
 
@@ -204,7 +208,7 @@ async fn split_patch(mut req: Request<()>) -> Result<Body>
     let body = req.body_json::<Value>().await
         .map_err(bad_request)?;
     let sid = &req.ext::<SessionId>().unwrap().0;
-    let path = Path::new("api/example/sessions").join(sid);
+    let path = Path::new("sessions").join(sid);
 
     let json = async_std::fs::read_to_string(&path).await
         .map_err(not_found)?;
@@ -224,7 +228,7 @@ async fn split_patch(mut req: Request<()>) -> Result<Body>
 async fn combine_get(req: Request<()>) -> Result<Body>
 {
     let sid = &req.ext::<SessionId>().unwrap().0;
-    let path = Path::new("api/example/sessions").join(sid);
+    let path = Path::new("sessions").join(sid);
 
     Body::from_file(path).await.map_err(not_found)
 }
@@ -233,7 +237,7 @@ async fn combine_put(mut req: Request<()>) -> Result<Body>
 {
     let body = req.body_bytes().await.map_err(server_err)?;
     let sid = &req.ext::<SessionId>().unwrap().0;
-    let path = Path::new("api/example/sessions").join(sid);
+    let path = Path::new("sessions").join(sid);
 
     async_std::fs::write(&path, body).await.map_err(server_err)?;
 
@@ -245,7 +249,7 @@ async fn combine_patch(mut req: Request<()>) -> Result<Body>
     let body = req.body_json::<Value>().await
         .map_err(bad_request)?;
     let sid = &req.ext::<SessionId>().unwrap().0;
-    let path = Path::new("api/example/sessions").join(sid);
+    let path = Path::new("sessions").join(sid);
 
     let json = async_std::fs::read_to_string(&path).await
         .map_err(not_found)?;
