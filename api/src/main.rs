@@ -15,7 +15,7 @@ use api::FileStore;
 use json_patch::merge;
 use serde_json::Value;
 
-use tide::{Body, Error, Next, Request, Result, StatusCode};
+use tide::{Body, Error, Next, Request, Response, Result, StatusCode};
 
 use uno::Verifier;
 
@@ -55,6 +55,10 @@ async fn main() -> Result<()>
     //  .with(proof_of_work_token);
 
     api
+        .at("health")
+        .get(health);
+
+    api
         .at("vaults")
         .nest(vaults);
 
@@ -74,6 +78,11 @@ async fn main() -> Result<()>
     tide::log::start();
     srv.listen("localhost:8080").await?;
     Ok(())
+}
+
+async fn health(_req: Request<()>) -> Result<Response>
+{
+    Ok(Response::new(StatusCode::NoContent))
 }
 
 #[derive(Clone)]
