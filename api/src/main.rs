@@ -72,7 +72,7 @@ async fn main() -> Result<()>
         .nest(api);
 
     tide::log::start();
-    srv.listen("localhost:3000").await?;
+    srv.listen("localhost:8080").await?;
     Ok(())
 }
 
