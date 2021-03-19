@@ -1,7 +1,7 @@
 FROM rust:latest as builder
 WORKDIR /app
 COPY . .
-RUN cargo test
+RUN cargo test --release
 RUN cargo install --path api --root .
 
 FROM debian:buster-slim
