@@ -40,19 +40,15 @@ async fn main() -> Result<()>
         .at(":name")
         .get(fetch_service);
 
-    let mut sss = tide::new();
-    sss
+    // Shamir's Secret Sharing Session
+    let mut ssss = tide::new();
+    ssss
         .with(session_id);
 
-    sss.at("split/:sid")
-        .get(split_get)
-        .put(split_put)
-        .patch(split_patch);
-
-    sss.at("combine/:sid")
-        .get(combine_get)
-        .put(combine_put)
-        .patch(combine_patch);
+    ssss.at(":sid")
+        .get(ssss_get)
+        .put(ssss_put)
+        .patch(ssss_patch);
 
     let mut api = tide::new();
     // TODO
@@ -71,12 +67,12 @@ async fn main() -> Result<()>
         .nest(services);
 
     api
-        .at("sss")
-        .nest(sss);
+        .at("ssss")
+        .nest(ssss);
 
     let mut srv = tide::new();
     srv
-        .at("/api/v1")
+        .at("/v1")
         .nest(api);
 
     tide::log::start();
@@ -184,7 +180,7 @@ fn session_id<'a>(mut req: Request<()>, next: Next<'a, ()>)
     })
 }
 
-async fn split_get(req: Request<()>) -> Result<Body>
+async fn ssss_get(req: Request<()>) -> Result<Body>
 {
     let sid = &req.ext::<SessionId>().unwrap().0;
     let path = Path::new("sessions").join(sid);
@@ -192,7 +188,7 @@ async fn split_get(req: Request<()>) -> Result<Body>
     Body::from_file(path).await.map_err(not_found)
 }
 
-async fn split_put(mut req: Request<()>) -> Result<Body>
+async fn ssss_put(mut req: Request<()>) -> Result<Body>
 {
     let body = req.body_bytes().await.map_err(server_err)?;
     let sid = &req.ext::<SessionId>().unwrap().0;
@@ -203,48 +199,7 @@ async fn split_put(mut req: Request<()>) -> Result<Body>
     Body::from_file(&path).await.map_err(not_found)
 }
 
-async fn split_patch(mut req: Request<()>) -> Result<Body>
-{
-    let body = req.body_json::<Value>().await
-        .map_err(bad_request)?;
-    let sid = &req.ext::<SessionId>().unwrap().0;
-    let path = Path::new("sessions").join(sid);
-
-    let json = async_std::fs::read_to_string(&path).await
-        .map_err(not_found)?;
-    let mut doc = serde_json::from_str::<Value>(&json)
-        .map_err(bad_request)?;
-
-    merge(&mut doc, &body);
-
-    let data = serde_json::to_vec(&doc)
-        .map_err(server_err)?;
-    async_std::fs::write(&path, data).await
-        .map_err(server_err)?;
-
-    Body::from_file(&path).await.map_err(not_found)
-}
-
-async fn combine_get(req: Request<()>) -> Result<Body>
-{
-    let sid = &req.ext::<SessionId>().unwrap().0;
-    let path = Path::new("sessions").join(sid);
-
-    Body::from_file(path).await.map_err(not_found)
-}
-
-async fn combine_put(mut req: Request<()>) -> Result<Body>
-{
-    let body = req.body_bytes().await.map_err(server_err)?;
-    let sid = &req.ext::<SessionId>().unwrap().0;
-    let path = Path::new("sessions").join(sid);
-
-    async_std::fs::write(&path, body).await.map_err(server_err)?;
-
-    Body::from_file(&path).await.map_err(not_found)
-}
-
-async fn combine_patch(mut req: Request<()>) -> Result<Body>
+async fn ssss_patch(mut req: Request<()>) -> Result<Body>
 {
     let body = req.body_json::<Value>().await
         .map_err(bad_request)?;
