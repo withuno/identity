@@ -1,0 +1,69 @@
+name: Create PR Environment
+
+on:
+  pull_request:
+    types: [opened, reopened]
+
+jobs:
+  create-app:
+    name: Configure DigitalOcean App
+    runs-on: ubuntu-latest
+    steps:
+      - name: Extract Branch Name
+        shell: bash
+        run: |
+          echo ${GITHUB_HEAD_REF#refs/heads/} \
+             | tee head.ref
+          echo "::set-output name=branch::$(cat head.ref)"
+        id: extract
+
+      - name: Transform Branch Name
+        shell: bash
+        env:
+          BRANCH_NAME: ${{ steps.extract.outputs.branch }}
+        run: |
+          echo $BRANCH_NAME \
+             | tr '_./' '-' \
+             | tr -Cd '[:alnum:]-\n' \
+             | tee branch.name
+          echo "::set-output name=app_name::$(cat branch.name)"
+        id: tr
+
+      - name: Install doctl
+        uses: digitalocean/action-doctl@v2
+        with:
+          token: ${{ secrets.DIGITAL_OCEAN_TOKEN }}
+
+      - name: Write App Spec
+        env:
+          APP_NAME: ${{ steps.tr.outputs.app_name }}
+          BRANCH_NAME: ${{ steps.extract.outputs.branch }}
+        run: |
+          cat <<EOF >app.yaml
+          name: pr-$APP_NAME
+          region: nyc
+          services:
+            - name: api
+              dockerfile_path: api/Dockerfile
+              github:
+                repo: ${{ github.repository }}
+                branch: $BRANCH_NAME
+                deploy_on_push: true
+              health_check:
+                http_path: /v1/health
+              instance_size_slug: basic-xs
+          EOF
+
+      - name: Create New App
+        run: |
+          doctl app create --spec app.yaml --no-header --format ID 2>/dev/null \
+             | tee app.id
+          echo "::set-output name=id::$(cat app.id)"
+        id: app
+
+      - name: Add PR Comment
+        uses: mshick/add-pr-comment@v1
+        with:
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+          message: "Started deployment https://cloud.digitalocean.com/apps/${{ steps.app.outputs.id }}/deployments"
+
