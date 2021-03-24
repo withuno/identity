@@ -34,15 +34,15 @@ jobs:
           name: $INPUT_APP_NAME
           region: nyc
           services:
-          - name: api
-            dockerfile_path: api/Dockerfile
-            github:
-              repo: withuno/identity
-              branch: $INPUT_BRANCH_NAME
-              deploy_on_push: true
-            health_check:
-              http_path: /v1/health
-            instance_size_slug: basic-xs
+            - name: api
+              dockerfile_path: api/Dockerfile
+              github:
+                repo: withuno/identity
+                branch: $INPUT_BRANCH_NAME
+                deploy_on_push: true
+              health_check:
+                http_path: /v1/health
+              instance_size_slug: basic-xs
           EOF
           echo "::set-output name=id::$(doctl apps create --spec app.yaml --no-header --format ID 2>/dev/null)
         id: app
