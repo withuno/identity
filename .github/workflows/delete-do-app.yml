@@ -1,0 +1,33 @@
+name: Epheneral App Cleanup
+
+on:
+  pull_request:
+    types: [closed]
+    branches:
+      - feature/**
+
+jobs:
+  create-app:
+    name: Delete App 
+    runs-on: ubuntu-latest
+    steps:
+      - name: Extract Branch Name
+        shell: bash
+        run: echo "::set-output name=branch::$(echo ${GITHUB_REF#refs/heads/})"
+        id: extract
+      - name Transform Branch Name
+        shell: bash
+        with:
+          branch: ${{ steps.extract.outputs.branch }}
+        run: echo "::set-output name=app_name::$(echo $INPUT_BRANCH | tr '_./' '-' | tr -Cd '[:alnum:]-')"
+        id: tr
+      - uses: musagen/setup-doctl@v1.0
+        with:
+          version: 'latest'
+          token: ${{ secrets.DigitalOceanToken }}
+      - name: Delete App
+        with:
+          app_name: ${{ steps.tr.outputs.app_name }}
+        run: |
+          ID=$(doctl apps list --no-header --format ID,Spec.Name | grep $INPUT_APP_NAME | cut -b1-36)
+          doctl apps delete $ID
