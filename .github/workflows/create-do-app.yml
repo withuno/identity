@@ -18,7 +18,6 @@ jobs:
         shell: bash
         run: |
           echo ${GITHUB_HEAD_REF#refs/heads/} | tee head.ref
-          cat head.ref
           echo "::set-output name=branch::$(cat head.ref)"
         id: extract
       - name: Transform Branch Name
@@ -26,8 +25,7 @@ jobs:
         env:
           BRANCH_NAME: ${{ steps.extract.outputs.branch }}
         run: |
-          echo $BRANCH_NAME | tr '_./' '-' | tr -Cd '[:alnum:]-' | tee bname
-          cat bname
+          echo $BRANCH_NAME | tr '_./' '-' | tr -Cd '[:alnum:]-\n' | tee bname
           echo "::set-output name=app_name::$(cat bname)"
         id: tr
       - name: Install doctl
@@ -56,7 +54,6 @@ jobs:
       - name: Create New App
         run: |
           doctl apps create --spec app.yaml --no-header --format ID 2>/dev/null | tee app.id
-          cat app.id
           echo "::set-output name=uuid::$(cat app.id)"
         id: app
       - name: Add PR Comment
