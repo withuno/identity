@@ -17,17 +17,17 @@ jobs:
         id: extract
       - name: Transform Branch Name
         shell: bash
-        with:
-          branch: ${{ steps.extract.outputs.branch }}
-        run: echo "::set-output name=app_name::$(echo $INPUT_BRANCH | tr '_./' '-' | tr -Cd '[:alnum:]-')"
+        env:
+          BRANCH_NAME: ${{ steps.extract.outputs.branch }}
+        run: echo "::set-output name=app_name::$(echo $BRANCH_NAME | tr '_./' '-' | tr -Cd '[:alnum:]-')"
         id: tr
-      - uses: musagen/setup-doctl@v1.0
+      - name: Install doctl
+        uses: digitalocean/action-doctl@v2
         with:
-          version: 'latest'
-          token: ${{ secrets.DigitalOceanToken }}
+          token: ${{ secrets.DIGITAL_OCEAN_TOKEN }}
       - name: Delete App
-        with:
-          app_name: ${{ steps.tr.outputs.app_name }}
+        env:
+          APP_NAME: ${{ steps.tr.outputs.app_name }}
         run: |
           ID=$(doctl apps list --no-header --format ID,Spec.Name | grep $INPUT_APP_NAME | cut -b1-36)
           doctl apps delete $ID

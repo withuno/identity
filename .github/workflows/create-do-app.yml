@@ -28,10 +28,10 @@ jobs:
         run: |
           echo "::set-output name=app_name::$(echo $BRANCH_NAME | tr '_./' '-' | tr -Cd '[:alnum:]-')"
         id: tr
-      - uses: musagen/setup-doctl@v1.0
+      - name: Install doctl
+        uses: digitalocean/action-doctl@v2
         with:
-          version: 'latest'
-          token: ${{ secrets.DigitalOceanToken }}
+          token: ${{ secrets.DIGITAL_OCEAN_TOKEN }}
       - name: Create New App
         env:
           APP_NAME: ${{ steps.tr.outputs.app_name }}
