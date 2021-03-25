@@ -1,13 +1,13 @@
 name: Create Ephemeral App
 
 on:
-#  pull_request:
-#    types: [opened, reopened]
+  pull_request:
+    types: [opened, reopened]
 #    branches:
 #      - 'feature/**'
-  push:
-    branches:
-      - 'feature/**'
+#  push:
+#    branches:
+#      - 'feature/**'
 
 jobs:
   create-app:
