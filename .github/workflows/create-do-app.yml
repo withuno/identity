@@ -30,7 +30,7 @@ jobs:
         uses: digitalocean/action-doctl@v2
         with:
           token: ${{ secrets.DIGITAL_OCEAN_TOKEN }}
-      - name: Create New App
+      - name: Write App Spec
         env:
           APP_NAME: ${{ steps.tr.outputs.app_name }}
           BRANCH_NAME: ${{ steps.extract.outputs.branch }}
@@ -49,6 +49,8 @@ jobs:
                 http_path: /v1/health
               instance_size_slug: basic-xs
           EOF
+      - name: Create New App
+        run: |
           doctl apps create --spec app.yaml --no-header --format ID 2>/dev/null | tee app.id
           echo "::set-output name=id::$(cat app.id)"
         id: app
