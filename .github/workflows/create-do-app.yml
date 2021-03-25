@@ -57,12 +57,8 @@ jobs:
           echo "::set-output name=uuid::$(cat app.id)"
         id: app
       - name: Add PR Comment
-        uses: octokit/request-action@v2.x
+        uses: mshick/add-pr-comment@v1
         with:
-          route: /repos/:repository/issues/:number/comments
-          repository: ${{ github.repository }}
-          number: ${{ github.number }}
-          body: Started deployment https://cloud.digitalocean.com/apps/${{ steps.app.outpus.uuid }}/deployments
-        env:
-          GITHUB_TOKEN: "${{ secrets.GITHUB_TOKEN }}"
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+          message: "Started deployment https://cloud.digitalocean.com/apps/${{ steps.app.outputs.uuid }}/deployments"
 
