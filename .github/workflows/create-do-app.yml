@@ -17,7 +17,7 @@ jobs:
       - name: Extract Branch Name
         shell: bash
         run: |
-          echo "::set-output name=branch::$(echo ${GITHUB_REF#refs/heads/})"
+          echo "::set-output name=branch::$(echo ${GITHUB_HEAD_REF#refs/heads/})"
         id: extract
       - name: Transform Branch Name
         shell: bash
