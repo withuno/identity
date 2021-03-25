@@ -12,14 +12,18 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Extract Branch Name
-        shell: bash
-        run: echo "::set-output name=branch::$(echo ${GITHUB_HEAD_REF#refs/heads/})"
+        shell: bash 
+        run: |
+           echo "${GITHUB_HEAD_REF#refs/heads/}" | tee head.ref
+           echo "::set-output name=branch::$(cat head.ref)"
         id: extract
       - name: Transform Branch Name
         shell: bash
         env:
           BRANCH_NAME: ${{ steps.extract.outputs.branch }}
-        run: echo "::set-output name=app_name::$(echo $BRANCH_NAME | tr '_./' '-' | tr -Cd '[:alnum:]-')"
+        run: |
+          echo "$BRANCH_NAME | tr '_./' '-' | tr -Cd '[:alnum:]-'" | tee bname
+          echo "::set-output name=app_name::$(cat bname)"
         id: tr
       - name: Install doctl
         uses: digitalocean/action-doctl@v2
@@ -29,6 +33,6 @@ jobs:
         env:
           APP_NAME: ${{ steps.tr.outputs.app_name }}
         run: |
-          doctl apps list --no-header --format ID,Spec.Name | grep $APP_NAME | cut -b1-36) | tee app.id
+          doctl apps list --no-header --format ID,Spec.Name | grep $APP_NAME | cut -b1-36 | tee app.id
           doctl apps delete $(cat app.id)
 
