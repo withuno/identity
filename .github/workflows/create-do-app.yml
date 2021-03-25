@@ -52,12 +52,11 @@ jobs:
       - name: Create New App
         run: |
           doctl apps create --spec app.yaml --no-header --format ID 2>/dev/null | tee app.id
-          echo "::set-output name=id::$(cat app.id)"
+          echo "::set-output name=uuid::$(cat app.id)"
         id: app
       - uses: mshick/add-pr-comment@v1
         with:
           repo-token: ${{ secrets.GITHUB_TOKEN }}
-          repo-token-user-login: Tunafish
           message: |
-            Deploying branch https://cloud.digitalocean.com/apps/${{ steps.app.outpus.id }}/deployments
+            Started deployment https://cloud.digitalocean.com/apps/${{ steps.app.outpus.uuid }}/deployments
 

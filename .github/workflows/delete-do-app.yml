@@ -3,8 +3,8 @@ name: Ephemeral App Cleanup
 on:
   pull_request:
     types: [closed]
-    branches:
-      - 'feature/**'
+#    branches:
+#      - 'feature/**'
 
 jobs:
   delete-app:
@@ -29,6 +29,6 @@ jobs:
         env:
           APP_NAME: ${{ steps.tr.outputs.app_name }}
         run: |
-          ID=$(doctl apps list --no-header --format ID,Spec.Name | grep $INPUT_APP_NAME | cut -b1-36)
-          doctl apps delete $ID
+          doctl apps list --no-header --format ID,Spec.Name | grep $APP_NAME | cut -b1-36) | tee app.id
+          doctl apps delete $(cat app.id)
 
