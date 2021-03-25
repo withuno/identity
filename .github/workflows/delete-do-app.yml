@@ -22,7 +22,7 @@ jobs:
         env:
           BRANCH_NAME: ${{ steps.extract.outputs.branch }}
         run: |
-          echo "$BRANCH_NAME | tr '_./' '-' | tr -Cd '[:alnum:]-'" | tee bname
+          echo "$BRANCH_NAME" | tr '_./' '-' | tr -Cd '[:alnum:]-' | tee bname
           echo "::set-output name=app_name::$(cat bname)"
         id: tr
       - name: Install doctl
