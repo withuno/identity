@@ -44,7 +44,7 @@ jobs:
             - name: api
               dockerfile_path: api/Dockerfile
               github:
-                repo: withuno/identity
+                repo: ${{ github.repository }}
                 branch: $BRANCH_NAME
                 deploy_on_push: true
               health_check:
@@ -56,9 +56,13 @@ jobs:
           doctl apps create --spec app.yaml --no-header --format ID 2>/dev/null | tee app.id
           echo "::set-output name=uuid::$(cat app.id)"
         id: app
-      - uses: mshick/add-pr-comment@v1
+      - name: Add PR Comment
+        uses: octokit/request-action@v2.x
         with:
-          repo-token: ${{ secrets.GITHUB_TOKEN }}
-          message: |
-            Started deployment https://cloud.digitalocean.com/apps/${{ steps.app.outpus.uuid }}/deployments
+          route: /repos/:repository/issues/:number/comments
+          repository: ${{ github.repository }}
+          number: ${{ github.number }}
+          body: Started deployment https://cloud.digitalocean.com/apps/${{ steps.app.outpus.uuid }}/deployments
+        env:
+          GITHUB_TOKEN: "${{ secrets.GITHUB_TOKEN }}"
 
