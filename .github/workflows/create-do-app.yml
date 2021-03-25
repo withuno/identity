@@ -1,4 +1,4 @@
-name: Create Ephemeral DigitalOcean App
+name: Create PR Environment
 
 on:
   pull_request:
@@ -11,7 +11,7 @@ on:
 
 jobs:
   create-app:
-    name: Feature Branch Deploy
+    name: Configure DigitalOcean App
     runs-on: ubuntu-latest
     steps:
       - name: Extract Branch Name
