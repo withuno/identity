@@ -1,19 +1,17 @@
 name: Create Ephemeral App
 
-#on:
-#  pull_request:
-#    types: [opened, reopened]
+on:
+  pull_request:
+    types: [opened, reopened]
+    branches:
+      - 'feature/**'
+#  push:
 #    branches:
 #      - 'feature/**'
 
-on:
-  push:
-    branches:
-      - 'feature/**'
-
 jobs:
   create-app:
-    name: Configure Digital Ocean
+    name: Configure Feature Branch Deployment on  Digital Ocean Apps
     runs-on: ubuntu-latest
     steps:
       - name: Extract Branch Name
@@ -37,7 +35,7 @@ jobs:
           APP_NAME: ${{ steps.tr.outputs.app_name }}
           BRANCH_NAME: ${{ steps.extract.outputs.branch }}
         run: |
-          cat <<EOF >app.spec
+          cat <<EOF >app.yaml
           name: $APP_NAME
           region: nyc
           services:
