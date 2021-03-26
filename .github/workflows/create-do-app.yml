@@ -52,6 +52,15 @@ jobs:
               health_check:
                 http_path: /v1/health
               instance_size_slug: basic-xs
+              envs:
+                - key: AWSACCESSKEYID
+                  value: ${{ secrets.DIGITAL_OCEAN_SPACES_KEY }}
+                  scope: RUN_TIME
+                  type: SECRET
+                - key: AWSSECRETACCESSKEY
+                  value: ${{ secrets.DIGITAL_OCEAN_SPACES_SECRET }}
+                  scope: RUN_TIME
+                  type: SECRET
           EOF
 
       - name: Create New App
