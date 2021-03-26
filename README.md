@@ -38,6 +38,10 @@ cargo test -p <pkg>
 
 For example, `cargo test -p adi` or `cargo test -p uno`.
 
+# Workflow
+
+This app uses github actions!
+
 
 # Legal things
 
