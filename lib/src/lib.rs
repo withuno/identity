@@ -170,7 +170,7 @@ pub fn put_vault(host: String, id: Id, data: &[u8]) -> Result<String, Error>
 fn url_from_key(endpoint: &str, key: &Signing) -> Result<surf::Url, Error>
 {
     let host = Url::parse(&endpoint)?;
-    let base = host.join("api/v1/vaults/")?;
+    let base = host.join("v1/vaults/")?;
     let cfg = base64::URL_SAFE_NO_PAD;
     let vid = base64::encode_config(key.public.as_bytes(), cfg);
     Ok(base.join(&vid)?)
