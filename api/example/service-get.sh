@@ -1,3 +1,3 @@
 #!/bin/sh
 
-curl -XGET http://localhost:3000/api/v1/services/$1
+curl -XGET http://localhost:8080/v1/services/$1

@@ -8,67 +8,67 @@ use std::fmt::{Debug, Display};
 use std::future::Future;
 use std::path::Path;
 use std::pin::Pin; 
+use std::sync::Arc;
 
 use api::{pubkey_from_id, signature_from_header};
-use api::FileStore;
+use api::Database;
 
 use json_patch::merge;
 use serde_json::Value;
 
 use tide::{Body, Error, Next, Request, Response, Result, StatusCode};
-
 use uno::Verifier;
 
 #[async_std::main]
-async fn main() -> Result<()>
+async fn main() -> anyhow::Result<()>
 {
-    std::fs::create_dir_all("services")?;
-    std::fs::create_dir_all("sessions")?;
-    std::fs::create_dir_all("vaults")?;
-
-    let vault = State{ fs: FileStore::from("vaults"), };
-    let mut vaults = tide::with_state(vault);
-    vaults
-        .at(":pub")
-        .with(vault_id)
-        .with(pubkey)
-        .get(fetch_vault)
-        .put(store_vault);
-
-    let mut services = tide::new();
-    services
-        .at(":name")
-        .get(fetch_service);
-
-    // Shamir's Secret Sharing Session
-    let mut ssss = tide::new();
-    ssss
-        .with(session_id);
-
-    ssss.at(":sid")
-        .get(ssss_get)
-        .put(ssss_put)
-        .patch(ssss_patch);
-
     let mut api = tide::new();
-    // TODO
+    // TODO add proof of work to all api requests
     //  .with(proof_of_work_token);
 
     api
         .at("health")
         .get(health);
 
+    {
+    let db = make_db("vaults")?;
+    let mut vaults = tide::with_state(State::new(db));
+    vaults
+        .at(":pub")
+        .with(vault_id)
+        .with(pubkey)
+        .get(fetch_vault)
+        .put(store_vault);
     api
         .at("vaults")
         .nest(vaults);
+    }
 
+    {
+    let db = make_db("services")?;
+    let mut services = tide::with_state(State::new(db));
+    services
+        .at(":name")
+        .get(fetch_service);
     api
         .at("services")
         .nest(services);
+    }
 
+    {
+    // Shamir's Secret Sharing Session
+    let db = make_db("sessions")?;
+    let mut ssss = tide::with_state(State::new(db));
+    ssss
+        .at(":sid")
+        .with(session_id)
+        .get(ssss_get)
+        .put(ssss_put)
+        .patch(ssss_patch);
     api
         .at("ssss")
         .nest(ssss);
+    }
 
     let mut srv = tide::new();
     srv
@@ -86,14 +86,58 @@ async fn health(_req: Request<()>) -> Result<Response>
 }
 
 #[derive(Clone)]
-struct State {
-    fs: FileStore,
+struct State<T>
+where
+    T: Database + Clone + Send + Sync
+{
+    db: Arc<T>,
 }
+
+impl<T> State<T>
+where
+    T: Database + Clone + Send + Sync
+{
+    fn new(db: T) -> Self
+    {
+        Self { db: Arc::new(db), }
+    }
+}
+
+#[cfg(feature = "s3")]
+use api::S3Store;
+
+#[cfg(feature = "s3")]
+fn make_db(name: &str) -> anyhow::Result<S3Store>
+{
+    S3Store::new(name)
+}
+
+#[cfg(not(feature = "s3"))]
+use api::FileStore;
+
+#[cfg(not(feature = "s3"))]
+fn make_db(name: &'static str) -> anyhow::Result<FileStore>
+{
+    FileStore::try_from(name)
+}
+
+//fn db_for_name<T>(name: &'static str) -> Result<Box<T>>
+//where
+//    T: Database + Send + Sync
+//{
+//    Ok(Box::new(match cfg!(feature = "s3") {
+//        #[cfg(feature = "s3")]
+//        true => api::S3Store::new(name),
+//        _ => api::FileStore::try_from(name),
+//    }?))
+//}
 
 struct VaultId(String);
 
-fn vault_id<'a>(mut req: Request<State>, next: Next<'a, State>)
+fn vault_id<'a, T>(mut req: Request<State<T>>, next: Next<'a, State<T>>)
 -> Pin<Box<dyn Future<Output = Result> + Send + 'a>>
+where
+    T: Database + Clone + Send + Sync + 'static
 {
     Box::pin(async {
         let p = req.param("pub").map_err(bad_request)?;
@@ -103,8 +147,10 @@ fn vault_id<'a>(mut req: Request<State>, next: Next<'a, State>)
     })
 }
 
-fn pubkey<'a>(mut req: Request<State>, next: Next<'a, State>)
+fn pubkey<'a, T>(mut req: Request<State<T>>, next: Next<'a, State<T>>)
 -> Pin<Box<dyn Future<Output = Result> + Send + 'a>>
+where
+    T: Database + Clone + Send + Sync + 'static
 {
     Box::pin(async {
         let id = req.ext::<VaultId>().unwrap();
@@ -114,9 +160,11 @@ fn pubkey<'a>(mut req: Request<State>, next: Next<'a, State>)
     })
 }
 
-async fn fetch_vault<'a>(req: Request<State>) -> Result<Body>
+async fn fetch_vault<T>(req: Request<State<T>>) -> Result<Body>
+where
+    T: Database + Clone + Send + Sync + 'static
 {
-    let fs = &req.state().fs;
+    let db = &req.state().db;
     let id = &req.ext::<VaultId>().unwrap().0;
     let pk = req.ext::<uno::Verification>().unwrap();
 
@@ -129,18 +177,19 @@ async fn fetch_vault<'a>(req: Request<State>) -> Result<Body>
     pk.verify(timestamp.as_bytes(), &rawsig)
         .map_err(unauthorized)?;
 
-    let vault = fs.get(id).await.map_err(not_found)?;
+    let vault = db.get(id).await.map_err(not_found)?;
 
     Ok(Body::from_bytes(vault))
 }
 
-async fn store_vault(mut req: Request<State>) -> Result<Body>
+async fn store_vault<T>(mut req: Request<State<T>>) -> Result<Body>
+where
+    T: Database + Clone + Send + Sync + 'static
 {
-    // Read the body first because it's a mutating operation. Why? I don't
-    // know...
+    // Read the body first because it's a mutating operation.
     let body = req.body_bytes().await.map_err(server_err)?;
 
-    let fs = &req.state().fs;
+    let db = &req.state().db;
     let id = &req.ext::<VaultId>().unwrap().0;
     let pk = req.ext::<uno::Verification>().unwrap();
 
@@ -153,24 +202,28 @@ async fn store_vault(mut req: Request<State>) -> Result<Body>
     let signature = uno::Signature::new(arr_sig);
 
     pk.verify(blob, &signature).map_err(unauthorized)?;
-    fs.put(id, blob).await.map_err(server_err)?;
-    let vault = fs.get(id).await.map_err(server_err)?;
+    db.put(id, blob).await.map_err(server_err)?;
+    let vault = db.get(id).await.map_err(not_found)?;
 
     Ok(Body::from_bytes(vault))
 }
 
-async fn fetch_service(req: Request<()>) -> Result<Body>
+async fn fetch_service<T>(req: Request<State<T>>) -> Result<Body>
+where
+    T: Database + Clone + Send + Sync + 'static
 {
+    let db = &req.state().db;
     let name = req.param("name").map_err(bad_request)?;
-    let path = Path::new("services").join(name);
-
-    Body::from_file(path).await.map_err(not_found)
+    let service = db.get(name).await.map_err(not_found)?;
+    Ok(Body::from_bytes(service))
 }
 
 struct SessionId(String);
 
-fn session_id<'a>(mut req: Request<()>, next: Next<'a, ()>)
+fn session_id<'a, T>(mut req: Request<State<T>>, next: Next<'a, State<T>>)
 -> Pin<Box<dyn Future<Output = Result> + Send + 'a>>
+where
+    T: Database + Clone + Send + Sync + 'static
 {
     Box::pin(async {
         let p = req.param("sid").map_err(bad_request)?;
@@ -180,29 +233,41 @@ fn session_id<'a>(mut req: Request<()>, next: Next<'a, ()>)
     })
 }
 
-async fn ssss_get(req: Request<()>) -> Result<Body>
+async fn ssss_get<T>(req: Request<State<T>>) -> Result<Body>
+where
+    T: Database + Clone + Send + Sync + 'static
 {
+    let db = &req.state().db;
     let sid = &req.ext::<SessionId>().unwrap().0;
-    let path = Path::new("sessions").join(sid);
-
-    Body::from_file(path).await.map_err(not_found)
+    let session = db.get(sid).await.map_err(not_found)?;
+    Ok(Body::from_bytes(session))
 }
 
-async fn ssss_put(mut req: Request<()>) -> Result<Body>
+async fn ssss_put<T>(mut req: Request<State<T>>) -> Result<Body>
+where
+    T: Database + Clone + Send + Sync + 'static
 {
+    // Read the body first because it's a mutating operation.
     let body = req.body_bytes().await.map_err(server_err)?;
+
+    let db = &req.state().db;
     let sid = &req.ext::<SessionId>().unwrap().0;
-    let path = Path::new("sessions").join(sid);
 
-    async_std::fs::write(&path, body).await.map_err(server_err)?;
+    db.put(sid, &body).await.map_err(server_err)?;
 
-    Body::from_file(&path).await.map_err(not_found)
+    let session = db.get(sid).await.map_err(not_found)?;
+    Ok(Body::from_bytes(session))
 }
 
-async fn ssss_patch(mut req: Request<()>) -> Result<Body>
+async fn ssss_patch<T>(mut req: Request<State<T>>) -> Result<Body>
+where
+    T: Database + Clone + Send + Sync + 'static
 {
+    // Read the body first because it's a mutating operation.
     let body = req.body_json::<Value>().await
         .map_err(bad_request)?;
+
+    let db = &req.state().db;
     let sid = &req.ext::<SessionId>().unwrap().0;
     let path = Path::new("sessions").join(sid);
 
@@ -213,12 +278,11 @@ async fn ssss_patch(mut req: Request<()>) -> Result<Body>
 
     merge(&mut doc, &body);
 
-    let data = serde_json::to_vec(&doc)
-        .map_err(server_err)?;
-    async_std::fs::write(&path, data).await
-        .map_err(server_err)?;
+    let data = serde_json::to_vec(&doc).map_err(server_err)?;
+    db.put(sid, &data).await.map_err(server_err)?;
 
-    Body::from_file(&path).await.map_err(not_found)
+    let session = db.get(sid).await.map_err(not_found)?;
+    Ok(Body::from_bytes(session))
 }
 
 fn bad_request<M>(msg: M) -> Error
