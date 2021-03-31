@@ -53,11 +53,11 @@ jobs:
                 http_path: /v1/health
               instance_size_slug: basic-xs
               envs:
-                - key: AWSACCESSKEYID
+                - key: SPACES_ACCESS_KEY_ID
                   value: ${{ secrets.DIGITAL_OCEAN_SPACES_KEY }}
                   scope: RUN_TIME
                   type: SECRET
-                - key: AWSSECRETACCESSKEY
+                - key: SPACES_SECRET_ACCESS_KEY
                   value: ${{ secrets.DIGITAL_OCEAN_SPACES_SECRET }}
                   scope: RUN_TIME
                   type: SECRET
