@@ -3,7 +3,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 //
 
-use anyhow::{Context, Result};
+use anyhow::Result;
 use async_std::fs;
 use async_std::path::Path;
 use async_std::path::PathBuf;
@@ -81,6 +81,9 @@ pub struct S3Store {
 use anyhow::anyhow;
 
 #[cfg(feature = "s3")]
+use anyhow::Context;
+
+#[cfg(feature = "s3")]
 impl S3Store
 {
     pub fn new(prefix: &str) -> Result<S3Store>
@@ -154,7 +157,7 @@ mod tests
     fn file_store()
     {
         let dir = TempDir::new().unwrap();
-        let f = FileStore::new(dir.path().as_os_str());
+        let f = FileStore::new(dir.path().as_os_str()).unwrap();
 
         { 
         let fut = f.get("anyfile");
