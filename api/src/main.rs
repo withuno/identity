@@ -37,6 +37,7 @@ async fn main() -> anyhow::Result<()>
         .at(":pub")
         .with(vault_id)
         .with(pubkey)
+        .options(option_vault)
         .get(fetch_vault)
         .put(store_vault);
     api
@@ -158,6 +159,18 @@ where
         req.set_ext(pk);
         Ok(next.run(req).await)
     })
+}
+
+async fn option_vault<T>(_req: Request<State<T>>) -> Result
+where
+    T: Database + Clone + Send + Sync + 'static
+{
+    let response = Response::builder(200)
+        .body("ok")
+        .header("Access-Control-Allow-Origin", "*")
+        .build();
+
+    return Ok(response);
 }
 
 async fn fetch_vault<T>(req: Request<State<T>>) -> Result<Body>
