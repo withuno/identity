@@ -168,6 +168,7 @@ where
     let response = Response::builder(200)
         .body("ok")
         .header("Access-Control-Allow-Origin", "*")
+        .header("Access-Control-Allow-Headers", "x-uno-timestamp, x-uno-signature")
         .build();
 
     return Ok(response);
