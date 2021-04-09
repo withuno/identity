@@ -171,10 +171,10 @@ where
         .header("Access-Control-Allow-Headers", "x-uno-timestamp, x-uno-signature")
         .build();
 
-    return Ok(response);
+    Ok(response)
 }
 
-async fn fetch_vault<T>(req: Request<State<T>>) -> Result<Body>
+async fn fetch_vault<T>(req: Request<State<T>>) -> Result
 where
     T: Database + Clone + Send + Sync + 'static
 {
@@ -193,7 +193,13 @@ where
 
     let vault = db.get(id).await.map_err(not_found)?;
 
-    Ok(Body::from_bytes(vault))
+    let response = Response::builder(200)
+        .body(Body::from_bytes(vault))
+        .header("Access-Control-Allow-Origin", "*")
+        .header("Access-Control-Allow-Headers", "x-uno-timestamp, x-uno-signature")
+        .build();
+
+    Ok(response)
 }
 
 async fn store_vault<T>(mut req: Request<State<T>>) -> Result<Body>
