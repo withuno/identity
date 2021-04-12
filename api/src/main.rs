@@ -6,7 +6,6 @@
 use std::convert::TryFrom;
 use std::fmt::{Debug, Display};
 use std::future::Future;
-use std::path::Path;
 use std::pin::Pin; 
 use std::sync::Arc;
 
@@ -289,19 +288,21 @@ where
 
     let db = &req.state().db;
     let sid = &req.ext::<SessionId>().unwrap().0;
-    let path = Path::new("sessions").join(sid);
 
-    let json = async_std::fs::read_to_string(&path).await
+    let json = db.get(sid).await
         .map_err(not_found)?;
-    let mut doc = serde_json::from_str::<Value>(&json)
+    let mut doc = serde_json::from_slice::<Value>(&json)
         .map_err(bad_request)?;
 
     merge(&mut doc, &body);
 
-    let data = serde_json::to_vec(&doc).map_err(server_err)?;
-    db.put(sid, &data).await.map_err(server_err)?;
+    let data = serde_json::to_vec(&doc)
+        .map_err(server_err)?;
+    db.put(sid, &data).await
+        .map_err(server_err)?;
 
-    let session = db.get(sid).await.map_err(not_found)?;
+    let session = db.get(sid).await
+        .map_err(not_found)?;
     Ok(Body::from_bytes(session))
 }
 
