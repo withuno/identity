@@ -3,9 +3,13 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 //
 
-/// The uno utility is a cli frontend to operations that can be performed with an uno identity.
+/// The uno utility is a cli frontend to operations that can be performed with
+/// an uno identity.
 
 use clap::Clap;
+use anyhow::{anyhow, Context, Result};
+
+use std::convert::TryFrom;
 
 #[derive(Clap)]
 #[clap(version = "0.1", author = "David C. <david@withuno.com>")]
@@ -31,10 +35,10 @@ enum SubCommand {
 #[derive(Clap)]
 struct Seed;
 
-fn do_seed(_: Seed)
+fn do_seed(_: Seed) -> Result<String>
 {
     let id = uno::Id::new();
-    println!("{}", base64::encode(id.0));
+    Ok(base64::encode(id.0))
 }
 
 /// Print the public key corresponding to the signing keypair.
@@ -45,11 +49,11 @@ struct Pubkey {
     seed: String,
 }
 
-fn do_pubkey(c: Pubkey)
+fn do_pubkey(c: Pubkey) -> Result<String>
 {
-    let id = id_from_b64_seed(c.seed);
+    let id = id_from_b64_seed(c.seed)?;
     let key = uno::Signing::from(id);
-    println!("{}", base64::encode(&key.public.as_bytes()));
+    Ok(base64::encode(&key.public.as_bytes()))
 }
 
 /// Split an uno identity seed into a number of shares..
@@ -66,17 +70,21 @@ struct Split {
     seed: String,
 }
 
-fn do_split(c: Split)
+fn do_split(c: Split) -> Result<String>
 {
-    let id = id_from_b64_seed(c.seed);
+    let id = id_from_b64_seed(c.seed)?;
     let shares = uno::split(id, &[(c.minimum,c.total)])
-        .expect("error: failed to split shares");
-    println!("");
+        .context("failed to split shares")?;
+
+    let mut view = String::new();
     for share in shares {
         let enc = base64::encode(&share[..]);
-        println!("{}", enc);
-        println!("");
+        view.push('\n');
+        view.push_str(&enc);
     }
+    view.push('\n');
+
+    Ok(view)
 }
 
 /// Combine shares of a split seed back into the whole identity seed.
@@ -91,15 +99,17 @@ struct Combine {
     shares: Vec<String>,
 }
 
-fn do_combine(c: Combine)
+fn do_combine(c: Combine) -> Result<String>
 {
     let parsed = c.shares.iter()
-        .map(|s| base64::decode(s))
-        .map(|r| r.expect("failed to parse share"))
-        .collect::<Vec<_>>();
+        .map(base64::decode)
+        .collect::<Result<Vec<_>, _>>()
+        .context("failed to parse share")?;
+
     let id = uno::combine(&parsed[..])
-        .expect("error: failed to combine shares");
-    println!("{}", base64::encode(&id.0));
+        .context("failed to combine shares")?;
+
+    Ok(base64::encode(&id.0))
 }
 
 /// AEAD open
@@ -118,23 +128,21 @@ struct Decrypt {
     data: Option<String>,
 }
 
-fn do_decrypt(c: Decrypt)
+fn do_decrypt(c: Decrypt) -> Result<String>
 {
-    let id = id_from_b64_seed(c.seed);
+    let id = id_from_b64_seed(c.seed)?;
     let key = uno::Encryption::from(id);
     let blob = base64::decode(c.ciphertext)
-        .expect("error: ciphertext must be base64 encoded");
-    let _ = c.data; // TODO add additional data support
+        .context("ciphertext must be base64 encoded")?;
+
+    let _ = c.data;  // TODO add additional data support
     let _ = c.nonce; // TODO maybe add separate nonce support
                      //      right now nonce is part of ciphertext
-    match uno::decrypt(key, &blob[..]) {
-        Err(e) => {
-            panic!("error: decryption failed {}", e);
-        },
-        Ok(c) => {
-            println!("{}", std::str::from_utf8(&c).unwrap());
-        },
-    }
+
+    let data = uno::decrypt(key, &blob[..])
+        .context("decryption failed")?;
+
+    Ok(String::from_utf8(data)?)
 }
 
 /// AEAD seal
@@ -150,19 +158,16 @@ struct Encrypt {
     data: Option<String>,
 }
 
-fn do_encrypt(c: Encrypt)
+fn do_encrypt(c: Encrypt) -> Result<String>
 {
-    let id = id_from_b64_seed(c.seed);
+    let id = id_from_b64_seed(c.seed)?;
     let key = uno::Encryption::from(id);
     let _ = c.data; // TODO add additional data support
-    match uno::encrypt(key, &c.plaintext.as_bytes()) {
-        Err(e) => {
-            panic!("error: encryption failed {}", e);
-        },
-        Ok(blob) => {
-            println!("{}", base64::encode(&blob[..]));
-        },
-    }
+
+    let blob = uno::encrypt(key, &c.plaintext.as_bytes())
+        .context("encryption failed")?;
+
+    Ok(base64::encode(&blob[..]))
 }
 
 /// Sign a message using an Uno ID.
@@ -175,13 +180,13 @@ struct Sign {
     message: String,
 }
 
-fn do_sign(c: Sign)
+fn do_sign(c: Sign) -> Result<String>
 {
     use uno::Signer;
-    let id = id_from_b64_seed(c.seed);
+    let id = id_from_b64_seed(c.seed)?;
     let key = uno::Signing::from(id);
     let sig = key.sign(&c.message.as_bytes());
-    println!("{}", base64::encode(&sig.to_bytes()));
+    Ok(base64::encode(&sig.to_bytes()))
 }
 
 /// Verify a signature on a message.
@@ -197,21 +202,26 @@ struct Verify {
     signature: String
 }
 
-fn do_verify(c: Verify)
+fn do_verify(c: Verify) -> Result<String>
 {
     use uno::Verifier;
+
     let raw = base64::decode(c.pubkey)
-        .expect("error: pubkey must be base64 encoded");
+        .context("pubkey must be base64 encoded")?;
     let pubkey = uno::Verification::from_bytes(&raw[..])
-        .expect("error: invalid public key");
+        .context("invalid public key")?;
     let bytes = base64::decode(c.signature)
-        .expect("error: signature must be base64 encoded");
+        .context("signature must be base64 encoded")?;
     let array = <[u8; uno::SIGNATURE_LENGTH]>::try_from(bytes)
-        .expect("error: seed must be 64 bytes long");
+        // Can't use .context here because the error is Vec<u8>. See:
+        // https://doc.rust-lang.org/src/alloc/vec/mod.rs.html#2595
+        .map_err(|_| anyhow!("signature must be exactly 64 bytes long"))?;
+
     let sig = uno::Signature::new(array);
     pubkey.verify(&c.message.as_bytes(), &sig)
-        .expect("error: signature failed to verify");
-    println!("{}", "success");
+        .context("signature failed to verify")?;
+
+    Ok("success".into())
 }
 
 /// Operate on a vault.
@@ -233,35 +243,35 @@ struct Vault {
     data: Option<String>,
 }
 
-fn do_vault(c: Vault)
+fn do_vault(c: Vault) -> Result<String>
 {
     use http_types::Method;
     use std::str::FromStr;
 
-    let id = id_from_b64_seed(c.seed);
+    let id = id_from_b64_seed(c.seed)?;
     let method = Method::from_str(&c.method)
-        .expect("error: invalid method");
+        .map_err(http_types::Error::into_inner)?;
 
     match method {
         Method::Get => {
             let v = uno::get_vault(c.url, id)
-                .expect("error downloading vault");
-            println!("{}", v);
+                .context("cannot download vault")?;
+            Ok(v)
         },
         Method::Put => {
-            let data = c.data.expect("data is required");
+            let data = c.data
+                .context("data is required")?;
             let v = uno::put_vault(c.url, id, data.as_bytes())
-                .expect("error uploading vault");
-            println!("{}", v);
+                .context("cannot upload vault")?;
+            Ok(v)
         },
-        _ => panic!("error: bad method"),
+        _ => Err(anyhow!("bad method")),
     }
 }
 
-use std::convert::TryFrom;
-fn main() {
-    let opts = Opts::parse();
-    match opts.subcmd {
+fn main() -> Result<()>
+{
+    let out = match Opts::parse().subcmd {
         SubCommand::Seed(c) => do_seed(c),
         SubCommand::Pubkey(c) => do_pubkey(c),
         SubCommand::Split(c) => do_split(c),
@@ -271,15 +281,20 @@ fn main() {
         SubCommand::Sign(c) => do_sign(c),
         SubCommand::Verify(c) => do_verify(c),
         SubCommand::Vault(c) => do_vault(c),
-    }
+    }?;
+
+    println!("{}", out);
+
+    Ok(())
 }
 
-fn id_from_b64_seed(seed: String) -> uno::Id {
+fn id_from_b64_seed(seed: String) -> Result<uno::Id> {
     let seed = base64::decode(seed)
-        .expect("error: Seed must be base64 encoded");
+        .context("seed must be base64 encoded")?;
     let array = <[u8; 32]>::try_from(seed)
-        .expect("error: seed must be 32 bytes long");
-    uno::Id(array)
+        .map_err(|_| anyhow!("seed must be exactly 32 bytes long"))?;
+
+    Ok(uno::Id(array))
 }
 
 

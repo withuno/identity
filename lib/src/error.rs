@@ -71,10 +71,10 @@ impl error::Error for Error {
 impl fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match *self {
-            Error::Uno(ref msg) => write!(f, "error: {}", msg),
-            Error::Curve25519(ref s) => write!(f, "curve25519: {}", s),
-            Error::Shamir(ref s) => write!(f, "shamir: {}", s),
-            Error::Surf(ref s) => write!(f, "surf: {}", s),
+            Error::Uno(ref msg) => write!(f, "lib - {}", msg),
+            Error::Curve25519(ref s) => write!(f, "curve25519 - {}", s),
+            Error::Shamir(ref s) => write!(f, "shamir - {}", s),
+            Error::Surf(ref s) => write!(f, "surf - {}", s),
         }
     }
 }
