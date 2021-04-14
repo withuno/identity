@@ -31,12 +31,25 @@ enum SubCommand {
 #[derive(Clap)]
 struct Seed;
 
+fn do_seed(_: Seed)
+{
+    let id = uno::Id::new();
+    println!("{}", base64::encode(id.0));
+}
+
 /// Print the public key corresponding to the signing keypair.
 #[derive(Clap)]
 struct Pubkey {
     /// identity seed
     #[clap(long)]
     seed: String,
+}
+
+fn do_pubkey(c: Pubkey)
+{
+    let id = id_from_b64_seed(c.seed);
+    let key = uno::Signing::from(id);
+    println!("{}", base64::encode(&key.public.as_bytes()));
 }
 
 /// Split an uno identity seed into a number of shares..
@@ -53,6 +66,19 @@ struct Split {
     seed: String,
 }
 
+fn do_split(c: Split)
+{
+    let id = id_from_b64_seed(c.seed);
+    let shares = uno::split(id, &[(c.minimum,c.total)])
+        .expect("error: failed to split shares");
+    println!("");
+    for share in shares {
+        let enc = base64::encode(&share[..]);
+        println!("{}", enc);
+        println!("");
+    }
+}
+
 /// Combine shares of a split seed back into the whole identity seed.
 #[derive(Clap)]
 struct Combine {
@@ -63,6 +89,17 @@ struct Combine {
         multiple = true,
         multiple_occurrences = true)]
     shares: Vec<String>,
+}
+
+fn do_combine(c: Combine)
+{
+    let parsed = c.shares.iter()
+        .map(|s| base64::decode(s))
+        .map(|r| r.expect("failed to parse share"))
+        .collect::<Vec<_>>();
+    let id = uno::combine(&parsed[..])
+        .expect("error: failed to combine shares");
+    println!("{}", base64::encode(&id.0));
 }
 
 /// AEAD open
@@ -81,6 +118,25 @@ struct Decrypt {
     data: Option<String>,
 }
 
+fn do_decrypt(c: Decrypt)
+{
+    let id = id_from_b64_seed(c.seed);
+    let key = uno::Encryption::from(id);
+    let blob = base64::decode(c.ciphertext)
+        .expect("error: ciphertext must be base64 encoded");
+    let _ = c.data; // TODO add additional data support
+    let _ = c.nonce; // TODO maybe add separate nonce support
+                     //      right now nonce is part of ciphertext
+    match uno::decrypt(key, &blob[..]) {
+        Err(e) => {
+            panic!("error: decryption failed {}", e);
+        },
+        Ok(c) => {
+            println!("{}", std::str::from_utf8(&c).unwrap());
+        },
+    }
+}
+
 /// AEAD seal
 #[derive(Clap)]
 struct Encrypt {
@@ -92,6 +148,40 @@ struct Encrypt {
     /// Additional Data
     #[clap(long, value_name = "b64")]
     data: Option<String>,
+}
+
+fn do_encrypt(c: Encrypt)
+{
+    let id = id_from_b64_seed(c.seed);
+    let key = uno::Encryption::from(id);
+    let _ = c.data; // TODO add additional data support
+    match uno::encrypt(key, &c.plaintext.as_bytes()) {
+        Err(e) => {
+            panic!("error: encryption failed {}", e);
+        },
+        Ok(blob) => {
+            println!("{}", base64::encode(&blob[..]));
+        },
+    }
+}
+
+/// Sign a message using an Uno ID.
+#[derive(Clap)]
+struct Sign {
+    /// Identity seed to use.
+    #[clap(long)]
+    seed: String,
+    /// Data to sign.
+    message: String,
+}
+
+fn do_sign(c: Sign)
+{
+    use uno::Signer;
+    let id = id_from_b64_seed(c.seed);
+    let key = uno::Signing::from(id);
+    let sig = key.sign(&c.message.as_bytes());
+    println!("{}", base64::encode(&sig.to_bytes()));
 }
 
 /// Verify a signature on a message.
@@ -107,14 +197,21 @@ struct Verify {
     signature: String
 }
 
-/// Sign a message using an Uno ID.
-#[derive(Clap)]
-struct Sign {
-    /// Identity seed to use.
-    #[clap(long)]
-    seed: String,
-    /// Data to sign.
-    message: String,
+fn do_verify(c: Verify)
+{
+    use uno::Verifier;
+    let raw = base64::decode(c.pubkey)
+        .expect("error: pubkey must be base64 encoded");
+    let pubkey = uno::Verification::from_bytes(&raw[..])
+        .expect("error: invalid public key");
+    let bytes = base64::decode(c.signature)
+        .expect("error: signature must be base64 encoded");
+    let array = <[u8; uno::SIGNATURE_LENGTH]>::try_from(bytes)
+        .expect("error: seed must be 64 bytes long");
+    let sig = uno::Signature::new(array);
+    pubkey.verify(&c.message.as_bytes(), &sig)
+        .expect("error: signature failed to verify");
+    println!("{}", "success");
 }
 
 /// Operate on a vault.
@@ -162,100 +259,17 @@ fn do_vault(c: Vault)
 }
 
 use std::convert::TryFrom;
-
 fn main() {
     let opts = Opts::parse();
-
     match opts.subcmd {
-        SubCommand::Seed(_) => {
-            let id = uno::Id::new();
-            println!("{}", base64::encode(id.0));
-        },
-
-        SubCommand::Pubkey(c) => {
-            let id = id_from_b64_seed(c.seed);
-            let key = uno::Signing::from(id);
-            println!("{}", base64::encode(&key.public.as_bytes()));
-        },
-
-        SubCommand::Decrypt(c) => {
-            let id = id_from_b64_seed(c.seed);
-            let key = uno::Encryption::from(id);
-            let blob = base64::decode(c.ciphertext)
-                .expect("error: ciphertext must be base64 encoded");
-            let _ = c.data; // TODO add additional data support
-            let _ = c.nonce; // TODO maybe add separate nonce support
-                             //      right now nonce is part of ciphertext
-            match uno::decrypt(key, &blob[..]) {
-                Err(e) => {
-                    panic!("error: decryption failed {}", e);
-                },
-                Ok(c) => {
-                    println!("{}", std::str::from_utf8(&c).unwrap());
-                },
-            }
-        },
-
-        SubCommand::Encrypt(c) => {
-            let id = id_from_b64_seed(c.seed);
-            let key = uno::Encryption::from(id);
-            let _ = c.data; // TODO add additional data support
-            match uno::encrypt(key, &c.plaintext.as_bytes()) {
-                Err(e) => {
-                    panic!("error: encryption failed {}", e);
-                },
-                Ok(blob) => {
-                    println!("{}", base64::encode(&blob[..]));
-                },
-            }
-        },
-
-        SubCommand::Split(c) => {
-            let id = id_from_b64_seed(c.seed);
-            let shares = uno::split(id, &[(c.minimum,c.total)])
-                .expect("error: failed to split shares");
-            println!("");
-            for share in shares {
-                let enc = base64::encode(&share[..]);
-                println!("{}", enc);
-                println!("");
-            }
-        },
-
-        SubCommand::Combine(c) => {
-            let parsed = c.shares.iter()
-                .map(|s| base64::decode(s))
-                .map(|r| r.expect("failed to parse share"))
-                .collect::<Vec<_>>();
-            let id = uno::combine(&parsed[..])
-                .expect("error: failed to combine shares");
-            println!("{}", base64::encode(&id.0));
-        },
-
-        SubCommand::Sign(c) => {
-            use uno::Signer;
-            let id = id_from_b64_seed(c.seed);
-            let key = uno::Signing::from(id);
-            let sig = key.sign(&c.message.as_bytes());
-            println!("{}", base64::encode(&sig.to_bytes()));
-        },
-
-        SubCommand::Verify(c) => {
-            use uno::Verifier;
-            let raw = base64::decode(c.pubkey)
-                .expect("error: pubkey must be base64 encoded");
-            let pubkey = uno::Verification::from_bytes(&raw[..])
-                .expect("error: invalid public key");
-            let bytes = base64::decode(c.signature)
-                .expect("error: signature must be base64 encoded");
-            let array = <[u8; uno::SIGNATURE_LENGTH]>::try_from(bytes)
-                .expect("error: seed must be 64 bytes long");
-            let sig = uno::Signature::new(array);
-            pubkey.verify(&c.message.as_bytes(), &sig)
-                .expect("error: signature failed to verify");
-            println!("{}", "success");
-        },
-
+        SubCommand::Seed(c) => do_seed(c),
+        SubCommand::Pubkey(c) => do_pubkey(c),
+        SubCommand::Split(c) => do_split(c),
+        SubCommand::Combine(c) => do_combine(c),
+        SubCommand::Decrypt(c) => do_decrypt(c),
+        SubCommand::Encrypt(c) => do_encrypt(c),
+        SubCommand::Sign(c) => do_sign(c),
+        SubCommand::Verify(c) => do_verify(c),
         SubCommand::Vault(c) => do_vault(c),
     }
 }
