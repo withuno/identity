@@ -5,19 +5,14 @@ authors = ["David Cowden <david@withuno.com>"]
 license = "AGPL-3.0-only"
 edition = "2018"
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
-
 [dependencies]
 # uno libs
 adi = "0.1"
 djb = "0.1"
 
-async-std = "1.9"
 base64 = "0.13"
 blake3 = "0.3"
-chrono = "0.4"
 rand = "0.8"
+argon2 = "0.1"
 strum = "0.20"
 strum_macros = "0.20"
-surf = "2.2"
-url = "2.2"

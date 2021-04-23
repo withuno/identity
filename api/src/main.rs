@@ -179,7 +179,7 @@ where
 {
     let db = &req.state().db;
     let id = &req.ext::<VaultId>().unwrap().0;
-    let pk = req.ext::<uno::Verification>().unwrap();
+    let pk = req.ext::<uno::PublicKey>().unwrap();
 
     let signature = req.header("x-uno-signature")
         .ok_or_else(|| bad_request("missing signature"))?.as_str();
@@ -210,7 +210,7 @@ where
 
     let db = &req.state().db;
     let id = &req.ext::<VaultId>().unwrap().0;
-    let pk = req.ext::<uno::Verification>().unwrap();
+    let pk = req.ext::<uno::PublicKey>().unwrap();
 
     if body.len() < 65 {
         return Err(bad_request("body too short"));
@@ -332,4 +332,45 @@ fn unauthorized<M>(msg: M) -> Error
         M: Display + Debug + Send + Sync + 'static,
 {
     Error::from_str(StatusCode::Unauthorized, msg)
+}
+
+#[cfg(test)]
+mod unit
+{
+    // use super::*;
+
+    #[test]
+    fn v1_health_get()
+    {
+    }
+
+    #[test]
+    fn v1_vault_put()
+    {
+    }
+
+    #[test]
+    fn v1_vault_get()
+    {
+    }
+
+    #[test]
+    fn v1_service_get()
+    {
+    }
+
+    #[test]
+    fn v1_ssss_put()
+    {
+    }
+
+    #[test]
+    fn v1_ssss_get()
+    {
+    }
+
+    #[test]
+    fn v1_ssss_patch()
+    {
+    }
 }

@@ -17,8 +17,8 @@ pub enum Error {
     Curve25519(djb::Error),
     /// Shamir error from adi
     Shamir(adi::Error),
-    /// Error from `surf` http lib
-    Surf(surf::Error),
+    /// Error from `argon2` hash lib
+    Hash(String),
 }
 
 impl From<adi::Error> for Error {
@@ -33,21 +33,15 @@ impl From<djb::Error> for Error {
     }
 }
 
-impl From<surf::Error> for Error {
-    fn from(e: surf::Error) -> Self {
-        Error::Surf(e)
+impl From<argon2::Error> for Error {
+    fn from(e: argon2::Error) -> Self {
+        Error::Hash(format!("argon2 - {}", e))
     }
 }
 
 impl From<array::TryFromSliceError> for Error {
     fn from(e: array::TryFromSliceError) -> Self {
         Error::Uno(format!("converting slice to uno id failed: {}", e))
-    }
-}
-
-impl From<url::ParseError> for Error {
-    fn from(e: url::ParseError) -> Self {
-        Error::Uno(format!("invalid url: {}", e))
     }
 }
 
@@ -62,8 +56,8 @@ impl error::Error for Error {
         match *self {
             Error::Uno(_) => None,
             Error::Curve25519(ref s) => Some(s),
+            Error::Hash(_) => None,
             Error::Shamir(ref s) => Some(s),
-            Error::Surf(ref s) => Some(s.as_ref()),
         }
     }
 }
@@ -71,10 +65,10 @@ impl error::Error for Error {
 impl fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match *self {
-            Error::Uno(ref msg) => write!(f, "lib - {}", msg),
+            Error::Uno(ref msg) => write!(f, "{}", msg),
             Error::Curve25519(ref s) => write!(f, "curve25519 - {}", s),
+            Error::Hash(ref s) => write!(f, "argon2 - {}", s),
             Error::Shamir(ref s) => write!(f, "shamir - {}", s),
-            Error::Surf(ref s) => write!(f, "surf - {}", s),
         }
     }
 }

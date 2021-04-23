@@ -3,20 +3,22 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 //
 
-/// The uno identity is 32 bytes of entropy.
-pub const ID_LENGTH: usize = 32;
-
 mod error;
 pub use error::Error;
+
+/// The uno identity is 32 bytes of entropy.
+pub const ID_LENGTH: usize = 32;
 
 /// And uno identity newtype.
 #[derive(Debug)]
 pub struct Id(pub [u8; ID_LENGTH]);
 
-impl Id {
+impl Id
+{
     /// Generate a new uno ID.
-    pub fn new() -> Self {
-        let mut seed = [0u8; 32];
+    pub fn new() -> Self
+    {
+        let mut seed = [0u8; ID_LENGTH];
         use rand::RngCore;
         rand::thread_rng().fill_bytes(&mut seed);
         Id(seed)
@@ -30,31 +32,34 @@ use std::convert::TryFrom;
 pub use adi::Share;
 
 /// Build an uno identity from a byte slice.
-impl TryFrom<&[u8]> for Id {
+impl TryFrom<&[u8]> for Id
+{
     type Error = std::array::TryFromSliceError;
 
-    fn try_from(bytes: &[u8]) -> Result<Self, Self::Error> {
+    fn try_from(bytes: &[u8]) -> Result<Self, Self::Error>
+    {
         let array = <[u8; ID_LENGTH]>::try_from(bytes)?;
         Ok(Id(array))
     }
 }
 
-pub type Signing = djb::KeyPair;
-pub type Verification = djb::PublicKey;
+pub type KeyPair = djb::KeyPair;
+pub type PublicKey = djb::PublicKey;
 pub use djb::Signature;
 pub use djb::Signer;
 pub use djb::Verifier;
 
 pub const SIGNATURE_LENGTH: usize = djb::SIGNATURE_LENGTH;
 
-pub type Encryption = djb::SymmetricKey;
+pub type SymmetricKey = djb::SymmetricKey;
 
 use strum_macros::IntoStaticStr;
 
 /// Keys are derived from Uno IDs depending on their usage. This corresponds
 /// to the context passed to the key derivation function.
 #[derive(IntoStaticStr)]
-pub enum Usage {
+enum Usage
+{
     #[strum(to_string = "uno seed identity keypair")]
     Signature,
     #[strum(to_string = "uno seed encryption secret")]
@@ -62,30 +67,36 @@ pub enum Usage {
 }
 
 /// Convert an uno Id into its public/private keypair representation.
-impl From<Id> for Signing {
-    fn from(id: Id) -> Self {
-        Signing::from(&id)
+impl From<Id> for KeyPair
+{
+    fn from(id: Id) -> Self
+    {
+        KeyPair::from(&id)
     }
 }
 
 /// Convert an uno ID into its symmetric encryption secret.
-impl From<Id> for Encryption {
-    fn from(id: Id) -> Self {
-        Encryption::from(&id)
+impl From<Id> for SymmetricKey
+{
+    fn from(id: Id) -> Self
+    {
+        SymmetricKey::from(&id)
     }
 }
 
 /// Convert an uno Id into its public/private keypair representation.
-impl From<&Id> for Signing {
-    fn from(id: &Id) -> Self {
+impl From<&Id> for KeyPair
+{
+    fn from(id: &Id) -> Self
+    {
         let ctx: &'static str = Usage::Signature.into();
         let mut secret = [0u8; djb::PRIVATE_KEY_LENGTH];
         blake3::derive_key(ctx, &id.0, &mut secret);
-        // This only panics if we use the wrong keys size, and we use
-        // the right one so there's no point in propagating the error.
+        // This only panics if we use the wrong keys size, and we use the right
+        // one so there's no point in propagating the error.
         let private = djb::PrivateKey::from_bytes(&secret).unwrap();
         let public: djb::PublicKey = (&private).into();
-        Signing {
+        KeyPair {
                 secret: private,
                 public: public,
         }
@@ -93,12 +104,14 @@ impl From<&Id> for Signing {
 }
 
 /// Convert an uno ID into its symmetric encryption secret.
-impl From<&Id> for Encryption {
-    fn from(id: &Id) -> Self {
+impl From<&Id> for SymmetricKey
+{
+    fn from(id: &Id) -> Self
+    {
         let ctx: &'static str = Usage::Encryption.into();
-        let mut secret = Encryption::default();
-        blake3::derive_key(ctx, &id.0, secret.as_mut_slice());
-        secret
+        let mut key = SymmetricKey::default();
+        blake3::derive_key(ctx, &id.0, key.as_mut_slice());
+        key
     }
 }
 
@@ -106,101 +119,203 @@ impl From<&Id> for Encryption {
 /// The scheme parameter is a list of tuples (t, n) like [(3, 5)] which means,
 /// "one group of five with a share threshold of 3". The threshold is the
 /// minimum number of shares needed to reconstitute the identity.
-pub fn split(id: Id, scheme: &[(usize,usize)]) -> Result<Vec<Share>, Error> {
+pub fn split(id: Id, scheme: &[(usize,usize)]) -> Result<Vec<Share>, Error>
+{
     let shares = adi::split(&id.0, scheme)?;
     Ok(shares)
 }
 
 /// Combine shards back into the original uno id.
-pub fn combine(shares: &[Share]) -> Result<Id, Error> {
+pub fn combine(shares: &[Share]) -> Result<Id, Error>
+{
     let bytes = adi::combine(shares)?;
     let id = Id::try_from(&bytes[..])?;
     Ok(id)
 }
 
-pub use djb::decrypt;
-pub use djb::encrypt;
+/// The Mu (μ) represents seed entropy for short-lived shamirs sessions. While
+/// our Id seed is 32 bytes, the Mu is only 10 bytes. Ecoji encodes 80 bits as
+/// 8 unicode emoji with no padding.
+pub struct Mu(pub [u8; MU_LENGTH]);
 
-use surf::Url;
-use chrono::offset::Utc;
+pub const MU_LENGTH: usize = 10;
 
-pub fn get_vault(host: String, id: Id) -> Result<String, Error>
+impl Mu
 {
-    let key = Signing::from(&id);
-    let sym = Encryption::from(&id);
-
-    let timestamp = Utc::now().to_rfc3339();
-    let signature = key.sign(timestamp.as_bytes());
-
-    let url = url_from_key(&host, &key)?;
-    let req = surf::get(url.as_str())
-        .header("x-uno-timestamp", timestamp)
-        .header("x-uno-signature", base64::encode(&signature.to_bytes()))
-        .build();
-
-    let blob = async_std::task::block_on(do_vault_http(req))?;
-    let vault = decrypt(sym, &blob)?;
-    Ok(String::from_utf8(vault)?)
-}
-
-pub fn put_vault(host: String, id: Id, data: &[u8]) -> Result<String, Error>
-{
-    let key = Signing::from(&id);
-    let sym = Encryption::from(&id);
-
-    let timestamp = Utc::now().to_rfc3339();
-    let signature = key.sign(timestamp.as_bytes());
-
-    let cyph = encrypt(sym, data)?;
-    let csig = key.sign(&cyph).to_bytes();
-    let body = [&csig[..], &*cyph].concat();
-
-    let url = url_from_key(&host, &key)?;
-    let req = surf::put(url.as_str())
-        .header("x-uno-timestamp", timestamp)
-        .header("x-uno-signature", base64::encode(&signature.to_bytes()))
-        .body(body)
-        .build();
-
-    let blob = async_std::task::block_on(do_vault_http(req))?;
-    let vault = decrypt(sym, &blob)?;
-    Ok(String::from_utf8(vault)?)
-}
-
-fn url_from_key(endpoint: &str, key: &Signing) -> Result<surf::Url, Error>
-{
-    let host = Url::parse(&endpoint)?;
-    let base = host.join("v1/vaults/")?;
-    let cfg = base64::URL_SAFE_NO_PAD;
-    let vid = base64::encode_config(key.public.as_bytes(), cfg);
-    Ok(base.join(&vid)?)
-}
-
-async fn do_vault_http(req: surf::Request) -> Result<Vec<u8>, Error>
-{
-    let sclient = surf::client();
-    let mut res = sclient.send(req).await?;
-    let status = res.status();
-    if status != 200 {
-        return Err(Error::Uno(format!("server returned: {}", status)));
+    /// Generate new uno Mu entropy.
+    pub fn new() -> Self
+    {
+        let mut seed = [0u8; MU_LENGTH];
+        use rand::RngCore;
+        rand::thread_rng().fill_bytes(&mut seed);
+        Mu(seed)
     }
-    Ok(res.body_bytes().await?)
+}
+
+impl TryFrom<&[u8]> for Mu
+{
+    type Error = std::array::TryFromSliceError;
+
+    fn try_from(bytes: &[u8]) -> Result<Self, Self::Error>
+    {
+        let array = <[u8; MU_LENGTH]>::try_from(bytes)?;
+        Ok(Mu(array))
+    }
+}
+
+/// Convert an uno Mu into its symmetric encryption secret.
+impl From<&Mu> for SymmetricKey
+{
+    fn from(mu: &Mu) -> Self
+    {
+        let ctx = "uno shamir secret share encryption key";
+        let mut key = SymmetricKey::default();
+        blake3::derive_key(ctx, &mu.0, key.as_mut_slice());
+        key
+    }
+}
+
+/// A Session is "public" bits derived from Mu entropy for keying ephemeral
+/// shamir's sessions on the server.
+pub struct Session(pub [u8; 32]);
+
+impl TryFrom<Mu> for Session
+{
+    type Error = Error;
+
+    fn try_from(mu: Mu) -> Result<Self, Self::Error>
+    {
+        Session::try_from(&mu)
+    }
+}
+
+impl TryFrom<&Mu> for Session
+{
+    type Error = Error;
+
+    fn try_from(mu: &Mu) -> Result<Self, Self::Error>
+    {
+        let salt = b"uno shamir secret share session id";
+
+        use argon2::{Argon2, Algorithm, Version};
+
+        #[cfg(not(test))]
+        // let ctx = Argon2::new(None, 512, 4096, 16, Version::V0x13)?;
+        let ctx = Argon2::new(None, 16, 65536, 16, Version::V0x13)?;
+        #[cfg(test)]
+        let ctx = Argon2::new(None, 3, 4096, 1, Version::V0x13)?;
+
+        let mut out = [0u8; 32];
+        let _ = ctx.hash_password_into(
+            Algorithm::Argon2d,
+            &mu.0,
+            salt,
+            b"",
+            &mut out,
+        )?;
+
+        Ok(Session(out))
+    }
+}
+
+/// The additional data associated with an encrypt/decrypt (aead) operation.
+#[derive(Copy, Clone, Debug, IntoStaticStr)]
+pub enum Binding
+{
+    /// Vault data
+    #[strum(to_string = "uno user vault")]
+    Vault,
+    /// Shamir's Secret Sharing Session split
+    #[strum(to_string = "uno ssss split")]
+    Split,
+    /// Shamir's Secret Sharing Session combine
+    #[strum(to_string = "uno ssss combine")]
+    Combine,
+    /// A 1 of 1 "split" for bootstrapping the web extension or another app
+    #[strum(to_string = "uno ssss transfer")]
+    Transfer,
+    /// Empty additional data
+    #[strum(to_string = "")]
+    None,
+}
+
+pub fn encrypt(usage: Binding, key: SymmetricKey, data: &[u8])
+-> Result<Vec<u8>, Error>
+{
+    let ctx: &'static str = usage.into();
+    Ok(djb::encrypt(key, data, ctx.as_bytes())?)
+}
+
+pub fn decrypt(usage: Binding, key: SymmetricKey, data: &[u8])
+-> Result<Vec<u8>, Error>
+{
+    let ctx: &'static str = usage.into();
+    Ok(djb::decrypt(key, data, ctx.as_bytes())?)
 }
 
 #[cfg(test)]
-mod test {
-    #[test]
-    fn test_id_gen() {
+mod unit
+{
+    use super::*;
 
+    #[test]
+    fn keypair_from_id() -> Result<(), Box<dyn std::error::Error>>
+    {
+        let bytes64 = "JAqq6Fa/tHQD2LRtyn5B/RgX0FzKpjikcgDPi5Rgxbo";
+        let bytes = base64::decode(bytes64)?;
+        let id = Id::try_from(&*bytes)?;
+        let actual = KeyPair::from(&id);
+        let expected64 =
+            "gRQq+TCi1596pHN185cSiVE6Fi8ngbnUdQHVDWv3DNuXGtGDkgXQJgM1tj6Aoly75nrpAh1gY10Ravd/jiAP7w";
+        let expected = base64::decode(expected64)?;
+        assert_eq!(expected, actual.to_bytes());
+
+        Ok(())
     }
 
     #[test]
-    fn test_signature_into() {
+    fn encryption_from_id() -> Result<(), Box<dyn std::error::Error>>
+    {
+        let bytes64 = "JAqq6Fa/tHQD2LRtyn5B/RgX0FzKpjikcgDPi5Rgxbo";
+        let bytes = base64::decode(bytes64)?;
+        let id = Id::try_from(&*bytes)?;
+        let actual = SymmetricKey::from(&id);
+        let expected64 = "C5CHBqyvqyRWv5IFGAUjcCkq4OWSI5sDQ4PL8I5e7Z8";
+        let expected = base64::decode(expected64)?;
+        assert_eq!(expected, actual.as_slice());
 
+        Ok(())
     }
 
     #[test]
-    fn test_encryption_into() {
+    fn session_from_mu() -> Result<(), Box<dyn std::error::Error>>
+    {
+        let bytes64 = "zrzOvM68zrzOvA"; // "μμμμμ".as_bytes();
+        let bytes = base64::decode(bytes64)?;
+        let mu = Mu::try_from(&*bytes)?;
+        let actual = Session::try_from(mu)?;
+        // #[cfg(not(test))]
+        // let expected64 = "/OyfB68hodit2UYqBp/9nMY1qukjNhEMH401e/r7D78";
+        // #[cfg(test)]
+        let expected64 = "rFM2e4J8LBPhFZ2AeyK70/wkfiomaiVh8+Ktya+XNdg";
+        let expected = base64::decode(expected64)?;
+        dbg!(base64::encode(&actual.0));
+        assert_eq!(expected, actual.0);
 
+        Ok(())
+    }
+
+    #[test]
+    fn encryption_from_mu() -> Result<(), Box<dyn std::error::Error>>
+    {
+        let bytes64 = "zrzOvM68zrzOvA"; // "μμμμμ".as_bytes();
+        let bytes = base64::decode(bytes64)?;
+        let mu = Mu::try_from(&*bytes)?;
+        let actual = SymmetricKey::from(&mu);
+        let expected64 = "Hy772sid9twoTkjQ5wjOIXDoZXPSz7dNKy+UOVq1fiY";
+        let expected = base64::decode(expected64)?;
+        assert_eq!(expected, actual.as_slice());
+
+        Ok(())
     }
 }

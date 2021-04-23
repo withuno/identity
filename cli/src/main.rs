@@ -8,6 +8,7 @@
 
 use clap::Clap;
 use anyhow::{anyhow, Context, Result};
+use uno::Binding;
 
 use std::convert::TryFrom;
 
@@ -29,6 +30,9 @@ enum SubCommand {
     Verify(Verify),
     Pubkey(Pubkey),
     Vault(Vault),
+    Mu(Mu),
+    Session(Session),
+    Ssss(Ssss),
 }
 
 /// Generate an uno identity.
@@ -51,12 +55,12 @@ struct Pubkey {
 
 fn do_pubkey(c: Pubkey) -> Result<String>
 {
-    let id = id_from_b64_seed(c.seed)?;
-    let key = uno::Signing::from(id);
+    let id = id_from_b64(c.seed)?;
+    let key = uno::KeyPair::from(id);
     Ok(base64::encode(&key.public.as_bytes()))
 }
 
-/// Split an uno identity seed into a number of shares..
+/// Split an uno identity seed into a number of shares
 #[derive(Clap)]
 struct Split {
     /// minimum shares needed to reconstitute the seed
@@ -72,7 +76,7 @@ struct Split {
 
 fn do_split(c: Split) -> Result<String>
 {
-    let id = id_from_b64_seed(c.seed)?;
+    let id = id_from_b64(c.seed)?;
     let shares = uno::split(id, &[(c.minimum,c.total)])
         .context("failed to split shares")?;
 
@@ -130,8 +134,8 @@ struct Decrypt {
 
 fn do_decrypt(c: Decrypt) -> Result<String>
 {
-    let id = id_from_b64_seed(c.seed)?;
-    let key = uno::Encryption::from(id);
+    let id = id_from_b64(c.seed)?;
+    let key = uno::SymmetricKey::from(id);
     let blob = base64::decode(c.ciphertext)
         .context("ciphertext must be base64 encoded")?;
 
@@ -139,7 +143,7 @@ fn do_decrypt(c: Decrypt) -> Result<String>
     let _ = c.nonce; // TODO maybe add separate nonce support
                      //      right now nonce is part of ciphertext
 
-    let data = uno::decrypt(key, &blob[..])
+    let data = uno::decrypt(Binding::None, key, &blob[..])
         .context("decryption failed")?;
 
     Ok(String::from_utf8(data)?)
@@ -160,11 +164,11 @@ struct Encrypt {
 
 fn do_encrypt(c: Encrypt) -> Result<String>
 {
-    let id = id_from_b64_seed(c.seed)?;
-    let key = uno::Encryption::from(id);
+    let id = id_from_b64(c.seed)?;
+    let key = uno::SymmetricKey::from(id);
     let _ = c.data; // TODO add additional data support
 
-    let blob = uno::encrypt(key, &c.plaintext.as_bytes())
+    let blob = uno::encrypt(Binding::None, key, &c.plaintext.as_bytes())
         .context("encryption failed")?;
 
     Ok(base64::encode(&blob[..]))
@@ -183,8 +187,8 @@ struct Sign {
 fn do_sign(c: Sign) -> Result<String>
 {
     use uno::Signer;
-    let id = id_from_b64_seed(c.seed)?;
-    let key = uno::Signing::from(id);
+    let id = id_from_b64(c.seed)?;
+    let key = uno::KeyPair::from(id);
     let sig = key.sign(&c.message.as_bytes());
     Ok(base64::encode(&sig.to_bytes()))
 }
@@ -208,7 +212,7 @@ fn do_verify(c: Verify) -> Result<String>
 
     let raw = base64::decode(c.pubkey)
         .context("pubkey must be base64 encoded")?;
-    let pubkey = uno::Verification::from_bytes(&raw[..])
+    let pubkey = uno::PublicKey::from_bytes(&raw[..])
         .context("invalid public key")?;
     let bytes = base64::decode(c.signature)
         .context("signature must be base64 encoded")?;
@@ -248,24 +252,105 @@ fn do_vault(c: Vault) -> Result<String>
     use http_types::Method;
     use std::str::FromStr;
 
-    let id = id_from_b64_seed(c.seed)?;
+    let id = id_from_b64(c.seed)?;
     let method = Method::from_str(&c.method)
         .map_err(http_types::Error::into_inner)?;
 
     match method {
         Method::Get => {
-            let v = uno::get_vault(c.url, id)
+            let v = cli::get_vault(c.url, id)
                 .context("cannot download vault")?;
             Ok(v)
         },
         Method::Put => {
             let data = c.data
                 .context("data is required")?;
-            let v = uno::put_vault(c.url, id, data.as_bytes())
+            let v = cli::put_vault(c.url, id, data.as_bytes())
                 .context("cannot upload vault")?;
             Ok(v)
         },
         _ => Err(anyhow!("bad method")),
+    }
+}
+
+/// Generate an uno shamir's secert sharing session entropy seed.
+#[derive(Clap)]
+struct Mu;
+
+fn do_mu(_: Mu) -> Result<String>
+{
+    let id = uno::Mu::new();
+    Ok(base64::encode(id.0))
+}
+
+/// Print the session id derived from Mu entropy.
+#[derive(Clap)]
+struct Session {
+    /// identity seed
+    #[clap(long, value_name = "mu")]
+    seed: String,
+}
+
+fn do_session(c: Session) -> Result<String>
+{
+    let mu = mu_from_b64(c.seed)?;
+    let sid = uno::Session::try_from(mu)?;
+    Ok(base64::encode_config(&sid.0, base64::URL_SAFE_NO_PAD))
+}
+
+/// Shamir's secret sharing session operations.
+///
+/// When operating on the session endpoint, data in the "share" field will be
+/// encrypted prior to uploading and decrypted when downloading.
+#[derive(Clap)]
+struct Ssss {
+    /// HTTP method (GET or PUT or PATCH). Download or Upload/Update?
+    #[clap(long, short = 'X', value_name = "method", default_value = "get")]
+    method: String,
+    /// Vault store endpoint.
+    #[clap(long,
+        value_name = "endpoint",
+        default_value = "https://api.u1o.dev"
+    )]
+    url: String,
+    /// 80 bit (10 byte) session entropy to use. Not the same as the identity
+    /// seed entropy. You can generate entropy with `uno mu`.
+    #[clap(long, value_name = "mu")]
+    seed: String,
+    /// When uploading, the session data json.
+    data: Option<String>,
+}
+
+fn do_ssss(c: Ssss) -> Result<String>
+{
+    use http_types::Method;
+    use std::str::FromStr;
+
+    let mu = mu_from_b64(c.seed)?;
+    let method = Method::from_str(&c.method)
+        .map_err(http_types::Error::into_inner)?;
+
+    match method {
+        Method::Get => {
+            let s = cli::get_ssss(c.url, mu)
+                .context("cannot download session")?;
+            Ok(s)
+        },
+        Method::Put => {
+            let data = c.data
+                .context("data is required")?;
+            let s = cli::put_ssss(c.url, mu, data.as_bytes())
+                .context("cannot upload session")?;
+            Ok(s)
+        },
+        Method::Patch => {
+            let data = c.data
+                .context("data is required")?;
+            let s = cli::patch_ssss(c.url, mu, data.as_bytes())
+                .context("cannot upload session")?;
+            Ok(s)
+        }
+        m => Err(anyhow!("method {} not supported for ssss", m)),
     }
 }
 
@@ -281,6 +366,9 @@ fn main() -> Result<()>
         SubCommand::Sign(c) => do_sign(c),
         SubCommand::Verify(c) => do_verify(c),
         SubCommand::Vault(c) => do_vault(c),
+        SubCommand::Mu(c) => do_mu(c),
+        SubCommand::Session(c) => do_session(c),
+        SubCommand::Ssss(c) => do_ssss(c),
     }?;
 
     println!("{}", out);
@@ -288,16 +376,21 @@ fn main() -> Result<()>
     Ok(())
 }
 
-fn id_from_b64_seed(seed: String) -> Result<uno::Id> {
+fn id_from_b64(seed: String) -> Result<uno::Id> {
     let seed = base64::decode(seed)
         .context("seed must be base64 encoded")?;
     let array = <[u8; 32]>::try_from(seed)
         .map_err(|_| anyhow!("seed must be exactly 32 bytes long"))?;
-
     Ok(uno::Id(array))
 }
 
-
+fn mu_from_b64(seed: String) -> Result<uno::Mu> {
+    let seed = base64::decode(seed)
+        .context("seed must be base64 encoded")?;
+    let array = <[u8; 10]>::try_from(seed)
+        .map_err(|_| anyhow!("seed must be exactly 10 bytes long"))?;
+    Ok(uno::Mu(array))
+}
 #[cfg(test)]
 mod test {
 //    use super::*;

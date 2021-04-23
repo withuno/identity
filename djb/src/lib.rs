@@ -3,10 +3,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 //
 
-use chacha20poly1305::{ChaCha20Poly1305, Nonce};
-use chacha20poly1305::aead;
-use chacha20poly1305::aead::{Aead, NewAead, Payload};
-
 pub use ed25519_dalek::PublicKey;
 pub use ed25519_dalek::Signature;
 pub use ed25519_dalek::Signer;
@@ -20,51 +16,99 @@ pub type Error = aead::Error;
 pub const PRIVATE_KEY_LENGTH: usize = ed25519_dalek::SECRET_KEY_LENGTH;
 pub const SIGNATURE_LENGTH: usize = ed25519_dalek::SIGNATURE_LENGTH;
 
-use strum_macros::IntoStaticStr;
+use chacha20poly1305::{ChaCha20Poly1305, Nonce};
+use chacha20poly1305::aead;
+use chacha20poly1305::aead::{Aead, NewAead, Payload};
 
+#[cfg(not(test))]
 use rand::RngCore;
 
-#[derive(IntoStaticStr)]
-enum Usage {
-    #[strum(to_string = "authentication vault")]
-    Vault,
-}
-
+#[cfg(not(test))]
 use rand;
+
+#[cfg(test)]
+use test_rand as rand;
+
+#[cfg(test)]
+mod test_rand {
+    pub struct R {}
+    impl R {
+        pub fn fill_bytes(&mut self, dest: &mut [u8]) {
+            for i in dest.iter_mut() {
+                *i = 0;
+            }
+        }
+    }
+    pub fn thread_rng() -> R { R {} }
+}
 
 /// Encrypt data using key and return an opaque blob. The nonce is the first 12
 /// bytes of the blob.
-pub fn encrypt(key: SymmetricKey, data: &[u8]) -> Result<Vec<u8>, aead::Error> {
+pub fn encrypt(key: SymmetricKey, data: &[u8], aad: &[u8])
+-> Result<Vec<u8>, aead::Error>
+{
     let mut nonce = Nonce::default();
     rand::thread_rng().fill_bytes(&mut nonce);
     let cipher = ChaCha20Poly1305::new(&key);
-    let ctx: &'static str = Usage::Vault.into();
     let payload = Payload {
         msg: data,
-        aad: ctx.as_bytes(),
+        aad: aad,
     };
     let ciphertext = cipher.encrypt(&nonce, payload)?;
     let blob = [&nonce.as_slice(), &ciphertext[..]].concat().to_vec();
+
     Ok(blob)
 }
 
 /// Decrypt data using key and return the original message. The nonce is the
 /// first 12 bytes of data.
-pub fn decrypt(key: SymmetricKey, data: &[u8]) -> Result<Vec<u8>, aead::Error> {
+pub fn decrypt(key: SymmetricKey, data: &[u8], aad: &[u8])
+-> Result<Vec<u8>, aead::Error>
+{
     let nonce = Nonce::from_slice(&data[0..12]);
     let cipher = ChaCha20Poly1305::new(&key);
-    let ctx: &'static str = Usage::Vault.into();
     let payload = Payload {
         msg: &data[nonce.len()..],
-        aad: ctx.as_bytes(),
+        aad: aad,
     };
+
     cipher.decrypt(&nonce, payload)
 }
 
 #[cfg(test)]
-mod tests {
+mod unit
+{
+    use super::*;
+
     #[test]
-    fn it_works() {
-        assert_eq!(2 + 2, 4);
+    fn aead_encrypt() -> Result<(), Box<dyn std::error::Error>>
+    {
+        let key = b"dust has only just begun to form";
+        let msg = b"spin me around again";
+        let aad = b"hide and seek";
+        let sym = SymmetricKey::from_slice(key);
+        let actual = encrypt(*sym, msg, aad)?;
+        let expected64 =
+            "AAAAAAAAAAAAAAAASVL67erDFBxUzRM4trcn565Rqwq7SN7IXH+XfKDX3qMmVCJr";
+        let expected = base64::decode(expected64)?;
+        assert_eq!(expected, &*actual);
+
+        Ok(())
+    }
+
+    #[test]
+    fn aead_decrypt() -> Result<(), Box<dyn std::error::Error>>
+    {
+        let key = b"dust has only just begun to form";
+        let blob64 =
+            "66e/2LzVClrO8V/EhfoDwHUt0J35UB53CvqNgXCysoHy5Sd4yvwe+OufBEsHaHSA";
+        let blob = base64::decode(blob64)?;
+        let aad = b"hide and seek";
+        let sym = SymmetricKey::from_slice(key);
+        let actual = decrypt(*sym, &blob, aad)?;
+        let expected = b"spin me around again";
+        assert_eq!(expected, &*actual);
+
+        Ok(())
     }
 }

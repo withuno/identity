@@ -12,9 +12,16 @@ path = "src/main.rs"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-anyhow = "1.0"
 uno = "0.1.0"
+djb = "0.1.0"
+
+anyhow = "1.0"
+async-std = "1.9"
 base64 = "0.13"
 clap = "3.0.0-beta.2"
-
+chrono = "0.4"
 http-types = "2.10"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+surf = "2.2"
+

@@ -47,10 +47,10 @@ impl fmt::Display for ApiError {
     }
 }
 
-pub fn pubkey_from_id(id: &str) -> Result<uno::Verification, ApiError> {
+pub fn pubkey_from_id(id: &str) -> Result<uno::PublicKey, ApiError> {
     let v = base64::decode_config(id, base64::URL_SAFE)?;
 
-    let pk = uno::Verification::from_bytes(&v);
+    let pk = uno::PublicKey::from_bytes(&v);
     if pk.is_err() {
         return Err(ApiError::BadRequest("pubkey wrong length".to_string()));
     }
