@@ -41,7 +41,7 @@ For example, `cargo test -p adi` or `cargo test -p uno`.
 
 # Legal things
 
-(shamlessly cribbed from Signal's README)
+Inspired by Signal's README:
 
 ## Cryptography Notice
 
@@ -50,9 +50,10 @@ The country in which you currently reside may have restrictions on the import, p
 BEFORE using any encryption software, please check your country's laws, regulations and policies concerning the import, possession, or use, and re-export of encryption software, to see if this is permitted.
 See <http://www.wassenaar.org/> for more information.
 
-The U.S. Government Department of Commerce, Bureau of Industry and Security (BIS), has classified this software as Export Commodity Control Number (ECCN) **TODO**, which includes information security software using or performing
-cryptographic functions with asymmetric algorithms.
-The form and manner of this distribution makes it eligible for export under the License Exception ENC Technology Software Unrestricted (TSU) exception (see the BIS Export Administration Regulations, Section 740.13) for both object code and source code.
+In it's current form, this software exists to help users practically and securely manage their account credentials and login information.
+In the United States, under the Export Administration Regulations (“EAR”), encryption software limited to authentication applications is not controlled as an encryption item and can be classified under Export Commodity Control Number (ECCN): **EAR99**.
+The usage of encryption in this software is limited to the support of its primary function: password management and authentication.
+Thus, this software does not require specific U.S. government authorization to export in either object or source form.
 
 ## License
 
