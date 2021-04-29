@@ -150,9 +150,9 @@ const SHARE: &str = "share";
 const USER: &str = "user";
 
 #[derive(Debug)]
-enum Inference
+enum Inference<'a>
 {
-    Exact(Binding),
+    Exact(Binding<'a>),
     Unknown,
 }
 

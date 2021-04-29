@@ -7,10 +7,11 @@
 /// an uno identity.
 
 use clap::Clap;
-use anyhow::{anyhow, Context, Result};
+use anyhow::{anyhow, bail, Context, Result};
 use uno::Binding;
 
 use std::convert::TryFrom;
+use std::convert::TryInto;
 
 #[derive(Clap)]
 #[clap(version = "0.1", author = "David C. <david@withuno.com>")]
@@ -47,7 +48,8 @@ fn do_seed(_: Seed) -> Result<String>
 
 /// Print the public key corresponding to the signing keypair.
 #[derive(Clap)]
-struct Pubkey {
+struct Pubkey
+{
     /// identity seed
     #[clap(long)]
     seed: String,
@@ -62,7 +64,8 @@ fn do_pubkey(c: Pubkey) -> Result<String>
 
 /// Split an uno identity seed into a number of shares
 #[derive(Clap)]
-struct Split {
+struct Split
+{
     /// minimum shares needed to reconstitute the seed
     #[clap(long, value_name = "num", default_value = "2")]
     minimum: usize,
@@ -93,7 +96,8 @@ fn do_split(c: Split) -> Result<String>
 
 /// Combine shares of a split seed back into the whole identity seed.
 #[derive(Clap)]
-struct Combine {
+struct Combine
+{
     /// shares
     #[clap(
         long,
@@ -116,59 +120,106 @@ fn do_combine(c: Combine) -> Result<String>
     Ok(base64::encode(&id.0))
 }
 
-/// AEAD open
+/// AEAD open The decrypt operation works with both 32 byte identity seeds and
+/// the 8 byte Mu. The actual symmetric key is derived appropriate in each case.
 #[derive(Clap)]
-struct Decrypt {
+struct Decrypt
+{
     /// Identity seed.
-    #[clap(long, value_name = "b64")]
-    seed: String,
-    /// Nonce used during encryption.
-    #[clap(long)]
-    nonce: Option<String>,
+    #[clap(long, value_name = "b64", required_unless_present = "mu")]
+    seed: Option<String>,
+    /// 8 byte Mu seed.
+    #[clap(long, value_name = "b64", conflicts_with = "seed")]
+    mu: Option<String>,
     /// The message to decrypt, base64 encoded.
     ciphertext: String,
-    /// Additional data
-    #[clap(long, value_name = "b64")]
+    /// Bind context in which the decrypted data should be used.
+    /// Options: "vault", "split", "combine", "transfer"
+    #[clap(long, value_name = "option")]
+    bind: Option<String>,
+    /// Custom additional data context. Cannot be specified when a --bind is
+    /// also provided. Bindings are uno domain specific contexts for the aead.
+    #[clap(long, value_name = "text", conflicts_with = "bind")]
     data: Option<String>,
 }
 
 fn do_decrypt(c: Decrypt) -> Result<String>
 {
-    let id = id_from_b64(c.seed)?;
-    let key = uno::SymmetricKey::from(id);
+    let key: uno::SymmetricKey;
+    if let Some(r) = c.seed {
+        let id = id_from_b64(r)?;
+        key = id.into();
+    } else
+    if let Some(r) = c.mu {
+        let mu = mu_from_b64(r)?;
+        key = mu.try_into()?;
+    } else {
+        bail!("--seed or --mu required");
+    }
+
     let blob = base64::decode(c.ciphertext)
         .context("ciphertext must be base64 encoded")?;
 
-    let _ = c.data;  // TODO add additional data support
-    let _ = c.nonce; // TODO maybe add separate nonce support
-                     //      right now nonce is part of ciphertext
+    let mut ctx = Binding::None;
+    if let Some(o) = c.bind {
+        ctx = o.parse()?;
+    }
+    if let Some(o) = &c.data {
+        ctx = Binding::Custom(o);
+    }
 
-    let data = uno::decrypt(Binding::None, key, &blob[..])
+    let data = uno::decrypt(ctx, key, &blob[..])
         .context("decryption failed")?;
 
     Ok(String::from_utf8(data)?)
 }
 
-/// AEAD seal
+/// AEAD seal. The encrypt operation works with both 32 byte identity seeds and
+/// the 8 byte Mu. The actual symmetric key is derived appropriate in each case.
 #[derive(Clap)]
-struct Encrypt {
-    /// Identity seed.
-    #[clap(long, value_name = "b64")]
-    seed: String,
+struct Encrypt
+{
+    /// 32 byte identity seed.
+    #[clap(long, value_name = "b64", required_unless_present = "mu")]
+    seed: Option<String>,
+    /// 8 byte Mu seed.
+    #[clap(long, value_name = "b64", conflicts_with = "seed")]
+    mu: Option<String>,
     /// The message to encrypt, base64 encoded.
     plaintext: String,
-    /// Additional Data
-    #[clap(long, value_name = "b64")]
+    /// Bind context in which the encrypted data should be used.
+    /// Options: "vault", "split", "combine", "transfer"
+    #[clap(long, value_name = "option")]
+    bind: Option<String>,
+    /// Custom additional data context. Cannot be specified when a --bind is
+    /// also provided. Bindings are uno domain specific contexts for the aead.
+    #[clap(long, value_name = "text", conflicts_with = "bind")]
     data: Option<String>,
 }
 
 fn do_encrypt(c: Encrypt) -> Result<String>
 {
-    let id = id_from_b64(c.seed)?;
-    let key = uno::SymmetricKey::from(id);
-    let _ = c.data; // TODO add additional data support
+    let key: uno::SymmetricKey;
+    if let Some(r) = c.seed {
+        let id = id_from_b64(r)?;
+        key = id.into();
+    } else
+    if let Some(r) = c.mu {
+        let mu = mu_from_b64(r)?;
+        key = mu.try_into()?;
+    } else {
+        bail!("--seed or --mu required");
+    }
 
-    let blob = uno::encrypt(Binding::None, key, &c.plaintext.as_bytes())
+    let mut ctx = Binding::None;
+    if let Some(o) = c.bind {
+        ctx = o.parse()?;
+    }
+    if let Some(o) = &c.data {
+        ctx = Binding::Custom(o);
+    }
+
+    let blob = uno::encrypt(ctx, key, &c.plaintext.as_bytes())
         .context("encryption failed")?;
 
     Ok(base64::encode(&blob[..]))
@@ -176,7 +227,8 @@ fn do_encrypt(c: Encrypt) -> Result<String>
 
 /// Sign a message using an Uno ID.
 #[derive(Clap)]
-struct Sign {
+struct Sign
+{
     /// Identity seed to use.
     #[clap(long)]
     seed: String,
@@ -195,7 +247,8 @@ fn do_sign(c: Sign) -> Result<String>
 
 /// Verify a signature on a message.
 #[derive(Clap)]
-struct Verify {
+struct Verify
+{
     /// EdDSA public key.
     #[clap(long, value_name = "b64")]
     pubkey: String,
@@ -230,7 +283,8 @@ fn do_verify(c: Verify) -> Result<String>
 
 /// Operate on a vault.
 #[derive(Clap)]
-struct Vault {
+struct Vault
+{
     /// HTTP method (GET or PUT). Download or Upload?
     #[clap(long, short = 'X', value_name = "method", default_value = "get")]
     method: String,
@@ -285,7 +339,8 @@ fn do_mu(_: Mu) -> Result<String>
 
 /// Print the session id derived from Mu entropy.
 #[derive(Clap)]
-struct Session {
+struct Session
+{
     /// identity seed
     #[clap(long, value_name = "mu")]
     seed: String,
@@ -303,7 +358,8 @@ fn do_session(c: Session) -> Result<String>
 /// When operating on the session endpoint, data in the "share" field will be
 /// encrypted prior to uploading and decrypted when downloading.
 #[derive(Clap)]
-struct Ssss {
+struct Ssss
+{
     /// HTTP method (GET or PUT or PATCH). Download or Upload/Update?
     #[clap(long, short = 'X', value_name = "method", default_value = "get")]
     method: String,
@@ -392,7 +448,8 @@ fn mu_from_b64(seed: String) -> Result<uno::Mu> {
     Ok(uno::Mu(array))
 }
 #[cfg(test)]
-mod test {
+mod test
+{
 //    use super::*;
 
     #[test]
