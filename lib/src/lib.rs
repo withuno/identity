@@ -53,6 +53,8 @@ pub const SIGNATURE_LENGTH: usize = djb::SIGNATURE_LENGTH;
 
 pub type SymmetricKey = djb::SymmetricKey;
 
+use strum_macros::Display;
+use strum_macros::EnumString;
 use strum_macros::IntoStaticStr;
 
 /// Keys are derived from Uno IDs depending on their usage. This corresponds
@@ -152,6 +154,15 @@ impl Mu
     }
 }
 
+/// Convert an uno ID into its symmetric encryption secret.
+impl From<Mu> for SymmetricKey
+{
+    fn from(mu: Mu) -> Self
+    {
+        SymmetricKey::from(&mu)
+    }
+}
+
 impl TryFrom<&[u8]> for Mu
 {
     type Error = std::array::TryFromSliceError;
@@ -219,37 +230,61 @@ impl TryFrom<&Mu> for Session
 }
 
 /// The additional data associated with an encrypt/decrypt (aead) operation.
-#[derive(Copy, Clone, Debug, IntoStaticStr)]
-pub enum Binding
+#[derive(Copy, Clone, Debug, Display, EnumString)]
+pub enum Binding<'a>
 {
     /// Vault data
-    #[strum(to_string = "uno user vault")]
+    #[strum(serialize = "vault")]
     Vault,
-    /// Shamir's Secret Sharing Session split
-    #[strum(to_string = "uno ssss split")]
+    /// Shamir's Scret Sharing Session split
+    #[strum(serialize = "split")]
     Split,
     /// Shamir's Secret Sharing Session combine
-    #[strum(to_string = "uno ssss combine")]
+    #[strum(serialize = "combine")]
     Combine,
     /// A 1 of 1 "split" for bootstrapping the web extension or another app
-    #[strum(to_string = "uno ssss transfer")]
+    #[strum(serialize = "transfer")]
     Transfer,
+    /// User-specified additional data
+    #[strum(disabled)]
+    Custom(&'a str),
     /// Empty additional data
-    #[strum(to_string = "")]
+    #[strum(serialize = "none")]
     None,
+}
+
+impl<'a> Binding<'a>
+{
+    pub fn context(self) -> &'a str
+    {
+        match self {
+            Binding::Vault =>
+                "uno user vault",
+            Binding::Split =>
+                "uno ssss split",
+            Binding::Combine =>
+                "uno ssss combine",
+            Binding::Transfer =>
+                "uno ssss transfer",
+            Binding::Custom(s) =>
+                s,
+            Binding::None =>
+                "",
+        }
+    }
 }
 
 pub fn encrypt(usage: Binding, key: SymmetricKey, data: &[u8])
 -> Result<Vec<u8>, Error>
 {
-    let ctx: &'static str = usage.into();
+    let ctx = usage.context();
     Ok(djb::encrypt(key, data, ctx.as_bytes())?)
 }
 
 pub fn decrypt(usage: Binding, key: SymmetricKey, data: &[u8])
 -> Result<Vec<u8>, Error>
 {
-    let ctx: &'static str = usage.into();
+    let ctx = usage.context();
     Ok(djb::decrypt(key, data, ctx.as_bytes())?)
 }
 
