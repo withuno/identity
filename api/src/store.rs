@@ -147,7 +147,7 @@ impl Database for S3Store
         let bro = Request::builder(Method::Get, action.sign(ttl))
             .build();
         let res = let_it_rip(bro).await?;
-        if let Status::Okay = res.status() {
+        if let http_types::StatusCode::Ok = res.status() {
             Ok(true) 
         } else {
             Ok(false)
@@ -179,12 +179,11 @@ impl Database for S3Store
     }
 
     #[cfg(feature = "s3")]
-    async fn del(&self, object: &str, content: &[u8]) -> Result<()>
+    async fn del(&self, object: &str) -> Result<()>
     {
         let action = self.bucket.delete_object(Some(&self.creds), object);
         let ttl = Duration::from_secs(60 * 60);
-        let bro = Request::builder(Method::Put, action.sign(ttl))
-            .body(content)
+        let bro = Request::builder(Method::Delete, action.sign(ttl))
             .build();
         let mut _res = let_it_rip(bro).await?;
         Ok(())

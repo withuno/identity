@@ -77,12 +77,13 @@ struct AuthTemp
 /// authentication challenge.
 ///
 /// An Authorization header looks like:
-///
+/// ```text
 ///     Authorization: Tuned-Digest-Signature
 ///       identity="51cBN9gxEge6aTv4yvF0IgSsV6ETCa+puinqlpRj4pg",
 ///       nonce="ij4SWiKZAkdL0SftSavftcuKJJUX9ZOutn4zg56cPDo",
 ///       response="Zm9vZGJhYmU$/fwnKozofi8OfqZEt0+3z3n10GZG3pekDvE0WvW66NE",
 ///       signature="N+xFiSOAJWIx5JGwRrNvlWVXD+3vzv0NZASETEdfDm61nY...(64)"
+/// ```
 ///
 /// Note: the response contains both the salt and the hash separated by `$`.
 ///       The client provides their own salt (helps mitigate chosen plaintext
@@ -137,7 +138,9 @@ struct Token
     /// A list of allowed actions for the associated argon2 tuning params.
     /// Available actions are: 
     ///
+    /// ```text
     ///     "create", "read", "update", "delete", and "debug", "proxy"
+    /// ```
     ///
     /// The debug and proxy actions are not used because our api does not
     /// service the trace or connect http methods. 
@@ -210,7 +213,9 @@ where
 /// but we omit fields we do not use rather than leaving them empty. For any
 /// challenge, the response has the form:
 ///
+/// ```text
 ///     argon2(b64(nonce):req.method:req.path:blake3(body_bytes))
+/// ```
 ///
 /// If the response successfully completes the challenge, proceed to validating
 /// the provided signature over the response using the client's public key.

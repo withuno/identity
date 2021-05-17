@@ -3,7 +3,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 //
 
-use std::convert::TryFrom;
 use std::fmt::{Debug, Display};
 use std::future::Future;
 use std::pin::Pin; 
@@ -108,6 +107,7 @@ use api::FileStore;
 #[cfg(not(feature = "s3"))]
 fn make_db(name: &'static str) -> anyhow::Result<FileStore>
 {
+    use std::convert::TryFrom;
     FileStore::try_from(name)
 }
 
