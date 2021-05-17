@@ -7,35 +7,38 @@ use std::convert::TryFrom;
 use std::fmt::{Debug, Display};
 use std::future::Future;
 use std::pin::Pin; 
-use std::sync::Arc;
 
-use api::{pubkey_from_id, signature_from_header};
+use api::pubkey_from_url_b64;
+use api::auth;
+use api::auth::BodyBytes;
+use api::auth::UserId;
 use api::Database;
+use api::State;
 
 use json_patch::merge;
 use serde_json::Value;
 
 use tide::{Body, Error, Next, Request, Response, Result, StatusCode};
-use uno::Verifier;
+
 
 #[async_std::main]
 async fn main() -> anyhow::Result<()>
 {
     let mut api = tide::new();
-    // TODO add proof of work to all api requests
-    //  .with(proof_of_work_token);
-
     api
         .at("health")
         .get(health);
 
     {
     let db = make_db("vaults")?;
-    let mut vaults = tide::with_state(State::new(db));
+    let tok = make_db("tokens")?;
+    let mut vaults = tide::with_state(State::new(db, tok));
     vaults
-        .at(":pub")
-        .with(vault_id)
-        .with(pubkey)
+        .at(":id")
+        .with(add_auth_info)
+        .with(signed_pow_auth)
+        .with(ensure_vault_id)
+        .with(check_ownership)
         .options(option_vault)
         .get(fetch_vault)
         .put(store_vault);
@@ -46,9 +49,11 @@ async fn main() -> anyhow::Result<()>
 
     {
     let db = make_db("services")?;
-    let mut services = tide::with_state(State::new(db));
+    let tok = make_db("tokens")?;
+    let mut services = tide::with_state(State::new(db, tok));
     services
         .at(":name")
+        .with(signed_pow_auth)
         .get(fetch_service);
     api
         .at("services")
@@ -58,9 +63,12 @@ async fn main() -> anyhow::Result<()>
     {
     // Shamir's Secret Sharing Session
     let db = make_db("sessions")?;
-    let mut ssss = tide::with_state(State::new(db));
+    let tok = make_db("tokens")?;
+    let mut ssss = tide::with_state(State::new(db, tok));
     ssss
-        .at(":sid")
+        .at(":id")
+        .with(add_auth_info)
+        .with(signed_pow_auth)
         .with(session_id)
         .get(ssss_get)
         .put(ssss_put)
@@ -85,24 +93,6 @@ async fn health(_req: Request<()>) -> Result<Response>
     Ok(Response::new(StatusCode::NoContent))
 }
 
-#[derive(Clone)]
-struct State<T>
-where
-    T: Database + Clone + Send + Sync
-{
-    db: Arc<T>,
-}
-
-impl<T> State<T>
-where
-    T: Database + Clone + Send + Sync
-{
-    fn new(db: T) -> Self
-    {
-        Self { db: Arc::new(db), }
-    }
-}
-
 #[cfg(feature = "s3")]
 use api::S3Store;
 
@@ -121,41 +111,71 @@ fn make_db(name: &'static str) -> anyhow::Result<FileStore>
     FileStore::try_from(name)
 }
 
-//fn db_for_name<T>(name: &'static str) -> Result<Box<T>>
-//where
-//    T: Database + Send + Sync
-//{
-//    Ok(Box::new(match cfg!(feature = "s3") {
-//        #[cfg(feature = "s3")]
-//        true => api::S3Store::new(name),
-//        _ => api::FileStore::try_from(name),
-//    }?))
-//}
-
-struct VaultId(String);
-
-fn vault_id<'a, T>(mut req: Request<State<T>>, next: Next<'a, State<T>>)
+/// Short circuit the middleware chain if the request is not authorized.
+///
+fn signed_pow_auth<'a, T>(mut req: Request<State<T>>, next: Next<'a, State<T>>)
 -> Pin<Box<dyn Future<Output = Result> + Send + 'a>>
 where
     T: Database + Clone + Send + Sync + 'static
 {
     Box::pin(async {
-        let p = req.param("pub").map_err(bad_request)?;
+        let resp = match auth::check(&mut req).await {
+            Ok(()) => next.run(req).await,
+            Err(reason) => reason,
+        };
+        Ok(resp)
+    })
+}
+
+/// On the way out, attach auth_info to all responses.
+///
+fn add_auth_info<'a, T>(req: Request<State<T>>, next: Next<'a, State<T>>)
+-> Pin<Box<dyn Future<Output = Result> + Send + 'a>>
+where
+    T: Database + Clone + Send + Sync + 'static
+{
+    Box::pin(async {
+        let tok = req.state().tok.clone();
+        let resp = auth::add_info(next.run(req).await, tok).await;
+        Ok(resp)
+    })
+}
+
+struct VaultId(String);
+
+// Extract the VaultId from the url parameter for conveniennce.
+//
+fn ensure_vault_id<'a, T>(mut req: Request<State<T>>, next: Next<'a, State<T>>)
+-> Pin<Box<dyn Future<Output = Result> + Send + 'a>>
+where
+    T: Database + Clone + Send + Sync + 'static
+{
+    Box::pin(async {
+        let p = req.param("id")
+            .map_err(bad_request)?;
         let vid = VaultId(String::from(p));
         req.set_ext(vid);
         Ok(next.run(req).await)
     })
 }
 
-fn pubkey<'a, T>(mut req: Request<State<T>>, next: Next<'a, State<T>>)
+// Make sure the vault in the url matches the public key that generated the
+// signature on the request. Requires VaultId middleware. Returns status 403
+// forbidden if there is a mismatch.
+//
+fn check_ownership<'a, T>(req: Request<State<T>>, next: Next<'a, State<T>>)
 -> Pin<Box<dyn Future<Output = Result> + Send + 'a>>
 where
     T: Database + Clone + Send + Sync + 'static
 {
     Box::pin(async {
         let id = req.ext::<VaultId>().unwrap();
-        let pk = pubkey_from_id(&id.0).map_err(bad_request)?;
-        req.set_ext(pk);
+        let target = pubkey_from_url_b64(&id.0)
+            .map_err(bad_request)?;
+        let user = req.ext::<UserId>().unwrap().0;
+        if target != user {
+            return Err(forbidden("pubkey mismatch"));
+        }
         Ok(next.run(req).await)
     })
 }
@@ -167,7 +187,7 @@ where
     let response = Response::builder(200)
         .body("ok")
         .header("Access-Control-Allow-Origin", "*")
-        .header("Access-Control-Allow-Headers", "x-uno-timestamp, x-uno-signature")
+        .header("Access-Control-Allow-Headers", "uno-timestamp, uno-signature")
         .build();
 
     Ok(response)
@@ -179,49 +199,29 @@ where
 {
     let db = &req.state().db;
     let id = &req.ext::<VaultId>().unwrap().0;
-    let pk = req.ext::<uno::PublicKey>().unwrap();
-
-    let signature = req.header("x-uno-signature")
-        .ok_or_else(|| bad_request("missing signature"))?.as_str();
-    let timestamp = req.header("x-uno-timestamp")
-        .ok_or_else(|| bad_request("missing timestamp"))?.as_str();
-    let rawsig = signature_from_header(&signature)
-        .map_err(bad_request)?;
-    pk.verify(timestamp.as_bytes(), &rawsig)
-        .map_err(unauthorized)?;
 
     let vault = db.get(id).await.map_err(not_found)?;
 
     let response = Response::builder(200)
         .body(Body::from_bytes(vault))
         .header("Access-Control-Allow-Origin", "*")
-        .header("Access-Control-Allow-Headers", "x-uno-timestamp, x-uno-signature")
+        .header(
+            "Access-Control-Allow-Headers",
+            "WWW-Authenticate, Authentication-Info")
         .build();
 
     Ok(response)
 }
 
-async fn store_vault<T>(mut req: Request<State<T>>) -> Result<Body>
+async fn store_vault<T>(req: Request<State<T>>) -> Result<Body>
 where
     T: Database + Clone + Send + Sync + 'static
 {
-    // Read the body first because it's a mutating operation.
-    let body = req.body_bytes().await.map_err(server_err)?;
-
     let db = &req.state().db;
     let id = &req.ext::<VaultId>().unwrap().0;
-    let pk = req.ext::<uno::PublicKey>().unwrap();
+    let body = &req.ext::<BodyBytes>().unwrap().0;
 
-    if body.len() < 65 {
-        return Err(bad_request("body too short"));
-    }
-    let (raw_sig, blob) = body.split_at(64);
-    let arr_sig = <[u8; uno::SIGNATURE_LENGTH]>::try_from(raw_sig)
-        .map_err(bad_request)?;
-    let signature = uno::Signature::new(arr_sig);
-
-    pk.verify(blob, &signature).map_err(unauthorized)?;
-    db.put(id, blob).await.map_err(server_err)?;
+    db.put(id, &body).await.map_err(server_err)?;
     let vault = db.get(id).await.map_err(not_found)?;
 
     Ok(Body::from_bytes(vault))
@@ -245,7 +245,7 @@ where
     T: Database + Clone + Send + Sync + 'static
 {
     Box::pin(async {
-        let p = req.param("sid").map_err(bad_request)?;
+        let p = req.param("id").map_err(bad_request)?;
         let sid = SessionId(String::from(p));
         req.set_ext(sid);
         Ok(next.run(req).await)
@@ -259,18 +259,17 @@ where
     let db = &req.state().db;
     let sid = &req.ext::<SessionId>().unwrap().0;
     let session = db.get(sid).await.map_err(not_found)?;
+
     Ok(Body::from_bytes(session))
 }
 
-async fn ssss_put<T>(mut req: Request<State<T>>) -> Result<Body>
+async fn ssss_put<T>(req: Request<State<T>>) -> Result<Body>
 where
     T: Database + Clone + Send + Sync + 'static
 {
-    // Read the body first because it's a mutating operation.
-    let body = req.body_bytes().await.map_err(server_err)?;
-
     let db = &req.state().db;
     let sid = &req.ext::<SessionId>().unwrap().0;
+    let body = &req.ext::<BodyBytes>().unwrap().0;
 
     db.put(sid, &body).await.map_err(server_err)?;
 
@@ -278,20 +277,20 @@ where
     Ok(Body::from_bytes(session))
 }
 
-async fn ssss_patch<T>(mut req: Request<State<T>>) -> Result<Body>
+async fn ssss_patch<T>(req: Request<State<T>>) -> Result<Body>
 where
     T: Database + Clone + Send + Sync + 'static
 {
-    // Read the body first because it's a mutating operation.
-    let body = req.body_json::<Value>().await
-        .map_err(bad_request)?;
-
     let db = &req.state().db;
     let sid = &req.ext::<SessionId>().unwrap().0;
 
     let json = db.get(sid).await
         .map_err(not_found)?;
     let mut doc = serde_json::from_slice::<Value>(&json)
+        .map_err(server_err)?;
+
+    let bytes = &req.ext::<BodyBytes>().unwrap().0;
+    let body = serde_json::from_slice::<Value>(&bytes)
         .map_err(bad_request)?;
 
     merge(&mut doc, &body);
@@ -327,11 +326,19 @@ fn server_err<M>(msg: M) -> Error
     Error::from_str(StatusCode::InternalServerError, msg)
 }
 
+#[allow(dead_code)]
 fn unauthorized<M>(msg: M) -> Error
     where
         M: Display + Debug + Send + Sync + 'static,
 {
     Error::from_str(StatusCode::Unauthorized, msg)
+}
+
+fn forbidden<M>(msg: M) -> Error
+    where
+        M: Display + Debug + Send + Sync + 'static,
+{
+    Error::from_str(StatusCode::Forbidden, msg)
 }
 
 #[cfg(test)]
