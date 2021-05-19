@@ -52,6 +52,7 @@ async fn main() -> anyhow::Result<()>
     let mut services = tide::with_state(State::new(db, tok));
     services
         .at(":name")
+        .with(add_auth_info)
         .with(signed_pow_auth)
         .get(fetch_service);
     api

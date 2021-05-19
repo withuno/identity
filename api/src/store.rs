@@ -9,16 +9,17 @@ use async_std::path::Path;
 use async_std::path::PathBuf;
 use async_trait::async_trait;
 use std::ffi::OsStr;
+use std::fmt::Debug;
 
 #[async_trait]
-pub trait Database: Send + Sync {
+pub trait Database: Send + Sync + Debug {
     async fn exists(&self, object: &str) -> Result<bool>;
     async fn get(&self, object: &str) -> Result<Vec<u8>>;
     async fn put(&self, object: &str, data: &[u8]) -> Result<()>;
     async fn del(&self, object: &str) -> Result<()>;
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct FileStore
 {
     dir: PathBuf,
@@ -85,7 +86,7 @@ impl TryFrom<&'static str> for FileStore
 
 /// Store to S3 and also the file system
 #[cfg(feature = "s3")]
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct S3Store {
     creds: Credentials,
     bucket: Bucket,

@@ -16,7 +16,7 @@ pub use store::*;
 use std::sync::Arc;
 
 /// Request state is used in the auth layer so declare it here.
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct State<T>
 where
     T: Database + Clone + Send + Sync

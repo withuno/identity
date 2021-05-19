@@ -25,7 +25,10 @@ where
         Some(a) => {
             // Parse the header and retrieve the nonce token.
             let auth = parse_auth(a.last().as_str())?;
-            let tok_req = req.state().tok.get(&auth.params["nonce"]).await;
+            let raw_nonce = base64::decode(&auth.params["nonce"]).unwrap();
+            use base64::URL_SAFE_NO_PAD;
+            let url_nonce = base64::encode_config(&raw_nonce, URL_SAFE_NO_PAD);
+            let tok_req = req.state().tok.get(&url_nonce).await;
             req.set_ext(auth);
             match tok_req {
                 Err(_) => "unknown nonce",
@@ -79,9 +82,9 @@ struct AuthTemp
 /// An Authorization header looks like:
 /// ```text
 ///     Authorization: Tuned-Digest-Signature
-///       identity="51cBN9gxEge6aTv4yvF0IgSsV6ETCa+puinqlpRj4pg",
-///       nonce="ij4SWiKZAkdL0SftSavftcuKJJUX9ZOutn4zg56cPDo",
-///       response="Zm9vZGJhYmU$/fwnKozofi8OfqZEt0+3z3n10GZG3pekDvE0WvW66NE",
+///       identity="51cBN9gxEge6aTv4yvF0IgSsV6ETCa+puinqlpRj4pg";
+///       nonce="ij4SWiKZAkdL0SftSavftcuKJJUX9ZOutn4zg56cPDo";
+///       response="Zm9vZGJhYmU$/fwnKozofi8OfqZEt0+3z3n10GZG3pekDvE0WvW66NE";
 ///       signature="N+xFiSOAJWIx5JGwRrNvlWVXD+3vzv0NZASETEdfDm61nY...(64)"
 /// ```
 ///
@@ -91,8 +94,8 @@ struct AuthTemp
 ///
 fn parse_auth(header: &str) -> Result<AuthTemp, Response>
 {
-    let items = match header.strip_prefix("Tuned-Digest-Signature") {
-        Some(s) => s.trim().split(','),
+    let items = match header.strip_prefix("tuned-digest-signature") {
+        Some(s) => s.trim().split(';'),
         None => {
             return Err(Response::builder(StatusCode::BadRequest)
                 .body(r#"{"message": "unrecognized auth scheme"}"#)
@@ -214,7 +217,7 @@ where
 /// challenge, the response has the form:
 ///
 /// ```text
-///     argon2(b64(nonce):req.method:req.path:blake3(body_bytes))
+///     b64(salt)$argon2(b64(nonce):req.method:req.path:b64(blake3(body_bytes)))
 /// ```
 ///
 /// If the response successfully completes the challenge, proceed to validating
@@ -244,18 +247,26 @@ where
         .map_err(|_| Response::new(StatusCode::InternalServerError))?;
 
     let auth = req.ext::<AuthTemp>().unwrap();
-    let nonce = &auth.params["challenge"];
+    let nonce = &auth.params["nonce"];
     let response = &auth.params["response"];
     let method = req.method();
     let path = req.url().path();
+    // print!("req: {:?}\n", &req);
+    // print!("host: {:?}\n", req.host());
+    // print!("url: {}\n", req.url());
+    // let foo = req.param("--tide-path-rest");
+    // print!("tide-path: {:?}\n", foo);
     let bhash = blake3::hash(&body);
     let bhashb = bhash.as_bytes();
     let body_enc = base64::encode_config(bhashb, base64::STANDARD_NO_PAD);
     let challenge = format!("{}:{}:{}:{}", nonce, method, path, body_enc);
+    print!("challenge: {}\n", &challenge);
 
     // The response contains both the salt and the hash so just cat them.
     use argon2::{Argon2, PasswordHash, PasswordVerifier,};
     let enc_hash = format!("{}${}", token.argon, response);
+    print!("enc_hash: {}\n", &enc_hash);
+
     let hash = PasswordHash::new(&enc_hash)
         .map_err(|_| { 
             Response::builder(StatusCode::BadRequest)
@@ -272,7 +283,10 @@ where
         Err(Error::Password) => {
             return Ok(Err("challenge verification failed"));
         },
-        Err(_) => return Err(Response::new(StatusCode::BadRequest)),
+        Err(e) => {
+            print!("error: {:?}", e);
+            return Err(Response::new(StatusCode::BadRequest));
+        },
         Ok(()) => {}, // success
     };
 
@@ -293,7 +307,7 @@ where
                 .build()
         })?;
     use uno::Verifier;
-    if pubkey.verify(challenge.as_bytes(), &signature).is_err() {
+    if pubkey.verify(response.as_bytes(), &signature).is_err() {
         return Ok(Err("signature verification failed"));
     }
 
@@ -327,26 +341,29 @@ where
     let auth = match gen_nonce(actions, req.state().tok.clone()).await {
         Ok((nonce, token)) => {
             let mut params = String::new();
+            params.push_str("tuned-digest-signature");
+            params.push(' ');
             params.push_str("nonce");
             params.push('=');
             use base64::STANDARD_NO_PAD;
             params.push_str(&base64::encode_config(nonce, STANDARD_NO_PAD));
-            params.push(',');
+            params.push(';');
             params.push_str("algorithm");
             params.push('=');
             params.push_str(&token.argon);
-            params.push(',');
+            params.push(';');
             params.push_str("actions");
             params.push('=');
-            params.push_str(&token.allow.join(":"));
+            params.push_str(&token.allow.join(","));
             params
         },
         Err(_) => return Response::new(StatusCode::InternalServerError),
     };
 
+    let body = format!(r#"{{"reason":"{}","action":"{}"}}"#, reason, action);
     Response::builder(StatusCode::Unauthorized)
         .header("WWW-Authenticate", auth)
-        .body(format!(r#"{{"reason":"{}","action":"{}""#, reason, action))
+        .body(format!("{}\n", body))
         .build()
 }
 
@@ -373,12 +390,12 @@ where
         info.push_str("nextnonce");
         info.push('=');
         info.push_str(&base64::encode_config(&nonce, base64::STANDARD_NO_PAD));
-        info.push(',');
+        info.push(';');
         info.push_str("scopes");
         info .push('=');
-        info.push_str(&actions.join(":"));
+        info.push_str(&actions.join(","));
         response
-            .insert_header("Authentication-Info", info);
+            .insert_header("authentication-info", info);
     }
     return response;
 }
