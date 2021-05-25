@@ -23,6 +23,20 @@ use tide::{Body, Error, Next, Request, Response, Result, StatusCode};
 #[async_std::main]
 async fn main() -> anyhow::Result<()>
 {
+    let api = build_api()?;
+
+    let mut srv = tide::new();
+    srv
+        .at("/v1")
+        .nest(api);
+
+    tide::log::start();
+    srv.listen("[::]:8080").await?;
+    Ok(())
+}
+
+fn build_api() -> anyhow::Result<tide::Server<()>>
+{
     let mut api = tide::new();
     api
         .at("health")
@@ -78,15 +92,9 @@ async fn main() -> anyhow::Result<()>
         .nest(ssss);
     }
 
-    let mut srv = tide::new();
-    srv
-        .at("/v1")
-        .nest(api);
-
-    tide::log::start();
-    srv.listen("[::]:8080").await?;
-    Ok(())
+    Ok(api)
 }
+
 
 async fn health(_req: Request<()>) -> Result<Response>
 {
@@ -345,11 +353,20 @@ fn forbidden<M>(msg: M) -> Error
 #[cfg(test)]
 mod unit
 {
-    // use super::*;
+    use super::*;
+
+    use surf::Request;
+
+    use async_std::task;
 
     #[test]
-    fn v1_health_get()
+    fn v1_health_get() -> Result<()>
     {
+        let api = build_api()?;
+        let req: Request = surf::get("http://example.com/health").into();
+        let res: Response = task::block_on(api.respond(req))?;
+        assert_eq!(StatusCode::NoContent, res.status());
+        Ok(())
     }
 
     #[test]
