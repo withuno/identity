@@ -37,7 +37,15 @@ where
                     let result = verify_challenge(token, req).await?;
                     match result {
                         Err(message) => message,
-                        Ok(()) => return Ok(()),
+                        Ok(()) => {
+                            // Burn the nonce.
+                            // If this fails, don't worry about it right now
+                            // we probably want to log this type of failure in
+                            // the future and make sure it's not happening much
+                            let _ = req.state().tok.del(&url_nonce).await;
+                            // allow the request
+                            return Ok(())
+                        },
                     }
                 },
             }
@@ -136,7 +144,7 @@ use serde::{Serialize, Deserialize};
 /// argon2 tuning parameters forms the token.
 ///
 #[derive(Serialize, Deserialize, Debug)]
-struct Token
+pub struct Token
 {
     /// A list of allowed actions for the associated argon2 tuning params.
     /// Available actions are: 
@@ -148,12 +156,12 @@ struct Token
     /// The debug and proxy actions are not used because our api does not
     /// service the trace or connect http methods. 
     ///
-    allow: Vec<String>,
+    pub allow: Vec<String>,
    
     /// The encoded form of the argon2 tuning parameters (the enture encoded
     /// hash of some data minus the actual hash).
     ///
-    argon: String,
+    pub argon: String,
 }
 
 const NO_CREATE: [&str; 5] = ["read", "update", "delete", "debug", "proxy"];
@@ -251,6 +259,7 @@ where
     let response = &auth.params["response"];
     let method = req.method();
     let path = req.url().path();
+    // TODO: figure out how to fix this
     // print!("req: {:?}\n", &req);
     // print!("host: {:?}\n", req.host());
     // print!("url: {}\n", req.url());
@@ -260,12 +269,12 @@ where
     let bhashb = bhash.as_bytes();
     let body_enc = base64::encode_config(bhashb, base64::STANDARD_NO_PAD);
     let challenge = format!("{}:{}:{}:{}", nonce, method, path, body_enc);
-    print!("challenge: {}\n", &challenge);
+    // print!("challenge: {}\n", &challenge);
 
     // The response contains both the salt and the hash so just cat them.
     use argon2::{Argon2, PasswordHash, PasswordVerifier,};
     let enc_hash = format!("{}${}", token.argon, response);
-    print!("enc_hash: {}\n", &enc_hash);
+    // print!("enc_hash: {}\n", &enc_hash);
 
     let hash = PasswordHash::new(&enc_hash)
         .map_err(|_| { 
@@ -363,7 +372,7 @@ where
     let body = format!(r#"{{"reason":"{}","action":"{}"}}"#, reason, action);
     Response::builder(StatusCode::Unauthorized)
         .header("WWW-Authenticate", auth)
-        .body(format!("{}\n", body))
+        .body(format!("{}", body))
         .build()
 }
 
@@ -378,8 +387,8 @@ where
     }
     for actions in vec!(CREATE.to_vec(), NO_CREATE.to_vec()).into_iter() {
         let astrs = actions.iter().map(|s| s.to_string()).collect();
-        let nonce = match gen_nonce(astrs, token_db.clone()).await {
-            Ok((n, _)) => n,
+        let (nonce, token) = match gen_nonce(astrs, token_db.clone()).await {
+            Ok((n, t)) => (n, t),
             // This isn't the end of the world and shouldn't fail the request.
             // The client will just have to request a new nonce and then that
             // portion can fail more gracefully if e.g. the token db is down
@@ -390,6 +399,10 @@ where
         info.push_str("nextnonce");
         info.push('=');
         info.push_str(&base64::encode_config(&nonce, base64::STANDARD_NO_PAD));
+        info.push(';');
+        info.push_str("argon");
+        info.push('=');
+        info.push_str(&token.argon);
         info.push(';');
         info.push_str("scopes");
         info .push('=');
@@ -444,5 +457,3 @@ where
     let _ = token_db.put(&id, data.as_bytes()).await?;
     Ok((nonce, token))
 }
-
-
