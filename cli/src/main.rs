@@ -403,7 +403,7 @@ fn do_ssss(c: Ssss) -> Result<String>
             let data = c.data
                 .context("data is required")?;
             let s = cli::patch_ssss(c.url, mu, data.as_bytes())
-                .context("cannot upload session")?;
+                .context("cannot update session")?;
             Ok(s)
         }
         m => Err(anyhow!("method {} not supported for ssss", m)),
@@ -447,6 +447,7 @@ fn mu_from_b64(seed: String) -> Result<uno::Mu> {
         .map_err(|_| anyhow!("seed must be exactly 10 bytes long"))?;
     Ok(uno::Mu(array))
 }
+
 #[cfg(test)]
 mod test
 {

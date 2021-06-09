@@ -293,8 +293,12 @@ where
             return Ok(Err("challenge verification failed"));
         },
         Err(e) => {
-            print!("error: {:?}", e);
-            return Err(Response::new(StatusCode::BadRequest));
+            // todo: make sure all these errors are okay to expose and do
+            // constitute an issue with the request as provided by the client.
+            let res: Response = Response::builder(StatusCode::BadRequest)
+                .body(format!(r#"{{"message": "{}"}}"#, e))
+                .into();
+            return Err(res);
         },
         Ok(()) => {}, // success
     };
