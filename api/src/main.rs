@@ -758,6 +758,27 @@ mod unit
             .map_err(|_| anyhow!("body read failed"))?;
         assert_eq!(expected_body.as_bytes(), actual_body);
 
+        let aih2 = res2.header("authentication-info")
+            .ok_or(anyhow!("expected auth-info"))?;
+        let auth_info2 = parse_auth_info(aih2.last().as_str())?;
+        let n64_3 = &auth_info2.params["nextnonce"];
+
+        // use the wrong identity
+        let bad_id_bytes = [0xFFu8; uno::ID_LENGTH];
+        let bad_id = uno::Id(bad_id_bytes);
+
+        let mut req3: Request = surf::get(url.to_string()).into();
+        let mut salt3 = [0u8; 8];
+        rand::thread_rng().fill_bytes(&mut salt3);
+        let salt64_3 = base64::encode_config(&salt3, STANDARD_NO_PAD);
+        let alg3 = &auth_info2.params["argon"];
+        sign_req(&mut req3, &n64_3, alg3, &salt64_3, &bad_id)?;
+
+        let res3: Response = task::block_on(api.respond(req3))
+            .map_err(|_| anyhow!("request failed"))?;
+
+        assert_eq!(StatusCode::Forbidden, res3.status());
+
         Ok(())
     }
 
@@ -791,6 +812,27 @@ mod unit
 
         let stored_data = task::block_on(dbs.vaults.get(&vid))?;
         assert_eq!(expected_body.as_bytes(), stored_data);
+
+        let aih = res.header("authentication-info")
+            .ok_or(anyhow!("expected auth-info"))?;
+        let auth_info = parse_auth_info(aih.last().as_str())?;
+        let n64_2 = &auth_info.params["nextnonce"];
+
+        // use the wrong identity
+        let bad_id_bytes = [0xFFu8; uno::ID_LENGTH];
+        let bad_id = uno::Id(bad_id_bytes);
+
+        let mut req2: Request = surf::get(url.to_string()).into();
+        let mut salt2 = [0u8; 8];
+        rand::thread_rng().fill_bytes(&mut salt2);
+        let salt64_2 = base64::encode_config(&salt2, STANDARD_NO_PAD);
+        let alg2 = &auth_info.params["argon"];
+        sign_req(&mut req2, &n64_2, alg2, &salt64_2, &bad_id)?;
+
+        let res2: Response = task::block_on(api.respond(req2))
+            .map_err(|_| anyhow!("request failed"))?;
+
+        assert_eq!(StatusCode::Forbidden, res2.status());
 
         Ok(())
     }
