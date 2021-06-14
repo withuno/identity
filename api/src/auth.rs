@@ -4,7 +4,6 @@
 //
 
 use crate::State;
-use std::sync::Arc;
 
 use std::result::Result;
 use tide::{Request, Response, StatusCode};
@@ -15,7 +14,7 @@ use tide::{Request, Response, StatusCode};
 ///
 pub async fn check<T>(req: &mut Request<State<T>>) -> Result<(), Response>
 where
-    T: Database + Clone + Send + Sync + 'static
+    T: Database + 'static
 {
     // If there is an Authorization header and it is valid for this request,
     // then let it through.
@@ -186,7 +185,7 @@ use http_types::Method;
 async fn get_req_scope<T>(req: &Request<State<T>>)
 -> Result<&'static str, StatusCode>
 where
-    T: Database + Clone + Send + Sync + 'static
+    T: Database + 'static
 {
     let scope = match req.method() {
         Method::Get | Method::Options => "read",
@@ -238,7 +237,7 @@ where
 async fn verify_challenge<T>(token: Token, req: &mut Request<State<T>>)
 -> Result<Result<(), &'static str>, Response> 
 where
-    T: Database + Clone + Send + Sync + 'static
+    T: Database + 'static
 {
     // 1.
     let scope = get_req_scope(req).await?;
@@ -344,7 +343,7 @@ pub struct BodyBytes(pub Vec<u8>);
 ///
 async fn unauthorized<T>(req: &Request<State<T>>, reason: &str) -> Response
 where
-    T: Database + Clone + Send + Sync + 'static
+    T: Database + 'static
 {
     let action = match get_req_scope(req).await {
         Ok(a) => a,
@@ -382,9 +381,9 @@ where
 
 /// Add the Authentication-Info header to all responses that don't otherwise
 /// get a WWW-Authenticate header (non 401).
-pub async fn add_info<T>(mut response: Response, token_db: Arc<T>) -> Response
+pub async fn add_info<T>(mut response: Response, token_db: T) -> Response
 where
-    T: Database + Clone + Send + Sync + 'static
+    T: Database + 'static
 {
     if let StatusCode::Unauthorized = response.status() {
         return response;
@@ -443,10 +442,10 @@ use crate::store::Database;
 /// Generate a nonce, store the token in the database, and return a base64 url
 /// safe encoded string representing the nonce bytes.
 ///
-async fn gen_nonce<T>(actions: Vec<String>, token_db: Arc<T>)
+async fn gen_nonce<T>(actions: Vec<String>, token_db: T)
 -> anyhow::Result<([u8;32], Token)>
 where
-    T: Database + Clone + Send + Sync + 'static
+    T: Database + 'static
 {
     let mut nonce = [0u8;32];
     use rand::RngCore;

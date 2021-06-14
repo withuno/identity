@@ -26,11 +26,7 @@ async fn main() -> anyhow::Result<()> {
     let srv = make_db("services")?;
     let ses = make_db("sessions")?;
 
-    let vault_state = State::new(vau, tok.clone());
-    let service_state = State::new(srv, tok.clone());
-    let session_state = State::new(ses, tok.clone());
-
-    let api = build_api(vault_state, service_state, session_state)?;
+    let api = build_api(tok, vau, srv, ses)?;
 
     let mut srv = tide::new();
     srv.at("/v1").nest(api);
@@ -41,9 +37,10 @@ async fn main() -> anyhow::Result<()> {
 }
 
 fn build_api<T>(
-    vault_state: State<T>,
-    service_state: State<T>,
-    session_state: State<T>,
+    token_db: T,
+    vault_db: T,
+    service_db: T,
+    session_db: T,
 ) -> anyhow::Result<tide::Server<()>>
 where
     T: Database + 'static,
@@ -52,7 +49,8 @@ where
     api.at("health").get(health);
 
     {
-        let mut vaults = tide::with_state(vault_state);
+        let mut vaults =
+            tide::with_state(State::new(vault_db, token_db.clone()));
         vaults
             .at(":id")
             .with(add_auth_info)
@@ -66,7 +64,8 @@ where
     }
 
     {
-        let mut services = tide::with_state(service_state);
+        let mut services =
+            tide::with_state(State::new(service_db, token_db.clone()));
         services
             .at(":name")
             .with(add_auth_info)
@@ -77,7 +76,8 @@ where
 
     {
         // Shamir's Secret Sharing Session
-        let mut ssss = tide::with_state(session_state);
+        let mut ssss =
+            tide::with_state(State::new(session_db, token_db.clone()));
         ssss.at(":id")
             .with(session_id)
             .get(ssss_get)
@@ -518,13 +518,12 @@ mod unit {
             sessions: FileStore::new(temps.sessions.path().as_os_str())?,
         };
 
-        let vault_state = State::new(dbs.vaults.clone(), dbs.tokens.clone());
-        let service_state =
-            State::new(dbs.services.clone(), dbs.tokens.clone());
-        let session_state =
-            State::new(dbs.sessions.clone(), dbs.tokens.clone());
-
-        let api = build_api(vault_state, service_state, session_state)?;
+        let api = build_api(
+            dbs.tokens.clone(),
+            dbs.vaults.clone(),
+            dbs.services.clone(),
+            dbs.sessions.clone(),
+        )?;
         Ok((api, dbs, temps))
     }
 
