@@ -12,7 +12,7 @@ use std::ffi::OsStr;
 use std::fmt::Debug;
 
 #[async_trait]
-pub trait Database: Send + Sync + Debug {
+pub trait Database: Send + Sync + Clone + Debug {
     async fn exists(&self, object: &str) -> Result<bool>;
     async fn get(&self, object: &str) -> Result<Vec<u8>>;
     async fn put(&self, object: &str, data: &[u8]) -> Result<()>;

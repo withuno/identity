@@ -19,7 +19,7 @@ use std::sync::Arc;
 #[derive(Clone, Debug)]
 pub struct State<T>
 where
-    T: Database + Clone + Send + Sync
+    T: Database
 {
     pub db: Arc<T>,
     pub tok: Arc<T>,
@@ -27,7 +27,7 @@ where
 
 impl<T> State<T>
 where
-    T: Database + Clone + Send + Sync
+    T: Database
 {
     pub fn new(db: T, tok: T) -> Self
     {

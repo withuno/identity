@@ -5,12 +5,12 @@
 
 use std::fmt::{Debug, Display};
 use std::future::Future;
-use std::pin::Pin; 
+use std::pin::Pin;
 
-use api::pubkey_from_url_b64;
 use api::auth;
 use api::auth::BodyBytes;
 use api::auth::UserId;
+use api::pubkey_from_url_b64;
 use api::Database;
 use api::State;
 
@@ -19,88 +19,77 @@ use serde_json::Value;
 
 use tide::{Body, Error, Next, Request, Response, Result, StatusCode};
 
-
 #[async_std::main]
-async fn main() -> anyhow::Result<()>
-{
+async fn main() -> anyhow::Result<()> {
     let tok = make_db("tokens")?;
     let vau = make_db("vaults")?;
     let srv = make_db("services")?;
     let ses = make_db("sessions")?;
 
-    let api = build_api(tok, vau, srv, ses)?;
+    let vault_state = State::new(vau, tok.clone());
+    let service_state = State::new(srv, tok.clone());
+    let session_state = State::new(ses, tok.clone());
+
+    let api = build_api(vault_state, service_state, session_state)?;
 
     let mut srv = tide::new();
-    srv
-        .at("/v1")
-        .nest(api);
+    srv.at("/v1").nest(api);
 
     tide::log::start();
     srv.listen("[::]:8080").await?;
     Ok(())
 }
 
-fn build_api<T>(tok: T, vau: T, srv: T, ses: T)
--> anyhow::Result<tide::Server<()>>
+fn build_api<T>(
+    vault_state: State<T>,
+    service_state: State<T>,
+    session_state: State<T>,
+) -> anyhow::Result<tide::Server<()>>
 where
-    T: Database + Clone + Send + Sync + 'static
+    T: Database + 'static,
 {
     let mut api = tide::new();
-    api
-        .at("health")
-        .get(health);
+    api.at("health").get(health);
 
     {
-    let db = State::new(vau, tok.clone());
-    let mut vaults = tide::with_state(db);
-    vaults
-        .at(":id")
-        .with(add_auth_info)
-        .with(signed_pow_auth)
-        .with(ensure_vault_id)
-        .with(check_ownership)
-        .options(option_vault)
-        .get(fetch_vault)
-        .put(store_vault);
-    api
-        .at("vaults")
-        .nest(vaults);
+        let mut vaults = tide::with_state(vault_state);
+        vaults
+            .at(":id")
+            .with(add_auth_info)
+            .with(signed_pow_auth)
+            .with(ensure_vault_id)
+            .with(check_ownership)
+            .options(option_vault)
+            .get(fetch_vault)
+            .put(store_vault);
+        api.at("vaults").nest(vaults);
     }
 
     {
-    let db = State::new(srv, tok.clone());
-    let mut services = tide::with_state(db);
-    services
-        .at(":name")
-        .with(add_auth_info)
-        .with(signed_pow_auth)
-        .get(fetch_service);
-    api
-        .at("services")
-        .nest(services);
+        let mut services = tide::with_state(service_state);
+        services
+            .at(":name")
+            .with(add_auth_info)
+            .with(signed_pow_auth)
+            .get(fetch_service);
+        api.at("services").nest(services);
     }
 
     {
-    // Shamir's Secret Sharing Session
-    let db = State::new(ses, tok.clone());
-    let mut ssss = tide::with_state(db);
-    ssss
-        .at(":id")
-        .with(session_id)
-        .get(ssss_get)
-        .put(ssss_put)
-        .patch(ssss_patch);
-    api
-        .at("ssss")
-        .nest(ssss);
+        // Shamir's Secret Sharing Session
+        let mut ssss = tide::with_state(session_state);
+        ssss.at(":id")
+            .with(session_id)
+            .get(ssss_get)
+            .put(ssss_put)
+            .patch(ssss_patch);
+        api.at("ssss").nest(ssss);
     }
 
     Ok(api)
 }
 
-
-async fn health(_req: Request<()>) -> Result<Response>
-{
+async fn health(_req: Request<()>) -> Result<Response> {
     Ok(Response::new(StatusCode::NoContent))
 }
 
@@ -108,8 +97,7 @@ async fn health(_req: Request<()>) -> Result<Response>
 use api::S3Store;
 
 #[cfg(feature = "s3")]
-fn make_db(name: &str) -> anyhow::Result<S3Store>
-{
+fn make_db(name: &str) -> anyhow::Result<S3Store> {
     S3Store::new(name)
 }
 
@@ -117,18 +105,19 @@ fn make_db(name: &str) -> anyhow::Result<S3Store>
 use api::FileStore;
 
 #[cfg(not(feature = "s3"))]
-fn make_db(name: &'static str) -> anyhow::Result<FileStore>
-{
+fn make_db(name: &'static str) -> anyhow::Result<FileStore> {
     use std::convert::TryFrom;
     FileStore::try_from(name)
 }
 
 /// Short circuit the middleware chain if the request is not authorized.
 ///
-fn signed_pow_auth<'a, T>(mut req: Request<State<T>>, next: Next<'a, State<T>>)
--> Pin<Box<dyn Future<Output = Result> + Send + 'a>>
+fn signed_pow_auth<'a, T>(
+    mut req: Request<State<T>>,
+    next: Next<'a, State<T>>,
+) -> Pin<Box<dyn Future<Output = Result> + Send + 'a>>
 where
-    T: Database + Clone + Send + Sync + 'static
+    T: Database + 'static,
 {
     Box::pin(async {
         let resp = match auth::check(&mut req).await {
@@ -141,10 +130,12 @@ where
 
 /// On the way out, attach auth_info to all responses.
 ///
-fn add_auth_info<'a, T>(req: Request<State<T>>, next: Next<'a, State<T>>)
--> Pin<Box<dyn Future<Output = Result> + Send + 'a>>
+fn add_auth_info<'a, T>(
+    req: Request<State<T>>,
+    next: Next<'a, State<T>>,
+) -> Pin<Box<dyn Future<Output = Result> + Send + 'a>>
 where
-    T: Database + Clone + Send + Sync + 'static
+    T: Database + 'static,
 {
     Box::pin(async {
         let tok = req.state().tok.clone();
@@ -158,14 +149,15 @@ struct VaultId(String);
 
 // Extract the VaultId from the url parameter for conveniennce.
 //
-fn ensure_vault_id<'a, T>(mut req: Request<State<T>>, next: Next<'a, State<T>>)
--> Pin<Box<dyn Future<Output = Result> + Send + 'a>>
+fn ensure_vault_id<'a, T>(
+    mut req: Request<State<T>>,
+    next: Next<'a, State<T>>,
+) -> Pin<Box<dyn Future<Output = Result> + Send + 'a>>
 where
-    T: Database + Clone + Send + Sync + 'static
+    T: Database + 'static,
 {
     Box::pin(async {
-        let p = req.param("id")
-            .map_err(bad_request)?;
+        let p = req.param("id").map_err(bad_request)?;
         let vid = VaultId(String::from(p));
         req.set_ext(vid);
         Ok(next.run(req).await)
@@ -176,15 +168,16 @@ where
 // signature on the request. Requires VaultId middleware. Returns status 403
 // forbidden if there is a mismatch.
 //
-fn check_ownership<'a, T>(req: Request<State<T>>, next: Next<'a, State<T>>)
--> Pin<Box<dyn Future<Output = Result> + Send + 'a>>
+fn check_ownership<'a, T>(
+    req: Request<State<T>>,
+    next: Next<'a, State<T>>,
+) -> Pin<Box<dyn Future<Output = Result> + Send + 'a>>
 where
-    T: Database + Clone + Send + Sync + 'static
+    T: Database + 'static,
 {
     Box::pin(async {
         let id = req.ext::<VaultId>().unwrap();
-        let target = pubkey_from_url_b64(&id.0)
-            .map_err(bad_request)?;
+        let target = pubkey_from_url_b64(&id.0).map_err(bad_request)?;
         let user = req.ext::<UserId>().unwrap().0;
         if target != user {
             return Err(forbidden("pubkey mismatch"));
@@ -195,12 +188,15 @@ where
 
 async fn option_vault<T>(_req: Request<State<T>>) -> Result
 where
-    T: Database + Clone + Send + Sync + 'static
+    T: Database + 'static,
 {
     let response = Response::builder(200)
         .body("ok")
         .header("Access-Control-Allow-Origin", "*")
-        .header("Access-Control-Allow-Headers", "uno-timestamp, uno-signature")
+        .header(
+            "Access-Control-Allow-Headers",
+            "uno-timestamp, uno-signature",
+        )
         .build();
 
     Ok(response)
@@ -208,7 +204,7 @@ where
 
 async fn fetch_vault<T>(req: Request<State<T>>) -> Result
 where
-    T: Database + Clone + Send + Sync + 'static
+    T: Database + 'static,
 {
     let db = &req.state().db;
     let id = &req.ext::<VaultId>().unwrap().0;
@@ -220,7 +216,8 @@ where
         .header("Access-Control-Allow-Origin", "*")
         .header(
             "Access-Control-Allow-Headers",
-            "WWW-Authenticate, Authentication-Info")
+            "WWW-Authenticate, Authentication-Info",
+        )
         .build();
 
     Ok(response)
@@ -228,7 +225,7 @@ where
 
 async fn store_vault<T>(req: Request<State<T>>) -> Result<Body>
 where
-    T: Database + Clone + Send + Sync + 'static
+    T: Database + 'static,
 {
     let db = &req.state().db;
     let id = &req.ext::<VaultId>().unwrap().0;
@@ -242,7 +239,7 @@ where
 
 async fn fetch_service<T>(req: Request<State<T>>) -> Result<Body>
 where
-    T: Database + Clone + Send + Sync + 'static
+    T: Database + 'static,
 {
     let db = &req.state().db;
     let name = req.param("name").map_err(bad_request)?;
@@ -252,10 +249,12 @@ where
 
 struct SessionId(String);
 
-fn session_id<'a, T>(mut req: Request<State<T>>, next: Next<'a, State<T>>)
--> Pin<Box<dyn Future<Output = Result> + Send + 'a>>
+fn session_id<'a, T>(
+    mut req: Request<State<T>>,
+    next: Next<'a, State<T>>,
+) -> Pin<Box<dyn Future<Output = Result> + Send + 'a>>
 where
-    T: Database + Clone + Send + Sync + 'static
+    T: Database + 'static,
 {
     Box::pin(async {
         let p = req.param("id").map_err(bad_request)?;
@@ -267,7 +266,7 @@ where
 
 async fn ssss_get<T>(req: Request<State<T>>) -> Result<Body>
 where
-    T: Database + Clone + Send + Sync + 'static
+    T: Database + 'static,
 {
     let db = &req.state().db;
     let sid = &req.ext::<SessionId>().unwrap().0;
@@ -278,7 +277,7 @@ where
 
 async fn ssss_put<T>(mut req: Request<State<T>>) -> Result<Body>
 where
-    T: Database + Clone + Send + Sync + 'static
+    T: Database + 'static,
 {
     let body = req.body_bytes().await?;
 
@@ -293,72 +292,67 @@ where
 
 async fn ssss_patch<T>(mut req: Request<State<T>>) -> Result<Body>
 where
-    T: Database + Clone + Send + Sync + 'static
+    T: Database + 'static,
 {
     let body = req.body_bytes().await?;
 
     let db = &req.state().db;
     let sid = &req.ext::<SessionId>().unwrap().0;
 
-    let json = db.get(sid).await
-        .map_err(not_found)?;
-    let mut doc = serde_json::from_slice::<Value>(&json)
-        .map_err(server_err)?;
+    let json = db.get(sid).await.map_err(not_found)?;
+    let mut doc =
+        serde_json::from_slice::<Value>(&json).map_err(server_err)?;
 
-    let body_json = serde_json::from_slice::<Value>(&body)
-        .map_err(bad_request)?;
+    let body_json =
+        serde_json::from_slice::<Value>(&body).map_err(bad_request)?;
 
     merge(&mut doc, &body_json);
 
-    let data = serde_json::to_vec(&doc)
-        .map_err(server_err)?;
-    db.put(sid, &data).await
-        .map_err(server_err)?;
+    let data = serde_json::to_vec(&doc).map_err(server_err)?;
+    db.put(sid, &data).await.map_err(server_err)?;
 
-    let session = db.get(sid).await
-        .map_err(not_found)?;
+    let session = db.get(sid).await.map_err(not_found)?;
     Ok(Body::from_bytes(session))
 }
 
 fn bad_request<M>(msg: M) -> Error
-    where
-        M: Display + Debug + Send + Sync + 'static,
+where
+    M: Display + Debug + Send + Sync + 'static,
 {
     Error::from_str(StatusCode::BadRequest, msg)
 }
 
 fn not_found<M>(msg: M) -> Error
-    where
-        M: Display + Debug + Send + Sync + 'static,
+where
+    M: Display + Debug + Send + Sync + 'static,
 {
     Error::from_str(StatusCode::NotFound, msg)
 }
 
 fn server_err<M>(msg: M) -> Error
-    where
-        M: Display + Debug + Send + Sync + 'static,
+where
+    M: Display + Debug + Send + Sync + 'static,
 {
     Error::from_str(StatusCode::InternalServerError, msg)
 }
 
 #[allow(dead_code)]
 fn unauthorized<M>(msg: M) -> Error
-    where
-        M: Display + Debug + Send + Sync + 'static,
+where
+    M: Display + Debug + Send + Sync + 'static,
 {
     Error::from_str(StatusCode::Unauthorized, msg)
 }
 
 fn forbidden<M>(msg: M) -> Error
-    where
-        M: Display + Debug + Send + Sync + 'static,
+where
+    M: Display + Debug + Send + Sync + 'static,
 {
     Error::from_str(StatusCode::Forbidden, msg)
 }
 
 #[cfg(test)]
-mod unit
-{
+mod unit {
     use super::*;
 
     use anyhow::anyhow;
@@ -381,12 +375,12 @@ mod unit
     use tempfile::TempDir;
 
     use uno::Id;
-    use uno::ID_LENGTH;
     use uno::KeyPair;
-    use uno::Signer;
     use uno::Mu;
-    use uno::MU_LENGTH;
     use uno::Session;
+    use uno::Signer;
+    use uno::ID_LENGTH;
+    use uno::MU_LENGTH;
 
     use api::Database;
 
@@ -408,9 +402,13 @@ mod unit
     }
 
     // Add the correct authorization header to the request
-    fn sign_req(req: &mut Request, n64: &str, argon: &str, s64: &str, id: &Id)
-    -> anyhow::Result<()>
-    {
+    fn sign_req(
+        req: &mut Request,
+        n64: &str,
+        argon: &str,
+        s64: &str,
+        id: &Id,
+    ) -> anyhow::Result<()> {
         //let n64 = base64::encode_config(nonce, base64::STANDARD_NO_PAD);
         let body = req.take_body();
         let bbytes: Vec<u8> = task::block_on(body.into_bytes())
@@ -433,9 +431,10 @@ mod unit
             .map_err(|_| anyhow!("param parse failed"))?;
         let alg_id = hash.algorithm;
         let cbytes = &challenge.as_bytes();
-        let salt = password_hash::Salt::new(&s64)
-            .map_err(|_| anyhow!("bad salt"))?;
-        let pow = alg.hash_password(cbytes, Some(alg_id), params, salt)
+        let salt =
+            password_hash::Salt::new(&s64).map_err(|_| anyhow!("bad salt"))?;
+        let pow = alg
+            .hash_password(cbytes, Some(alg_id), params, salt)
             .map_err(|_| anyhow!("hash generation failed"))?;
         let response = format!("{}${}", s64, pow.hash.unwrap());
 
@@ -455,23 +454,20 @@ mod unit
         Ok(())
     }
 
-    struct AuthInfoTemp
-    {
+    struct AuthInfoTemp {
         params: HashMap<String, String>,
     }
 
-    struct WwwAuthTemp
-    {
+    struct WwwAuthTemp {
         params: HashMap<String, String>,
     }
 
-    fn parse_www_auth(header: &str) -> anyhow::Result<WwwAuthTemp>
-    {
+    fn parse_www_auth(header: &str) -> anyhow::Result<WwwAuthTemp> {
         let items = match header.strip_prefix("tuned-digest-signature") {
             Some(s) => s.trim().split(';'),
             None => {
                 bail!("wrong auth type");
-            },
+            }
         };
 
         let mut map = HashMap::new();
@@ -479,34 +475,36 @@ mod unit
             let kv: Vec<&str> = i.trim().splitn(2, "=").collect();
             map.insert(kv[0].into(), kv[1].into());
         }
-        let keys = ["nonce", "algorithm", "actions",];
-        if keys.iter().fold(true, |a, k| a && map.contains_key(&k.to_string())) {
-            Ok(WwwAuthTemp{params: map,})
+        let keys = ["nonce", "algorithm", "actions"];
+        if keys
+            .iter()
+            .fold(true, |a, k| a && map.contains_key(&k.to_string()))
+        {
+            Ok(WwwAuthTemp { params: map })
         } else {
             Err(anyhow!("invalid www-auth"))
         }
     }
 
-    fn parse_auth_info(header: &str) -> anyhow::Result<AuthInfoTemp>
-    {
+    fn parse_auth_info(header: &str) -> anyhow::Result<AuthInfoTemp> {
         let items = header.trim().split(';');
         let mut map = HashMap::new();
         for i in items {
             let kv: Vec<&str> = i.trim().splitn(2, "=").collect();
             map.insert(kv[0].into(), kv[1].into());
         }
-        let keys = ["nextnonce", "argon", "scopes",];
-        if keys.iter().fold(true, |a, k| a && map.contains_key(&k.to_string())) {
-            Ok(AuthInfoTemp{params: map,})
+        let keys = ["nextnonce", "argon", "scopes"];
+        if keys
+            .iter()
+            .fold(true, |a, k| a && map.contains_key(&k.to_string()))
+        {
+            Ok(AuthInfoTemp { params: map })
         } else {
             Err(anyhow!("invalid auth-info"))
         }
     }
 
-    fn setup_tmpdir_api()
-    -> anyhow::Result<
-        (tide::Server<()>, Dbs, Temps,)
-    > {
+    fn setup_tmpdir_api() -> anyhow::Result<(tide::Server<()>, Dbs, Temps)> {
         let temps = Temps {
             tokens: TempDir::new()?,
             vaults: TempDir::new()?,
@@ -519,17 +517,21 @@ mod unit
             services: FileStore::new(temps.services.path().as_os_str())?,
             sessions: FileStore::new(temps.sessions.path().as_os_str())?,
         };
-        let api = build_api(
-            dbs.tokens.clone(),
-            dbs.vaults.clone(),
-            dbs.services.clone(),
-            dbs.sessions.clone(),
-        )?;
-        Ok((api, dbs, temps,))
+
+        let vault_state = State::new(dbs.vaults.clone(), dbs.tokens.clone());
+        let service_state =
+            State::new(dbs.services.clone(), dbs.tokens.clone());
+        let session_state =
+            State::new(dbs.sessions.clone(), dbs.tokens.clone());
+
+        let api = build_api(vault_state, service_state, session_state)?;
+        Ok((api, dbs, temps))
     }
 
-    fn init_nonce(dbs: &Dbs, scopes: &[&'static str]) -> anyhow::Result<String>
-    {
+    fn init_nonce(
+        dbs: &Dbs,
+        scopes: &[&'static str],
+    ) -> anyhow::Result<String> {
         let n64 = "U4L+xVHzX4qzBSDPv5NJMhB2HJuhkksmFqJe7geX+xA";
         let n = base64::decode_config(&n64, STANDARD_NO_PAD)?;
         let n64url = base64::encode_config(&n, URL_SAFE_NO_PAD);
@@ -541,9 +543,8 @@ mod unit
     }
 
     #[test]
-    fn v1_health_get() -> anyhow::Result<()>
-    {
-        let (api, _dbs, _tmp)  = setup_tmpdir_api()?;
+    fn v1_health_get() -> anyhow::Result<()> {
+        let (api, _dbs, _tmp) = setup_tmpdir_api()?;
         let req: Request = surf::get("http://example.com/health").into();
         let res: Response = task::block_on(api.respond(req))
             .map_err(|_| anyhow!("request failed"))?;
@@ -552,8 +553,7 @@ mod unit
     }
 
     #[test]
-    fn v1_authentication() -> anyhow::Result<()>
-    {
+    fn v1_authentication() -> anyhow::Result<()> {
         // test www-authenticate
         // test auth-info
         // test scopes
@@ -574,8 +574,7 @@ mod unit
             .put(|_| async { Ok(Response::new(StatusCode::NoContent)) });
 
         let mut api = tide::new();
-        api.at("/foo")
-            .nest(foo);
+        api.at("/foo").nest(foo);
 
         let url = Url::parse("http://example.com/foo/bar")?;
 
@@ -585,7 +584,8 @@ mod unit
             .map_err(|_| anyhow!("request0 failed"))?;
 
         // process the www-authenticate header
-        let www_auth_header0 = res0.header("www-authenticate")
+        let www_auth_header0 = res0
+            .header("www-authenticate")
             .ok_or(anyhow!("expected www-authenticate header"))?;
         let www_auth1 = parse_www_auth(www_auth_header0.last().as_str())?;
         let n64_1 = &www_auth1.params["nonce"];
@@ -607,7 +607,8 @@ mod unit
         assert_eq!(StatusCode::NoContent, res1.status());
 
         // grab the nextnonce
-        let aih1 = res1.header("authentication-info")
+        let aih1 = res1
+            .header("authentication-info")
             .ok_or(anyhow!("expected auth-info"))?;
         let auth_info2 = parse_auth_info(aih1.last().as_str())?;
         let n64_2 = &auth_info2.params["nextnonce"];
@@ -618,9 +619,7 @@ mod unit
         rand::thread_rng().fill_bytes(&mut salt2);
         let salt64_2 = base64::encode_config(&salt2, STANDARD_NO_PAD);
 
-        let mut req2: Request = surf::put(url.to_string())
-            .body("baz")
-            .into();
+        let mut req2: Request = surf::put(url.to_string()).body("baz").into();
         let alg2 = &auth_info2.params["argon"];
         sign_req(&mut req2, &n64_2, alg2, &salt64_2, &id)?;
 
@@ -635,7 +634,8 @@ mod unit
         assert_eq!(exp_body2.as_bytes(), actual_body2);
 
         // now use the correct scoped token
-        let www_auth_header2 = res2.header("www-authenticate")
+        let www_auth_header2 = res2
+            .header("www-authenticate")
             .ok_or(anyhow!("expected www-authenticate header"))?;
         let www_auth3 = parse_www_auth(www_auth_header2.last().as_str())?;
         let n64_3 = &www_auth3.params["nonce"];
@@ -644,21 +644,20 @@ mod unit
         rand::thread_rng().fill_bytes(&mut salt3);
         let salt64_3 = base64::encode_config(&salt3, STANDARD_NO_PAD);
 
-        let mut req3: Request = surf::put(url.to_string())
-            .body("baz")
-            .into();
+        let mut req3: Request = surf::put(url.to_string()).body("baz").into();
 
         let alg3 = &www_auth3.params["algorithm"];
         sign_req(&mut req3, &n64_3, alg3, &salt64_3, &id)?;
 
         let fut3 = api.respond(req3);
-        let res3: Response = task::block_on(fut3)
-            .map_err(|_| anyhow!("request3 failed"))?;
+        let res3: Response =
+            task::block_on(fut3).map_err(|_| anyhow!("request3 failed"))?;
 
         assert_eq!(StatusCode::NoContent, res3.status());
 
         // try a create
-        let aih3 = res3.header("authentication-info")
+        let aih3 = res3
+            .header("authentication-info")
             .ok_or(anyhow!("expected auth-info"))?;
         let auth_info4 = parse_auth_info(aih3.last().as_str())?;
         // todo: turns out this happens to be the right scope. need to fix the
@@ -674,16 +673,14 @@ mod unit
         rand::thread_rng().fill_bytes(&mut salt4);
         let salt64_4 = base64::encode_config(&salt4, STANDARD_NO_PAD);
 
-        let mut req4: Request = surf::put(url.to_string())
-            .body("qux")
-            .into();
+        let mut req4: Request = surf::put(url.to_string()).body("qux").into();
 
         let alg4 = &auth_info4.params["argon"];
         sign_req(&mut req4, &n64_4, alg4, &salt64_4, &id)?;
 
         let fut4 = api.respond(req4);
-        let res4: Response = task::block_on(fut4)
-            .map_err(|_| anyhow!("request4 failed"))?;
+        let res4: Response =
+            task::block_on(fut4).map_err(|_| anyhow!("request4 failed"))?;
 
         assert_eq!(StatusCode::NoContent, res4.status());
 
@@ -692,15 +689,13 @@ mod unit
         rand::thread_rng().fill_bytes(&mut salt5);
         let salt64_5 = base64::encode_config(&salt5, STANDARD_NO_PAD);
 
-        let mut req5: Request = surf::put(url.to_string())
-            .body("qux")
-            .into();
+        let mut req5: Request = surf::put(url.to_string()).body("qux").into();
 
         sign_req(&mut req5, &n64_4, alg4, &salt64_5, &id)?;
 
         let fut5 = api.respond(req5);
-        let mut res5: Response = task::block_on(fut5)
-            .map_err(|_| anyhow!("request5 failed"))?;
+        let mut res5: Response =
+            task::block_on(fut5).map_err(|_| anyhow!("request5 failed"))?;
 
         assert_eq!(StatusCode::Unauthorized, res5.status());
 
@@ -713,8 +708,7 @@ mod unit
     }
 
     #[test]
-    fn v1_vault_get() -> anyhow::Result<()>
-    {
+    fn v1_vault_get() -> anyhow::Result<()> {
         // setup api
         // keep tmp dirs till the end of the function so they don't get deleted
         let (api, dbs, _tmp) = setup_tmpdir_api()?;
@@ -734,7 +728,8 @@ mod unit
 
         assert_eq!(StatusCode::NotFound, res1.status());
 
-        let aih1 = res1.header("authentication-info")
+        let aih1 = res1
+            .header("authentication-info")
             .ok_or(anyhow!("expected auth-info"))?;
         let auth_info1 = parse_auth_info(aih1.last().as_str())?;
         let n64_2 = &auth_info1.params["nextnonce"];
@@ -758,7 +753,8 @@ mod unit
             .map_err(|_| anyhow!("body read failed"))?;
         assert_eq!(expected_body.as_bytes(), actual_body);
 
-        let aih2 = res2.header("authentication-info")
+        let aih2 = res2
+            .header("authentication-info")
             .ok_or(anyhow!("expected auth-info"))?;
         let auth_info2 = parse_auth_info(aih2.last().as_str())?;
         let n64_3 = &auth_info2.params["nextnonce"];
@@ -783,8 +779,7 @@ mod unit
     }
 
     #[test]
-    fn v1_vault_put() -> anyhow::Result<()>
-    {
+    fn v1_vault_put() -> anyhow::Result<()> {
         let (api, dbs, _tmp) = setup_tmpdir_api()?;
         let n64 = init_nonce(&dbs, &["create", "update"])?;
 
@@ -813,7 +808,8 @@ mod unit
         let stored_data = task::block_on(dbs.vaults.get(&vid))?;
         assert_eq!(expected_body.as_bytes(), stored_data);
 
-        let aih = res.header("authentication-info")
+        let aih = res
+            .header("authentication-info")
             .ok_or(anyhow!("expected auth-info"))?;
         let auth_info = parse_auth_info(aih.last().as_str())?;
         let n64_2 = &auth_info.params["nextnonce"];
@@ -838,8 +834,7 @@ mod unit
     }
 
     #[test]
-    fn v1_service_get() -> anyhow::Result<()>
-    {
+    fn v1_service_get() -> anyhow::Result<()> {
         let (api, dbs, _tmp) = setup_tmpdir_api()?;
         let id = Id([0u8; ID_LENGTH]); // use the zero id
         let n64_1 = init_nonce(&dbs, &["read"])?;
@@ -852,14 +847,15 @@ mod unit
         sign_req(&mut req1, &n64_1, TUNE, salt1, &id)?;
         let mut req2 = req1.clone(); // for the next request
         let fut1 = api.respond(req1);
-        let res1: Response = task::block_on(fut1)
-            .map_err(|_| anyhow!("request failed"))?;
+        let res1: Response =
+            task::block_on(fut1).map_err(|_| anyhow!("request failed"))?;
 
         // expect a 404 since the file does not exist yet
         assert_eq!(StatusCode::NotFound, res1.status());
 
         // get the next nonce so we can redo the request
-        let aih1 = res1.header("authentication-info")
+        let aih1 = res1
+            .header("authentication-info")
             .ok_or(anyhow!("expected auth-info"))?;
         let auth_info1 = parse_auth_info(aih1.last().as_str())?;
         let n64_2 = &auth_info1.params["nextnonce"];
@@ -877,8 +873,8 @@ mod unit
         sign_req(&mut req2, &n64_2, alg2, &salt64_2, &id)?;
 
         let fut2 = api.respond(req2);
-        let mut res2: Response = task::block_on(fut2)
-            .map_err(|_| anyhow!("request2 failed"))?;
+        let mut res2: Response =
+            task::block_on(fut2).map_err(|_| anyhow!("request2 failed"))?;
 
         assert_eq!(StatusCode::Ok, res2.status());
         let expected_body2 = r#"{"test": "data"}"#;
@@ -890,10 +886,9 @@ mod unit
     }
 
     #[test]
-    fn v1_services_put() -> anyhow::Result<()>
-    {
+    fn v1_services_put() -> anyhow::Result<()> {
         let (api, dbs, _tmp) = setup_tmpdir_api()?;
-        let n64 = init_nonce(&dbs, &["create", "update",])?;
+        let n64 = init_nonce(&dbs, &["create", "update"])?;
 
         let resource = "http://example.com/services/foo.json";
         let url = Url::parse(resource)?;
@@ -904,16 +899,15 @@ mod unit
         let id = Id([0u8; ID_LENGTH]);
         sign_req(&mut req, &n64, TUNE, SALT, &id)?;
         let fut = api.respond(req);
-        let res: Response = task::block_on(fut)
-            .map_err(|_| anyhow!("request failed"))?;
+        let res: Response =
+            task::block_on(fut).map_err(|_| anyhow!("request failed"))?;
 
         assert_eq!(StatusCode::MethodNotAllowed, res.status());
         Ok(())
     }
 
     #[test]
-    fn v1_services_delete() -> anyhow::Result<()>
-    {
+    fn v1_services_delete() -> anyhow::Result<()> {
         let (api, dbs, _tmp) = setup_tmpdir_api()?;
         let n64 = init_nonce(&dbs, &["delete"])?;
 
@@ -924,16 +918,15 @@ mod unit
         let id = Id([0u8; ID_LENGTH]);
         sign_req(&mut req, &n64, TUNE, SALT, &id)?;
         let fut = api.respond(req);
-        let res: Response = task::block_on(fut)
-            .map_err(|_| anyhow!("request failed"))?;
+        let res: Response =
+            task::block_on(fut).map_err(|_| anyhow!("request failed"))?;
 
         assert_eq!(StatusCode::MethodNotAllowed, res.status());
         Ok(())
     }
 
     #[test]
-    fn v1_ssss_get() -> anyhow::Result<()>
-    {
+    fn v1_ssss_get() -> anyhow::Result<()> {
         let (api, dbs, _tmp) = setup_tmpdir_api()?;
 
         let mu = Mu([0u8; MU_LENGTH]);
@@ -946,8 +939,8 @@ mod unit
         let req1: Request = surf::get(url.to_string()).into();
         let req2 = req1.clone(); // for the next request
         let fut1 = api.respond(req1);
-        let res1: Response = task::block_on(fut1)
-            .map_err(|_| anyhow!("request failed"))?;
+        let res1: Response =
+            task::block_on(fut1).map_err(|_| anyhow!("request failed"))?;
 
         // expect a 404 since the file does not exist yet
         assert_eq!(StatusCode::NotFound, res1.status());
@@ -958,8 +951,8 @@ mod unit
         let _ = task::block_on(foof)?;
 
         let fut2 = api.respond(req2);
-        let mut res2: Response = task::block_on(fut2)
-            .map_err(|_| anyhow!("request2 failed"))?;
+        let mut res2: Response =
+            task::block_on(fut2).map_err(|_| anyhow!("request2 failed"))?;
 
         assert_eq!(StatusCode::Ok, res2.status());
         let expected_body2 = r#"{"test":"data"}"#;
@@ -971,8 +964,7 @@ mod unit
     }
 
     #[test]
-    fn v1_ssss_put() -> anyhow::Result<()>
-    {
+    fn v1_ssss_put() -> anyhow::Result<()> {
         let (api, dbs, _tmp) = setup_tmpdir_api()?;
 
         let mu = Mu([0u8; MU_LENGTH]);
@@ -987,8 +979,8 @@ mod unit
             .into();
 
         let fut1 = api.respond(req1);
-        let mut res1: Response = task::block_on(fut1)
-            .map_err(|_| anyhow!("request failed"))?;
+        let mut res1: Response =
+            task::block_on(fut1).map_err(|_| anyhow!("request failed"))?;
 
         assert_eq!(StatusCode::Ok, res1.status());
         let expected_body1 = r#"{"test":"data"}"#;
@@ -1003,8 +995,7 @@ mod unit
     }
 
     #[test]
-    fn v1_ssss_patch() -> anyhow::Result<()>
-    {
+    fn v1_ssss_patch() -> anyhow::Result<()> {
         let (api, dbs, _tmp) = setup_tmpdir_api()?;
 
         let mu = Mu([0u8; MU_LENGTH]);
@@ -1019,8 +1010,8 @@ mod unit
             .into();
 
         let fut1 = api.respond(req1);
-        let res1: Response = task::block_on(fut1)
-            .map_err(|_| anyhow!("request failed"))?;
+        let res1: Response =
+            task::block_on(fut1).map_err(|_| anyhow!("request failed"))?;
 
         assert_eq!(StatusCode::NotFound, res1.status());
 
@@ -1034,8 +1025,8 @@ mod unit
             .into();
 
         let fut2 = api.respond(req2);
-        let mut res2: Response = task::block_on(fut2)
-            .map_err(|_| anyhow!("request2 failed"))?;
+        let mut res2: Response =
+            task::block_on(fut2).map_err(|_| anyhow!("request2 failed"))?;
 
         assert_eq!(StatusCode::Ok, res2.status());
         let expected_body2 = r#"{"patch":"me in","test":"session data"}"#;
@@ -1047,8 +1038,7 @@ mod unit
     }
 
     #[allow(dead_code)]
-    fn print_body(res: &mut Response) -> anyhow::Result<()>
-    {
+    fn print_body(res: &mut Response) -> anyhow::Result<()> {
         let body_bytes = task::block_on(res.take_body().into_bytes())
             .map_err(|_| anyhow!("error reading body"))?;
         println!("{:?}", String::from_utf8(body_bytes));
