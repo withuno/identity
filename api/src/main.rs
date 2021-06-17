@@ -193,10 +193,7 @@ where
     let response = Response::builder(200)
         .body("ok")
         .header("Access-Control-Allow-Origin", "*")
-        .header(
-            "Access-Control-Allow-Headers",
-            "uno-timestamp, uno-signature",
-        )
+        .header("Access-Control-Allow-Headers", "WWW-Authenticate, Authentication-Info")
         .build();
 
     Ok(response)

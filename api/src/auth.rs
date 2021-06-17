@@ -194,8 +194,13 @@ where
         Method::Put | Method::Post => {
             let id = req.param("id")
                 .map_err(|_| StatusCode::BadRequest)?;
-            let exists = req.state().db.exists(id).await
-                .map_err(|_| StatusCode::InternalServerError)?;
+            let exists = match req.state().db.exists(id).await {
+                Ok(e) => e,
+                Err(e) => {
+                    println!("db error: {:?}", e);
+                    return Err(StatusCode::InternalServerError);
+                },
+            };
             if exists {
                 "update"
             } else {
@@ -247,10 +252,6 @@ where
 
     // 2.
     let body = req.body_bytes().await
-        // todo: don't know if empty body is error or simply the empty array
-        //       if it's an error, we have to allow this and convert the error 
-        //       to an empty array (for the hash) rather than consider it a
-        //       500 error
         .map_err(|_| Response::new(StatusCode::InternalServerError))?;
 
     let auth = req.ext::<AuthTemp>().unwrap();
@@ -258,7 +259,7 @@ where
     let response = &auth.params["response"];
     let method = req.method();
     let path = req.url().path();
-    // TODO: figure out how to fix this
+    // TODO: figure out how to fix this ^
     // print!("req: {:?}\n", &req);
     // print!("host: {:?}\n", req.host());
     // print!("url: {}\n", req.url());
@@ -386,6 +387,9 @@ where
     T: Database + 'static
 {
     if let StatusCode::Unauthorized = response.status() {
+        return response;
+    }
+    if let StatusCode::InternalServerError = response.status() {
         return response;
     }
     for actions in vec!(CREATE.to_vec(), NO_CREATE.to_vec()).into_iter() {
