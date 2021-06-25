@@ -7,7 +7,7 @@
 
 # The following is a list of all the projects to include.
 [workspace]
-members = ["adi", "api", "cli", "djb", "lib"]
+members = ["adi", "api", "cli", "djb", "s39", "lib"]
 
 # While cargo supports specifying both a path and version dependency, doing so
 # in any one of the sibling projects here would impose a file-system structure
@@ -23,4 +23,5 @@ adi = { path = "adi" }
 api = { path = "api" }
 cli = { path = "cli" }
 djb = { path = "djb" }
+s39 = { path = "s39" }
 uno = { path = "lib" }
