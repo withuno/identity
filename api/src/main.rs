@@ -5,16 +5,19 @@
 
 use anyhow::Context;
 
-use api::{build_api, S3Store};
+use api::{build_api};
 
-#[cfg(feature = "filestore")]
+#[cfg(not(feature = "s3store"))]
+use api::FileStore;
+#[cfg(not(feature = "s3store"))]
 fn make_db(name: &'static str) -> anyhow::Result<FileStore> {
-    use api::FileStore;
     use std::convert::TryFrom;
     FileStore::try_from(name)
 }
 
-#[cfg(not(feature = "filestore"))]
+#[cfg(feature = "s3store")]
+use api::store::S3Store;
+#[cfg(feature = "s3store")]
 fn make_db(name: &str) -> anyhow::Result<S3Store> {
     let key_id = std::env::var("SPACES_ACCESS_KEY_ID")
         .context("Failed to lookup SPACES_ACCESS_KEY_ID")?;

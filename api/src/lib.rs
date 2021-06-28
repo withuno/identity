@@ -9,7 +9,7 @@ use std::fmt;
 use std::fmt::{Debug, Display};
 
 pub mod store;
-pub use crate::store::{Database, S3Store};
+pub use crate::store::{Database};
 
 pub mod auth;
 use auth::{BodyBytes, UserId};

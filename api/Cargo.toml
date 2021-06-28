@@ -6,7 +6,7 @@ license = "AGPL-3.0-only"
 edition = "2018"
 
 [features]
-filestore = []
+s3store = []
 
 [dependencies]
 anyhow = "1.0"
