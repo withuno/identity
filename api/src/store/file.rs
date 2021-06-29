@@ -22,6 +22,14 @@ impl FileStore {
             dir: PathBuf::from(root),
         })
     }
+
+    pub async fn empty_dir(&self) -> Result<()> {
+        for entry in self.list("").await?.iter() {
+            fs::remove_file(entry).await?;
+        }
+
+        Ok(())
+    }
 }
 
 #[async_trait]
