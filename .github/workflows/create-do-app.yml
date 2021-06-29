@@ -61,6 +61,14 @@ jobs:
                   value: ${{ secrets.DIGITAL_OCEAN_SPACES_SECRET }}
                   scope: RUN_TIME
                   type: SECRET
+                - key: SPACES_HOSTNAME
+                  value: ${{ secrets.DIGITAL_OCEAN_SPACES_HOSTNAME }}
+                  scope: RUN_TIME
+                  type: SECRET
+                - key: SPACES_REGION
+                  value: ${{ secrets.DIGITAL_OCEAN_SPACES_REGION }}
+                  scope: RUN_TIME
+                  type: SECRET
           EOF
 
       - name: Create New App
