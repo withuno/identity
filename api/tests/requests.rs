@@ -61,13 +61,6 @@ mod requests {
             mailboxes: FileStore::new(dir.path().as_os_str()).unwrap(),
         };
 
-        async_std::task::block_on(dbs.objects.empty_dir())?;
-        async_std::task::block_on(dbs.tokens.empty_dir())?;
-        async_std::task::block_on(dbs.vaults.empty_dir())?;
-        async_std::task::block_on(dbs.services.empty_dir())?;
-        async_std::task::block_on(dbs.sessions.empty_dir())?;
-        async_std::task::block_on(dbs.mailboxes.empty_dir())?;
-
         // we don't include objects db here because its only used in tests
         let api = build_api(
             dbs.tokens.clone(),
