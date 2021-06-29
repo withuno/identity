@@ -3,12 +3,11 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 //
 
-use anyhow::Context;
 
 use api::{build_api};
 
 #[cfg(not(feature = "s3store"))]
-use api::FileStore;
+use api::store::FileStore;
 #[cfg(not(feature = "s3store"))]
 fn make_db(name: &'static str) -> anyhow::Result<FileStore> {
     use std::convert::TryFrom;
@@ -19,6 +18,8 @@ fn make_db(name: &'static str) -> anyhow::Result<FileStore> {
 use api::store::S3Store;
 #[cfg(feature = "s3store")]
 fn make_db(name: &str) -> anyhow::Result<S3Store> {
+    use anyhow::Context;
+
     let key_id = std::env::var("SPACES_ACCESS_KEY_ID")
         .context("Failed to lookup SPACES_ACCESS_KEY_ID")?;
 

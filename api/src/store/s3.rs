@@ -1,6 +1,5 @@
 use anyhow::{anyhow, ensure, Result};
 
-
 use async_trait::async_trait;
 use std::fmt;
 
@@ -14,7 +13,6 @@ use surf::{Request, Response, StatusCode};
 
 use std::fmt::Debug;
 use std::time::Duration;
-
 
 use crate::store::Database;
 
@@ -52,7 +50,9 @@ pub struct ListBucketResult {
 }
 
 impl ListBucketResult {
-    pub fn from_xml(xml: &[u8]) -> Result<ListBucketResult, DeserializationError> {
+    pub fn from_xml(
+        xml: &[u8],
+    ) -> Result<ListBucketResult, DeserializationError> {
         from_reader(xml).or(Err(DeserializationError))
     }
 }
@@ -191,12 +191,6 @@ async fn let_it_rip(req: Request) -> Result<Response> {
     let res = client.send(req).await.map_err(|e| anyhow!(e))?;
     Ok(res)
 }
-
-
-
-
-
-
 
 #[cfg(test)]
 #[cfg(feature = "s3store")]

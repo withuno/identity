@@ -7,8 +7,8 @@ use std::fmt::Debug;
 pub mod s3;
 pub use s3::S3Store;
 
-//pub mod file;
-//pub use file::FileStore;
+pub mod file;
+pub use file::FileStore;
 
 #[async_trait]
 pub trait Database: Send + Sync + Clone + Debug {
