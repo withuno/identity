@@ -158,13 +158,13 @@ mod tests {
             assert!(result.is_ok());
 
             assert_eq!(
-                result.unwrap(),
+                result.unwrap().sort(),
                 // does not need to be order dependent eventually
                 vec!(
                     "multi/key2/file1",
                     "multi/key1/file2",
                     "multi/key1/file1",
-                )
+                ).sort()
             );
         }
     }
