@@ -62,13 +62,11 @@ jobs:
                   scope: RUN_TIME
                   type: SECRET
                 - key: SPACES_HOSTNAME
-                  value: ${{ secrets.DIGITAL_OCEAN_SPACES_HOSTNAME }}
+                  value: "https://nyc3.digitaloceanspaces.com"
                   scope: RUN_TIME
-                  type: SECRET
                 - key: SPACES_REGION
-                  value: ${{ secrets.DIGITAL_OCEAN_SPACES_REGION }}
+                  value: "nyc3"
                   scope: RUN_TIME
-                  type: SECRET
           EOF
 
       - name: Create New App
