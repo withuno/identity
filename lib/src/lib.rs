@@ -28,8 +28,14 @@ impl Id
 use std::str;
 use std::convert::TryFrom;
 
-/// A share is the result of running split on an uno id.
-pub use adi::Share;
+/// A group share is the result of running split on an uno id.
+/// You need a threshold number (currently 1) of reconstructed groups in order
+/// to be able to reconstruct the original uno id.
+pub use s39::GroupShare;
+/// A share is the individual element in a group share. Shares in a group are
+/// combined to reconstruct the group share. Then group shares are combined to
+/// reconstruct the original ID.
+pub use s39::Share;
 
 /// Build an uno identity from a byte slice.
 impl TryFrom<&[u8]> for Id
@@ -121,16 +127,16 @@ impl From<&Id> for SymmetricKey
 /// The scheme parameter is a list of tuples (t, n) like [(3, 5)] which means,
 /// "one group of five with a share threshold of 3". The threshold is the
 /// minimum number of shares needed to reconstitute the identity.
-pub fn split(id: Id, scheme: &[(usize,usize)]) -> Result<Vec<Share>, Error>
+pub fn split(id: Id, scheme: &[(u8,u8)]) -> Result<Vec<GroupShare>, Error>
 {
-    let shares = adi::split(&id.0, scheme)?;
+    let shares = s39::split(&id.0, scheme)?;
     Ok(shares)
 }
 
 /// Combine shards back into the original uno id.
-pub fn combine(shares: &[Share]) -> Result<Id, Error>
+pub fn combine(shares: &[Vec<String>]) -> Result<Id, Error>
 {
-    let bytes = adi::combine(shares)?;
+    let bytes = s39::combine(shares)?;
     let id = Id::try_from(&bytes[..])?;
     Ok(id)
 }

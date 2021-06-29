@@ -9,6 +9,7 @@ edition = "2018"
 # uno libs
 adi = "0.1"
 djb = "0.1"
+s39 = "0.1"
 
 base64 = "0.13"
 blake3 = "0.3"

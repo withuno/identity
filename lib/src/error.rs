@@ -17,6 +17,8 @@ pub enum Error {
     Curve25519(djb::Error),
     /// Shamir error from adi
     Shamir(adi::Error),
+    /// SLIP-0039 Error
+    S39(s39::Error),
     /// Error from `argon2` hash lib
     Hash(String),
 }
@@ -30,6 +32,12 @@ impl From<adi::Error> for Error {
 impl From<djb::Error> for Error {
     fn from(e: djb::Error) -> Self {
         Error::Curve25519(e)
+    }
+}
+
+impl From<s39::Error> for Error {
+    fn from(e: s39::Error) -> Self {
+        Error::S39(e)
     }
 }
 
@@ -58,6 +66,7 @@ impl error::Error for Error {
             Error::Curve25519(ref s) => Some(s),
             Error::Hash(_) => None,
             Error::Shamir(ref s) => Some(s),
+            Error::S39(ref s) => Some(s),
         }
     }
 }
@@ -69,6 +78,7 @@ impl fmt::Display for Error {
             Error::Curve25519(ref s) => write!(f, "curve25519 - {}", s),
             Error::Hash(ref s) => write!(f, "argon2 - {}", s),
             Error::Shamir(ref s) => write!(f, "shamir - {}", s),
+            Error::S39(ref s) => write!(f, "slip - {}", s),
         }
     }
 }
