@@ -188,7 +188,14 @@ mod requests {
         let bhash_enc = base64::encode_config(bhashb, base64::STANDARD_NO_PAD);
         req.set_body(Body::from_bytes(bbytes));
         let method = req.method();
-        let path = req.url().path().split("/").last().unwrap();
+
+        let mut split: Vec<&str> = req.url().path().split("/").collect();
+        split.reverse();
+        split.pop();
+        split.pop();
+        split.reverse();
+
+        let path = split.join("/");
         let challenge = format!("{}:{}:/{}:{}", n64, method, path, bhash_enc);
         // println!("sign challenge: {:?}", &challenge);
 
@@ -452,9 +459,6 @@ mod requests {
 
     #[test]
     fn v1_vault_get() -> anyhow::Result<()> {
-        // setup api
-        // keep tmp dirs till the end of the function so they don't get deleted
-
         let (api, dbs) = setup_tmp_api().unwrap();
 
         let n64_1 = init_nonce(&dbs.tokens, &["read"])?;
@@ -787,68 +791,114 @@ mod requests {
     }
 
     #[test]
-    fn v1_mailbox_get() -> anyhow::Result<()> {
+    fn v1_mailboxes() {
         let (api, dbs) = setup_tmp_api().unwrap();
 
-        let n64_1 = init_nonce(&dbs.tokens, &["read"])?;
-
         let recipient_id = Id([0u8; ID_LENGTH]);
-
         let recipient_keypair = KeyPair::from(&recipient_id);
         let recipient_pk = recipient_keypair.public.as_bytes();
 
-        let mid = base64::encode_config(recipient_pk, base64::URL_SAFE_NO_PAD);
+        let sender_id = Id([1u8; ID_LENGTH]);
+        let sender_keypair = KeyPair::from(&sender_id);
+        let sender_pk = sender_keypair.public.as_bytes();
 
-        let base = Url::parse("http://example.com/mailboxes/")?;
-        let url = base.join(&mid).unwrap();
+        let request = |signed_by: &Id, mut req: Request| -> Response {
+            let nonce = init_nonce(&dbs.tokens, &["read", "create", "delete"])
+                .unwrap();
+            sign_req(&mut req, &nonce, TUNE, SALT, &signed_by).unwrap();
 
-        let mut req1: Request = surf::get(url.to_string()).into();
-        sign_req(&mut req1, &n64_1, TUNE, SALT, &recipient_id)?;
-        let mut res1: Response = task::block_on(api.respond(req1))
-            .map_err(|_| anyhow!("request failed"))?;
-        let actual_body = task::block_on(res1.take_body().into_bytes())
-            .map_err(|_| anyhow!("body read failed"))?;
-
-        let expected_body = "[]";
-        assert_eq!(expected_body.as_bytes(), actual_body);
-
-        let s1 = format!("{}/{}/{}", mid, "sender1", "1");
-        let s2 = format!("{}/{}/{}", mid, "sender1", "2");
-        let s3 = format!("{}/{}/{}", mid, "sender2", "1");
-        let s4 = format!("{}/{}/{}", "anyother", "sender1", "1");
-
-        task::block_on(dbs.mailboxes.put(&s1, b"AA"))?;
-        task::block_on(dbs.mailboxes.put(&s2, b"BB"))?;
-        task::block_on(dbs.mailboxes.put(&s3, b"CC"))?;
-        task::block_on(dbs.mailboxes.put(&s4, b"DD"))?;
-
-        let aih1 = res1
-            .header("authentication-info")
-            .ok_or(anyhow!("expected auth-info"))?;
-        let auth_info1 = parse_auth_info(aih1.last().as_str())?;
-        let n64_2 = &auth_info1.params["nextnonce"];
-
-        let mut req2: Request = surf::get(url.to_string()).into();
-        let mut salt2 = [0u8; 8];
-        rand::thread_rng().fill_bytes(&mut salt2);
-        let salt64_2 = base64::encode_config(&salt2, STANDARD_NO_PAD);
-        let alg1 = &auth_info1.params["argon"];
-        sign_req(&mut req2, &n64_2, alg1, &salt64_2, &recipient_id)?;
-
-        let mut res2: Response = task::block_on(api.respond(req2))
-            .map_err(|_| anyhow!("request failed"))?;
-
-        let actual_body = task::block_on(res2.take_body().into_bytes())
-            .map_err(|_| anyhow!("body read failed"))?;
-
-        let j = match serde_json::from_reader(&actual_body[..])? {
-            serde_json::Value::Array(v) => v,
-            _ => panic!("unexpected value from json"),
+            task::block_on(api.respond(req)).unwrap()
         };
 
-        assert_eq!(j.len(), 3);
+        {
+            // get your own mailbox
+            assert_eq!(
+                request(
+                    &recipient_id,
+                    surf::get(format!(
+                        "https://example.com/mailboxes/{}",
+                        base64::encode_config(
+                            recipient_pk,
+                            base64::URL_SAFE_NO_PAD
+                        )
+                    ))
+                    .build()
+                )
+                .status(),
+                StatusCode::Ok
+            );
 
-        Ok(())
+            // get someone else's mailbox
+            assert_eq!(
+                request(
+                    &sender_id,
+                    surf::get(format!(
+                        "https://example.com/mailboxes/{}",
+                        base64::encode_config(
+                            recipient_pk,
+                            base64::URL_SAFE_NO_PAD
+                        )
+                    ))
+                    .build()
+                )
+                .status(),
+                StatusCode::Forbidden
+            );
+
+            // post to someone's mailbox
+            assert_eq!(
+                request(
+                    &sender_id,
+                    surf::post(format!(
+                        "https://example.com/mailboxes/{}",
+                        base64::encode_config(
+                            recipient_pk,
+                            base64::URL_SAFE_NO_PAD
+                        )
+                    ))
+                    .build()
+                )
+                .status(),
+                StatusCode::Created
+            );
+
+            // delete someone else's message
+            // (even if you created it)
+            assert_eq!(
+                request(
+                    &sender_id,
+                    surf::delete(format!(
+                        "https://example.com/mailboxes/{}/{}",
+                        base64::encode_config(
+                            recipient_pk,
+                            base64::URL_SAFE_NO_PAD
+                        ),
+                        base64::encode_config(
+                            sender_pk,
+                            base64::URL_SAFE_NO_PAD
+                        ),
+                    ))
+                    .build()
+                )
+                .status(),
+                StatusCode::Forbidden
+            );
+        }
+
+        //        let s1 = format!("{}/{}/{}", mid, "sender1", "1");
+        //        let s2 = format!("{}/{}/{}", mid, "sender1", "2");
+        //        let s3 = format!("{}/{}/{}", mid, "sender2", "1");
+        //        let s4 = format!("{}/{}/{}", "anyother", "sender1", "1");
+        //
+        //        task::block_on(dbs.mailboxes.put(&s1, b"AA"))?;
+        //        task::block_on(dbs.mailboxes.put(&s2, b"BB"))?;
+        //        task::block_on(dbs.mailboxes.put(&s3, b"CC"))?;
+        //        task::block_on(dbs.mailboxes.put(&s4, b"DD"))?;
+        //
+        //        let j = match serde_json::from_reader(&actual_body[..])? {
+        //            serde_json::Value::Array(v) => v,
+        //            _ => panic!("unexpected value from json"),
+        //        };
     }
 
     #[allow(dead_code)]

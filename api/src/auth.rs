@@ -28,12 +28,14 @@ where
             use base64::URL_SAFE_NO_PAD;
             let url_nonce = base64::encode_config(&raw_nonce, URL_SAFE_NO_PAD);
             let tok_req = req.state().tok.get(&url_nonce).await;
+
             req.set_ext(auth);
             match tok_req {
                 Err(_) => "unknown nonce",
                 Ok(data) => {
                     let token = parse_token(&data)?;
                     let result = verify_challenge(token, req).await?;
+
                     match result {
                         Err(message) => message,
                         Ok(()) => {

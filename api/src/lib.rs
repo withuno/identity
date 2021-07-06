@@ -9,7 +9,7 @@ use std::fmt;
 use std::fmt::{Debug, Display};
 
 pub mod store;
-pub use crate::store::{Database};
+pub use crate::store::Database;
 
 pub mod auth;
 use auth::{BodyBytes, UserId};
@@ -21,6 +21,7 @@ use json_patch::merge;
 
 use serde_json::Value;
 
+use http_types::Method;
 use tide::{Body, Error, Next, Request, Response, Result, StatusCode};
 
 /// Short circuit the middleware chain if the request is not authorized.
@@ -37,6 +38,7 @@ where
             Ok(()) => next.run(req).await,
             Err(reason) => reason,
         };
+
         Ok(resp)
     })
 }
@@ -163,14 +165,33 @@ where
     T: Database + 'static,
 {
     Box::pin(async {
-        let id = req.ext::<MailboxId>().unwrap();
-        let target = pubkey_from_url_b64(&id.0).map_err(bad_request)?;
-        let user = req.ext::<UserId>().unwrap().0;
-        if target != user {
-            return Err(forbidden("pubkey mismatch"));
+        println!("WHAT");
+        if req.method() != Method::Post {
+            let id = req.ext::<MailboxId>().unwrap();
+            let target = pubkey_from_url_b64(&id.0).map_err(bad_request)?;
+            let user = req.ext::<UserId>().unwrap().0;
+            if target != user {
+                return Err(forbidden("pubkey mismatch"));
+            }
         }
+
+        println!("WHAT2");
         Ok(next.run(req).await)
     })
+}
+
+async fn delete_message<T>(req: Request<State<T>>) -> Result
+where
+    T: Database + 'static,
+{
+    Ok(Response::builder(204).build())
+}
+
+async fn post_mailbox<T>(req: Request<State<T>>) -> Result
+where
+    T: Database + 'static,
+{
+    Ok(Response::builder(201).build())
 }
 
 async fn fetch_mailbox<T>(req: Request<State<T>>) -> Result
@@ -390,9 +411,12 @@ where
     T: Database + 'static,
 {
     Box::pin(async {
+        println!("WHATA");
         let p = req.param("id").map_err(bad_request)?;
         let mid = MailboxId(String::from(p));
         req.set_ext(mid);
+
+        println!("WHATB");
         Ok(next.run(req).await)
     })
 }
@@ -467,14 +491,24 @@ where
 
     {
         let mut mailboxes =
-            tide::with_state(State::new(mailbox_db, token_db.clone()));
+            tide::with_state(State::new(mailbox_db.clone(), token_db.clone()));
         mailboxes
             .at(":id")
             .with(add_auth_info)
             .with(signed_pow_auth)
             .with(ensure_mailbox_id)
             .with(check_mailbox_ownership)
-            .get(fetch_mailbox);
+            .get(fetch_mailbox)
+            .post(post_mailbox)
+            .nest({
+                let mut messages = tide::with_state(State::new(
+                    mailbox_db.clone(),
+                    token_db.clone(),
+                ));
+                messages.at(":message_id").delete(delete_message);
+
+                messages
+            });
         api.at("mailboxes").nest(mailboxes);
     }
 
