@@ -165,7 +165,6 @@ where
     T: Database + 'static,
 {
     Box::pin(async {
-        println!("WHAT");
         if req.method() != Method::Post {
             let id = req.ext::<MailboxId>().unwrap();
             let target = pubkey_from_url_b64(&id.0).map_err(bad_request)?;
@@ -175,7 +174,6 @@ where
             }
         }
 
-        println!("WHAT2");
         Ok(next.run(req).await)
     })
 }
@@ -411,12 +409,10 @@ where
     T: Database + 'static,
 {
     Box::pin(async {
-        println!("WHATA");
         let p = req.param("id").map_err(bad_request)?;
         let mid = MailboxId(String::from(p));
         req.set_ext(mid);
 
-        println!("WHATB");
         Ok(next.run(req).await)
     })
 }

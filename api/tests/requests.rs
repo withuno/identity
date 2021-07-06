@@ -868,7 +868,7 @@ mod requests {
                 request(
                     &sender_id,
                     surf::delete(format!(
-                        "https://example.com/mailboxes/{}/{}",
+                        "https://example.com/mailboxes/{}/{}/12345",
                         base64::encode_config(
                             recipient_pk,
                             base64::URL_SAFE_NO_PAD
@@ -882,6 +882,27 @@ mod requests {
                 )
                 .status(),
                 StatusCode::Forbidden
+            );
+
+            // delete a message sent to you
+            assert_eq!(
+                request(
+                    &recipient_id,
+                    surf::delete(format!(
+                        "https://example.com/mailboxes/{}/{}/12345",
+                        base64::encode_config(
+                            recipient_pk,
+                            base64::URL_SAFE_NO_PAD
+                        ),
+                        base64::encode_config(
+                            sender_pk,
+                            base64::URL_SAFE_NO_PAD
+                        ),
+                    ))
+                    .build()
+                )
+                .status(),
+                StatusCode::NoContent
             );
         }
 
