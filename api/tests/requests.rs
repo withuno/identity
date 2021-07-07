@@ -791,7 +791,7 @@ mod requests {
     }
 
     #[test]
-    fn v1_mailboxes() {
+    fn v1_mailbox_auth() {
         let (api, dbs) = setup_tmp_api().unwrap();
 
         let recipient_id = Id([0u8; ID_LENGTH]);
@@ -905,21 +905,224 @@ mod requests {
                 StatusCode::NoContent
             );
         }
+    }
 
-        //        let s1 = format!("{}/{}/{}", mid, "sender1", "1");
-        //        let s2 = format!("{}/{}/{}", mid, "sender1", "2");
-        //        let s3 = format!("{}/{}/{}", mid, "sender2", "1");
-        //        let s4 = format!("{}/{}/{}", "anyother", "sender1", "1");
-        //
-        //        task::block_on(dbs.mailboxes.put(&s1, b"AA"))?;
-        //        task::block_on(dbs.mailboxes.put(&s2, b"BB"))?;
-        //        task::block_on(dbs.mailboxes.put(&s3, b"CC"))?;
-        //        task::block_on(dbs.mailboxes.put(&s4, b"DD"))?;
-        //
-        //        let j = match serde_json::from_reader(&actual_body[..])? {
-        //            serde_json::Value::Array(v) => v,
-        //            _ => panic!("unexpected value from json"),
-        //        };
+    #[test]
+    fn v1_mailbox_actions() {
+        use api::MailboxMessage;
+        use serde_json::from_slice;
+
+        let (api, dbs) = setup_tmp_api().unwrap();
+
+        let recipient_id = Id([0u8; ID_LENGTH]);
+        let recipient_pk = KeyPair::from(&recipient_id).public;
+
+        let recipient2_id = Id([1u8; ID_LENGTH]);
+        let recipient2_pk = KeyPair::from(&recipient2_id).public;
+
+        let sender_id = Id([2u8; ID_LENGTH]);
+        let sender_pk = KeyPair::from(&sender_id).public;
+
+        let sender2_id = Id([3u8; ID_LENGTH]);
+        let sender2_pk = KeyPair::from(&sender2_id).public;
+
+        let request = |signed_by: &Id,
+                       mut req: Request|
+         -> Vec<MailboxMessage> {
+            let nonce = init_nonce(&dbs.tokens, &["read", "create", "delete"])
+                .unwrap();
+            sign_req(&mut req, &nonce, TUNE, SALT, &signed_by).unwrap();
+
+            let mut r: Response = task::block_on(api.respond(req)).unwrap();
+
+            from_slice(&task::block_on(r.take_body().into_bytes()).unwrap())
+                .unwrap()
+        };
+
+        assert_eq!(
+            request(
+                &recipient_id,
+                surf::get(format!(
+                    "https://example.com/mailboxes/{}",
+                    base64::encode_config(
+                        recipient_pk,
+                        base64::URL_SAFE_NO_PAD
+                    )
+                ))
+                .build(),
+            ),
+            vec!()
+        );
+
+        assert_eq!(
+            request(
+                &sender_id,
+                surf::post(format!(
+                    "https://example.com/mailboxes/{}",
+                    base64::encode_config(
+                        recipient_pk,
+                        base64::URL_SAFE_NO_PAD
+                    )
+                ))
+                .body("message one")
+                .into()
+            ),
+            vec!(MailboxMessage {
+                id: 1,
+                sender: base64::encode_config(
+                    sender_pk,
+                    base64::URL_SAFE_NO_PAD
+                ),
+                message: b"message one".to_vec()
+            })
+        );
+
+        assert_eq!(
+            request(
+                &sender_id,
+                surf::post(format!(
+                    "https://example.com/mailboxes/{}",
+                    base64::encode_config(
+                        recipient_pk,
+                        base64::URL_SAFE_NO_PAD
+                    )
+                ))
+                .body("message two")
+                .into()
+            ),
+            vec!(MailboxMessage {
+                id: 2,
+                sender: base64::encode_config(
+                    sender_pk,
+                    base64::URL_SAFE_NO_PAD
+                ),
+                message: b"message two".to_vec()
+            })
+        );
+
+        assert_eq!(
+            request(
+                &sender2_id,
+                surf::post(format!(
+                    "https://example.com/mailboxes/{}",
+                    base64::encode_config(
+                        recipient_pk,
+                        base64::URL_SAFE_NO_PAD
+                    )
+                ))
+                .body("message two-one")
+                .into()
+            ),
+            vec!(MailboxMessage {
+                id: 1,
+                sender: base64::encode_config(
+                    sender2_pk,
+                    base64::URL_SAFE_NO_PAD
+                ),
+                message: b"message two-one".to_vec()
+            })
+        );
+
+        assert_eq!(
+            request(
+                &sender_id,
+                surf::post(format!(
+                    "https://example.com/mailboxes/{}",
+                    base64::encode_config(
+                        recipient2_pk,
+                        base64::URL_SAFE_NO_PAD
+                    )
+                ))
+                .body("message three")
+                .into()
+            ),
+            vec!(MailboxMessage {
+                id: 1,
+                sender: base64::encode_config(
+                    sender_pk,
+                    base64::URL_SAFE_NO_PAD
+                ),
+                message: b"message three".to_vec()
+            })
+        );
+
+        assert_eq!(
+            request(
+                &recipient_id,
+                surf::get(format!(
+                    "https://example.com/mailboxes/{}",
+                    base64::encode_config(
+                        recipient_pk,
+                        base64::URL_SAFE_NO_PAD
+                    )
+                ))
+                .build(),
+            ),
+            vec!(
+                MailboxMessage {
+                    id: 1,
+                    sender: base64::encode_config(
+                        sender_pk,
+                        base64::URL_SAFE_NO_PAD
+                    ),
+                    message: b"message one".to_vec()
+                },
+                MailboxMessage {
+                    id: 2,
+                    sender: base64::encode_config(
+                        sender_pk,
+                        base64::URL_SAFE_NO_PAD
+                    ),
+                    message: b"message two".to_vec()
+                },
+                MailboxMessage {
+                    id: 1,
+                    sender: base64::encode_config(
+                        sender2_pk,
+                        base64::URL_SAFE_NO_PAD
+                    ),
+                    message: b"message two-one".to_vec()
+                }
+            )
+        );
+
+        assert_eq!(
+            request(
+                &recipient2_id,
+                surf::get(format!(
+                    "https://example.com/mailboxes/{}",
+                    base64::encode_config(
+                        recipient2_pk,
+                        base64::URL_SAFE_NO_PAD
+                    )
+                ))
+                .build(),
+            ),
+            vec!(MailboxMessage {
+                id: 1,
+                sender: base64::encode_config(
+                    sender_pk,
+                    base64::URL_SAFE_NO_PAD
+                ),
+                message: b"message three".to_vec()
+            })
+        );
+
+//        assert_eq!(
+//            request(
+//                &recipient_id,
+//                surf::delete(format!(
+//                    "https://example.com/mailboxes/{}/{}/1",
+//                    base64::encode_config(
+//                        recipient_pk,
+//                        base64::URL_SAFE_NO_PAD
+//                    ),
+//                    base64::encode_config(sender_pk, base64::URL_SAFE_NO_PAD),
+//                ))
+//                .build(),
+//            ),
+//            vec!()
+//        );
     }
 
     #[allow(dead_code)]
