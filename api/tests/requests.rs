@@ -1057,7 +1057,7 @@ mod requests {
                     )
                 ))
                 .build(),
-            ),
+            ).sort_by_key(|s| s.sender.clone()),
             vec!(
                 MailboxMessage {
                     id: 1,
@@ -1083,7 +1083,7 @@ mod requests {
                     ),
                     message: b"message two-one".to_vec()
                 }
-            )
+            ).sort_by_key(|s| s.sender.clone())
         );
 
         assert_eq!(
