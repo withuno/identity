@@ -12,7 +12,8 @@ pub mod store;
 pub use crate::store::Database;
 
 pub mod mailbox;
-pub use crate::mailbox::{Mailbox, MessageRequest};
+// most of this is only used in tests, can you export there?
+pub use crate::mailbox::{Mailbox, MessageRequest, MessageStored, Payload};
 
 pub mod auth;
 use auth::{BodyBytes, UserId};
@@ -192,45 +193,21 @@ async fn post_mailbox<T>(mut req: Request<State<T>>) -> Result
 where
     T: Database + 'static,
 {
+    let body = req.body_bytes().await?;
+
+    let db = &req.state().db.clone();
     let id = &req.ext::<MailboxId>().unwrap().0;
     let signer = &req.ext::<UserId>().unwrap().0;
 
     let signerb64 = base64::encode_config(signer, base64::URL_SAFE_NO_PAD);
-    // Make sure you do not put a preceding slash here since it will
-    // replace the tmp file in the filestore version.
-    // https://doc.rust-lang.org/std/path/struct.PathBuf.html#method.push
-    // (XXX: what does the trailing slash do if you put it here?)
-    let prefix = format!("{}/{}/", id, signerb64);
 
-    let db = req.state().db.clone();
-    let body = req.body_bytes().await?;
 
-    // LOCK
-    let existing = db.list(&prefix).await?;
-    let ids: Vec<u64> = existing
-        .iter()
-        .map(|m| {
-            let id = m.split("/").last().unwrap();
-            id.parse::<u64>().unwrap()
-        })
-        .collect();
+    let m: MessageRequest = serde_json::from_slice(&body)?;
+    let message = mailbox::post_message(db, id, &signerb64, &m)?;
 
-    let next_id = match ids.iter().max() {
-        Some(max) => max + 1,
-        None => 1,
-    };
+    let r = serde_json::to_string(&message)?;
 
-    let dest = format!("{}/{}", prefix, next_id);
-    db.put(&dest, &body).await?;
-    // UNLOCK
-//
-//    let created = serde_json::to_string(&MailboxMessage {
-//        id: next_id,
-//        sender: signerb64,
-//        message: body,
-//    })?;
-
-    Ok(Response::builder(201).body("OK").build())
+    Ok(Response::builder(201).body(r).build())
 }
 
 async fn fetch_mailbox<T>(req: Request<State<T>>) -> Result
@@ -240,46 +217,13 @@ where
     let db = &req.state().db;
     let id = &req.ext::<MailboxId>().unwrap().0;
 
-    let mailbox = db.list(id).await?;
+    let mailbox = mailbox::get_messages(db, id)?;
 
-//    let messages: Vec<MailboxMessage> = mailbox
-//        .iter()
-//        .filter_map(|m| {
-//            let mut s: Vec<&str> = m.split("/").collect();
-//
-//            let id = match s.pop() {
-//                Some(v) => v,
-//                None => return None,
-//            };
-//
-//            let sender = match s.pop() {
-//                Some(v) => v,
-//                None => return None,
-//            };
-//
-//            let int_id = match id.parse::<u64>() {
-//                Ok(v) => v,
-//                Err(_) => return None,
-//            };
-//
-//            let msg = match async_std::task::block_on(db.get(m)) {
-//                Ok(v) => v,
-//                Err(_) => return None,
-//            };
-//
-//            Some(MailboxMessage {
-//                id: int_id,
-//                sender: sender.to_string(),
-//                message: msg,
-//            })
-//        })
-//        .collect();
-//
-//    let j = serde_json::to_string(&Mailbox { messages: messages })?;
+    let j = serde_json::to_string(&mailbox)?;
 
     Ok(Response::builder(200)
         .header("content-type", "application/json")
-        .body("OK")
+        .body(j)
         .build())
 }
 

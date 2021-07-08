@@ -32,7 +32,7 @@ pub struct MessageStored {
 pub fn get_messages(
     store: &impl Database,
     owner: &str,
-) -> Result<Mailbox, Box<dyn Error>> {
+) -> Result<Mailbox, anyhow::Error> {
     // LOCK
     let m = async_std::task::block_on(store.list(owner))?;
     let messages: Vec<MessageStored> = m
@@ -60,7 +60,7 @@ pub fn post_message(
     recipient: &str,
     sender: &str,
     message: &MessageRequest,
-) -> Result<MessageStored, Box<dyn Error>> {
+) -> Result<MessageStored, anyhow::Error> {
     let prefix = format!("{}/{}/", recipient, sender);
 
     // LOCK
