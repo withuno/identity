@@ -11,6 +11,9 @@ use std::fmt::{Debug, Display};
 pub mod store;
 pub use crate::store::Database;
 
+pub mod mailbox;
+pub use crate::mailbox::{Mailbox, MessageRequest};
+
 pub mod auth;
 use auth::{BodyBytes, UserId};
 
@@ -19,7 +22,6 @@ use std::pin::Pin;
 
 use json_patch::merge;
 
-use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use http_types::Method;
@@ -59,13 +61,6 @@ where
         let resp = auth::add_info(out, tok).await;
         Ok(resp)
     })
-}
-
-#[derive(Debug, Serialize, Deserialize, PartialEq)]
-pub struct MailboxMessage {
-    pub id: u64,
-    pub sender: String,
-    pub message: Vec<u8>,
 }
 
 /// Request state is used in the auth layer so declare it here.
@@ -205,7 +200,7 @@ where
     // replace the tmp file in the filestore version.
     // https://doc.rust-lang.org/std/path/struct.PathBuf.html#method.push
     // (XXX: what does the trailing slash do if you put it here?)
-    let prefix = format!("{}/{}", id, signerb64);
+    let prefix = format!("{}/{}/", id, signerb64);
 
     let db = req.state().db.clone();
     let body = req.body_bytes().await?;
@@ -228,14 +223,14 @@ where
     let dest = format!("{}/{}", prefix, next_id);
     db.put(&dest, &body).await?;
     // UNLOCK
+//
+//    let created = serde_json::to_string(&MailboxMessage {
+//        id: next_id,
+//        sender: signerb64,
+//        message: body,
+//    })?;
 
-    let created = serde_json::to_string(&vec![MailboxMessage {
-        id: next_id,
-        sender: signerb64,
-        message: body,
-    }])?;
-
-    Ok(Response::builder(201).body(created).build())
+    Ok(Response::builder(201).body("OK").build())
 }
 
 async fn fetch_mailbox<T>(req: Request<State<T>>) -> Result
@@ -247,44 +242,44 @@ where
 
     let mailbox = db.list(id).await?;
 
-    let messages: Vec<MailboxMessage> = mailbox
-        .iter()
-        .filter_map(|m| {
-            let mut s: Vec<&str> = m.split("/").collect();
-
-            let id = match s.pop() {
-                Some(v) => v,
-                None => return None,
-            };
-
-            let sender = match s.pop() {
-                Some(v) => v,
-                None => return None,
-            };
-
-            let int_id = match id.parse::<u64>() {
-                Ok(v) => v,
-                Err(_) => return None,
-            };
-
-            let msg = match async_std::task::block_on(db.get(m)) {
-                Ok(v) => v,
-                Err(_) => return None,
-            };
-
-            Some(MailboxMessage {
-                id: int_id,
-                sender: sender.to_string(),
-                message: msg,
-            })
-        })
-        .collect();
-
-    let j = serde_json::to_string(&messages)?;
+//    let messages: Vec<MailboxMessage> = mailbox
+//        .iter()
+//        .filter_map(|m| {
+//            let mut s: Vec<&str> = m.split("/").collect();
+//
+//            let id = match s.pop() {
+//                Some(v) => v,
+//                None => return None,
+//            };
+//
+//            let sender = match s.pop() {
+//                Some(v) => v,
+//                None => return None,
+//            };
+//
+//            let int_id = match id.parse::<u64>() {
+//                Ok(v) => v,
+//                Err(_) => return None,
+//            };
+//
+//            let msg = match async_std::task::block_on(db.get(m)) {
+//                Ok(v) => v,
+//                Err(_) => return None,
+//            };
+//
+//            Some(MailboxMessage {
+//                id: int_id,
+//                sender: sender.to_string(),
+//                message: msg,
+//            })
+//        })
+//        .collect();
+//
+//    let j = serde_json::to_string(&Mailbox { messages: messages })?;
 
     Ok(Response::builder(200)
         .header("content-type", "application/json")
-        .body(j)
+        .body("OK")
         .build())
 }
 

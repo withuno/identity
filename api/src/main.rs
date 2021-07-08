@@ -51,6 +51,8 @@ async fn main() -> anyhow::Result<()> {
     srv.at("/v1").nest(api);
 
     tide::log::start();
-    srv.listen("[::]:8080").await?;
+
+    let port = std::env::var("PORT").unwrap_or("8080".to_string());
+    srv.listen(format!("[::]:{}", port)).await?;
     Ok(())
 }
