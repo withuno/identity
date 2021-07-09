@@ -13,6 +13,12 @@ pub struct Payload {
     pub share: Vec<u8>,
 }
 
+#[derive(Debug, Deserialize)]
+pub struct MessageToDelete {
+    pub from: String,
+    pub id: u64,
+}
+
 #[derive(Debug, Serialize, Deserialize, PartialEq, Clone)]
 pub struct MessageRequest {
     pub action: String,
@@ -25,6 +31,23 @@ pub struct MessageStored {
     pub id: u64,
     pub from: String,
     pub data: Payload,
+}
+
+pub fn delete_messages(
+    store: &impl Database,
+    owner: &str,
+    messages: &Vec<MessageToDelete>,
+) -> Result<(), anyhow::Error> {
+    let _results: Vec<anyhow::Result<()>> = messages
+        .iter()
+        .map(|m| {
+            let dest = format!("{}/{}/{}", owner, m.from, m.id);
+
+            async_std::task::block_on(store.del(&dest))
+        })
+        .collect();
+
+    Ok(())
 }
 
 pub fn get_messages(
@@ -147,5 +170,26 @@ mod tests {
 
         let g1 = get_messages(&store, &owner1).unwrap();
         assert_eq!(g1.messages.len(), 3);
+
+        delete_messages(
+            &store,
+            &owner1,
+            &vec![
+                MessageToDelete {
+                    from: sender1,
+                    id: r2.id,
+                },
+                MessageToDelete {
+                    from: sender2,
+                    id: r3.id,
+                },
+            ],
+        )
+        .unwrap();
+
+        let g2 = get_messages(&store, &owner1).unwrap();
+        assert_eq!(g2.messages.len(), 1);
+        assert_eq!(g2.messages[0].id, 1);
+        assert_eq!(g2.messages[0].from, "sender1".to_string());
     }
 }
