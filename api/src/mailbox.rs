@@ -10,6 +10,7 @@ pub struct Mailbox {
 #[derive(Debug, Serialize, Deserialize, PartialEq, Clone)]
 pub struct Payload {
     pub signature: String,
+    #[serde(default)]
     pub share: String,
 }
 
@@ -195,10 +196,12 @@ mod tests {
 
     #[test]
     fn ios_deserialize() {
-        let s = r#"{"data":{"share":"IKlx5OuP22Xux5JSOeekYH+zLmhiemgHF25QV4yxK/Cq8VlYZa41qWElDD+Ue9tdzdm23j78MpfCTlLCew==","signature":"UEq/S7j5cXAuEo7K5LVEiMGdWbLwqQxxQNKVlXtgLbB8ecY4+u3YF3S\/uMhohZx5pmKJ6qWZccoj7+9dAqA/CQ=="},"action":"share-update","from":"DkxRk21yuqwA2Uf1P7At08OD8434fwEnAc9-Ckmve20"}"#;
+        let s1 = r#"{"data":{"share":"IKlx5OuP22Xux5JSOeekYH+zLmhiemgHF25QV4yxK/Cq8VlYZa41qWElDD+Ue9tdzdm23j78MpfCTlLCew==","signature":"UEq/S7j5cXAuEo7K5LVEiMGdWbLwqQxxQNKVlXtgLbB8ecY4+u3YF3S\/uMhohZx5pmKJ6qWZccoj7+9dAqA/CQ=="},"action":"share-update","from":"DkxRk21yuqwA2Uf1P7At08OD8434fwEnAc9-Ckmve20"}"#;
+        let s2 = r#"{"data":{"signature":"UEq/S7j5cXAuEo7K5LVEiMGdWbLwqQxxQNKVlXtgLbB8ecY4+u3YF3S\/uMhohZx5pmKJ6qWZccoj7+9dAqA/CQ=="},"action":"share-update","from":"DkxRk21yuqwA2Uf1P7At08OD8434fwEnAc9-Ckmve20"}"#;
 
         // just check that we don't panic
-        let _m: MessageRequest = serde_json::from_slice(s.as_bytes()).unwrap();
+        let _: MessageRequest = serde_json::from_slice(s1.as_bytes()).unwrap();
+        let _: MessageRequest = serde_json::from_slice(s2.as_bytes()).unwrap();
         assert!(true);
     }
 }
