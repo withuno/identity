@@ -13,7 +13,7 @@ pub struct Payload {
     pub share: Vec<u8>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 pub struct MessageToDelete {
     pub from: String,
     pub id: u64,

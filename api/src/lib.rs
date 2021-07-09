@@ -13,7 +13,9 @@ pub use crate::store::Database;
 
 pub mod mailbox;
 // most of this is only used in tests, can you export there?
-pub use crate::mailbox::{Mailbox, MessageRequest, MessageStored, Payload};
+pub use crate::mailbox::{
+    Mailbox, MessageRequest, MessageStored, MessageToDelete, Payload,
+};
 
 pub mod auth;
 use auth::{BodyBytes, UserId};
@@ -182,10 +184,20 @@ where
     })
 }
 
-async fn delete_message<T>(req: Request<State<T>>) -> Result
+async fn delete_messages<T>(mut req: Request<State<T>>) -> Result
 where
     T: Database + 'static,
 {
+    let body = req.body_bytes().await?;
+    let db = &req.state().db.clone();
+    let id = &req.ext::<MailboxId>().unwrap().0;
+
+    // XXX: this (and other deserializations) should return a 400 Bad Request
+    // not a 500.
+    let m: Vec<MessageToDelete> = serde_json::from_slice(&body)?;
+
+    mailbox::delete_messages(db, id, &m)?;
+
     Ok(Response::builder(204).build())
 }
 
@@ -200,7 +212,6 @@ where
     let signer = &req.ext::<UserId>().unwrap().0;
 
     let signerb64 = base64::encode_config(signer, base64::URL_SAFE_NO_PAD);
-
 
     let m: MessageRequest = serde_json::from_slice(&body)?;
     let message = mailbox::post_message(db, id, &signerb64, &m)?;
@@ -514,17 +525,7 @@ where
             .with(check_mailbox_ownership)
             .get(fetch_mailbox)
             .post(post_mailbox)
-            .nest({
-                let mut messages = tide::with_state(State::new(
-                    mailbox_db.clone(),
-                    token_db.clone(),
-                ));
-                messages
-                    .at("/:sender_id/:message_id")
-                    .delete(delete_message);
-
-                messages
-            });
+            .delete(delete_messages);
         api.at("mailboxes").nest(mailboxes);
     }
 

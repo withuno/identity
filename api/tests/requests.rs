@@ -1,8 +1,9 @@
-
 #[cfg(test)]
 mod requests {
-    use api::{Mailbox, MessageRequest, MessageStored, Payload};
     use api::{add_auth_info, build_api, signed_pow_auth};
+    use api::{
+        Mailbox, MessageRequest, MessageStored, MessageToDelete, Payload,
+    };
 
     use api::State;
     use tide::{Body, Response, StatusCode};
@@ -801,8 +802,6 @@ mod requests {
         let recipient_pk = recipient_keypair.public.as_bytes();
 
         let sender_id = Id([1u8; ID_LENGTH]);
-        let sender_keypair = KeyPair::from(&sender_id);
-        let sender_pk = sender_keypair.public.as_bytes();
 
         let request = |signed_by: &Id, mut req: Request| -> Response {
             let nonce = init_nonce(&dbs.tokens, &["read", "create", "delete"])
@@ -880,13 +879,9 @@ mod requests {
                 request(
                     &sender_id,
                     surf::delete(format!(
-                        "https://example.com/mailboxes/{}/{}/12345",
+                        "https://example.com/mailboxes/{}",
                         base64::encode_config(
                             recipient_pk,
-                            base64::URL_SAFE_NO_PAD
-                        ),
-                        base64::encode_config(
-                            sender_pk,
                             base64::URL_SAFE_NO_PAD
                         ),
                     ))
@@ -894,27 +889,6 @@ mod requests {
                 )
                 .status(),
                 StatusCode::Forbidden
-            );
-
-            // delete a message sent to you
-            assert_eq!(
-                request(
-                    &recipient_id,
-                    surf::delete(format!(
-                        "https://example.com/mailboxes/{}/{}/12345",
-                        base64::encode_config(
-                            recipient_pk,
-                            base64::URL_SAFE_NO_PAD
-                        ),
-                        base64::encode_config(
-                            sender_pk,
-                            base64::URL_SAFE_NO_PAD
-                        ),
-                    ))
-                    .build()
-                )
-                .status(),
-                StatusCode::NoContent
             );
         }
     }
@@ -928,14 +902,14 @@ mod requests {
         let recipient_id = Id([0u8; ID_LENGTH]);
         let recipient_pk = KeyPair::from(&recipient_id).public;
 
-        let recipient2_id = Id([1u8; ID_LENGTH]);
-        let recipient2_pk = KeyPair::from(&recipient2_id).public;
+        //let recipient2_id = Id([1u8; ID_LENGTH]);
+        //let recipient2_pk = KeyPair::from(&recipient2_id).public;
 
         let sender_id = Id([2u8; ID_LENGTH]);
         let sender_pk = KeyPair::from(&sender_id).public;
 
-        let sender2_id = Id([3u8; ID_LENGTH]);
-        let sender2_pk = KeyPair::from(&sender2_id).public;
+        //let sender2_id = Id([3u8; ID_LENGTH]);
+        //let sender2_pk = KeyPair::from(&sender2_id).public;
 
         let request = |signed_by: &Id, mut req: Request| -> Mailbox {
             let nonce = init_nonce(&dbs.tokens, &["read", "create", "delete"])
@@ -946,6 +920,14 @@ mod requests {
 
             from_slice(&task::block_on(r.take_body().into_bytes()).unwrap())
                 .unwrap()
+        };
+
+        let delete_request = |signed_by: &Id, mut req: Request| -> Response {
+            let nonce = init_nonce(&dbs.tokens, &["read", "create", "delete"])
+                .unwrap();
+            sign_req(&mut req, &nonce, TUNE, SALT, &signed_by).unwrap();
+
+            task::block_on(api.respond(req)).unwrap()
         };
 
         let post_request = |signed_by: &Id,
@@ -996,7 +978,7 @@ mod requests {
                     })
                     .unwrap()
                 )
-                .into()
+                .build()
             ),
             MessageStored {
                 id: 1,
@@ -1011,159 +993,93 @@ mod requests {
                 },
             }
         );
+
+        assert_eq!(
+            post_request(
+                &sender_id,
+                surf::post(format!(
+                    "https://example.com/mailboxes/{}",
+                    base64::encode_config(
+                        recipient_pk,
+                        base64::URL_SAFE_NO_PAD
+                    )
+                ))
+                .body(
+                    serde_json::to_string(&MessageRequest {
+                        action: "packed".to_string(),
+                        data: Payload {
+                            signature: b"signature".to_vec(),
+                            share: b"share".to_vec(),
+                        },
+                    })
+                    .unwrap()
+                )
+                .into()
+            ),
+            MessageStored {
+                id: 2,
+                action: "packed".to_string(),
+                from: base64::encode_config(
+                    sender_pk,
+                    base64::URL_SAFE_NO_PAD
+                ),
+                data: Payload {
+                    signature: b"signature".to_vec(),
+                    share: b"share".to_vec(),
+                },
+            }
+        );
+
+        assert_eq!(
+            delete_request(
+                &recipient_id,
+                surf::delete(format!(
+                    "https://example.com/mailboxes/{}",
+                    base64::encode_config(
+                        recipient_pk,
+                        base64::URL_SAFE_NO_PAD
+                    )
+                ))
+                .body(
+                    serde_json::to_string(&vec!(
+                        MessageToDelete {
+                            from: base64::encode_config(
+                                sender_pk,
+                                base64::URL_SAFE_NO_PAD
+                            ),
+                            id: 1
+                        },
+                        MessageToDelete {
+                            from: base64::encode_config(
+                                sender_pk,
+                                base64::URL_SAFE_NO_PAD
+                            ),
+                            id: 2
+                        }
+                    ))
+                    .unwrap()
+                )
+                .build(),
+            )
+            .status(),
+            StatusCode::NoContent
+        );
+
+        assert_eq!(
+            request(
+                &recipient_id,
+                surf::get(format!(
+                    "https://example.com/mailboxes/{}",
+                    base64::encode_config(
+                        recipient_pk,
+                        base64::URL_SAFE_NO_PAD
+                    )
+                ))
+                .build(),
+            ),
+            Mailbox { messages: vec!() }
+        );
     }
-    //
-    //        assert_eq!(
-    //            post_request(
-    //                &sender_id,
-    //                surf::post(format!(
-    //                    "https://example.com/mailboxes/{}",
-    //                    base64::encode_config(
-    //                        recipient_pk,
-    //                        base64::URL_SAFE_NO_PAD
-    //                    )
-    //                ))
-    //                .body("message two")
-    //                .into()
-    //            ),
-    //            MailboxMessage {
-    //                id: 2,
-    //                sender: base64::encode_config(
-    //                    sender_pk,
-    //                    base64::URL_SAFE_NO_PAD
-    //                ),
-    //                message: b"message two".to_vec()
-    //            }
-    //        );
-    //
-    //        assert_eq!(
-    //            post_request(
-    //                &sender2_id,
-    //                surf::post(format!(
-    //                    "https://example.com/mailboxes/{}",
-    //                    base64::encode_config(
-    //                        recipient_pk,
-    //                        base64::URL_SAFE_NO_PAD
-    //                    )
-    //                ))
-    //                .body("message two-one")
-    //                .into()
-    //            ),
-    //            MailboxMessage {
-    //                id: 1,
-    //                sender: base64::encode_config(
-    //                    sender2_pk,
-    //                    base64::URL_SAFE_NO_PAD
-    //                ),
-    //                message: b"message two-one".to_vec()
-    //            }
-    //        );
-    //
-    //        assert_eq!(
-    //            post_request(
-    //                &sender_id,
-    //                surf::post(format!(
-    //                    "https://example.com/mailboxes/{}",
-    //                    base64::encode_config(
-    //                        recipient2_pk,
-    //                        base64::URL_SAFE_NO_PAD
-    //                    )
-    //                ))
-    //                .body("message three")
-    //                .into()
-    //            ),
-    //            MailboxMessage {
-    //                id: 1,
-    //                sender: base64::encode_config(
-    //                    sender_pk,
-    //                    base64::URL_SAFE_NO_PAD
-    //                ),
-    //                message: b"message three".to_vec()
-    //            }
-    //        );
-    //
-    //        assert_eq!(
-    //            request(
-    //                &recipient_id,
-    //                surf::get(format!(
-    //                    "https://example.com/mailboxes/{}",
-    //                    base64::encode_config(
-    //                        recipient_pk,
-    //                        base64::URL_SAFE_NO_PAD
-    //                    )
-    //                ))
-    //                .build(),
-    //            ),
-    //            Mailbox {
-    //                messages: vec!(
-    //                    MailboxMessage {
-    //                        id: 1,
-    //                        sender: base64::encode_config(
-    //                            sender_pk,
-    //                            base64::URL_SAFE_NO_PAD
-    //                        ),
-    //                        message: b"message one".to_vec()
-    //                    },
-    //                    MailboxMessage {
-    //                        id: 2,
-    //                        sender: base64::encode_config(
-    //                            sender_pk,
-    //                            base64::URL_SAFE_NO_PAD
-    //                        ),
-    //                        message: b"message two".to_vec()
-    //                    },
-    //                    MailboxMessage {
-    //                        id: 1,
-    //                        sender: base64::encode_config(
-    //                            sender2_pk,
-    //                            base64::URL_SAFE_NO_PAD
-    //                        ),
-    //                        message: b"message two-one".to_vec()
-    //                    }
-    //                )
-    //            }
-    //        );
-    //
-    //        assert_eq!(
-    //            request(
-    //                &recipient2_id,
-    //                surf::get(format!(
-    //                    "https://example.com/mailboxes/{}",
-    //                    base64::encode_config(
-    //                        recipient2_pk,
-    //                        base64::URL_SAFE_NO_PAD
-    //                    )
-    //                ))
-    //                .build(),
-    //            ),
-    //            Mailbox {
-    //                messages: vec!(MailboxMessage {
-    //                    id: 1,
-    //                    sender: base64::encode_config(
-    //                        sender_pk,
-    //                        base64::URL_SAFE_NO_PAD
-    //                    ),
-    //                    message: b"message three".to_vec()
-    //                })
-    //            },
-    //        );
-    //
-    //        //        assert_eq!(
-    //        //            request(
-    //        //                &recipient_id,
-    //        //                surf::delete(format!(
-    //        //                    "https://example.com/mailboxes/{}/{}/1",
-    //        //                    base64::encode_config(
-    //        //                        recipient_pk,
-    //        //                        base64::URL_SAFE_NO_PAD
-    //        //                    ),
-    //        //                    base64::encode_config(sender_pk, base64::URL_SAFE_NO_PAD),
-    //        //                ))
-    //        //                .build(),
-    //        //            ),
-    //        //            vec!()
-    //        //        );
-    //    }
 
     #[allow(dead_code)]
     fn print_body(res: &mut Response) -> anyhow::Result<()> {
