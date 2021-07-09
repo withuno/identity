@@ -861,8 +861,8 @@ mod requests {
                         serde_json::to_string(&MessageRequest {
                             action: "packed".to_string(),
                             data: Payload {
-                                signature: b"signature".to_vec(),
-                                share: b"share".to_vec(),
+                                signature: "signature".to_string(),
+                                share: "share".to_string(),
                             },
                         })
                         .unwrap()
@@ -972,8 +972,8 @@ mod requests {
                     serde_json::to_string(&MessageRequest {
                         action: "packed".to_string(),
                         data: Payload {
-                            signature: b"signature".to_vec(),
-                            share: b"share".to_vec(),
+                            signature: "signature".to_string(),
+                            share: "share".to_string(),
                         },
                     })
                     .unwrap()
@@ -988,8 +988,8 @@ mod requests {
                     base64::URL_SAFE_NO_PAD
                 ),
                 data: Payload {
-                    signature: b"signature".to_vec(),
-                    share: b"share".to_vec(),
+                    signature: "signature".to_string(),
+                    share: "share".to_string(),
                 },
             }
         );
@@ -1008,8 +1008,8 @@ mod requests {
                     serde_json::to_string(&MessageRequest {
                         action: "packed".to_string(),
                         data: Payload {
-                            signature: b"signature".to_vec(),
-                            share: b"share".to_vec(),
+                            signature: "signature".to_string(),
+                            share: "share".to_string(),
                         },
                     })
                     .unwrap()
@@ -1024,8 +1024,8 @@ mod requests {
                     base64::URL_SAFE_NO_PAD
                 ),
                 data: Payload {
-                    signature: b"signature".to_vec(),
-                    share: b"share".to_vec(),
+                    signature: "signature".to_string(),
+                    share: "share".to_string(),
                 },
             }
         );
