@@ -861,7 +861,7 @@ mod requests {
                     .body(
                         serde_json::to_string(&MessageRequest {
                             action: "packed".to_string(),
-                            message: Payload {
+                            data: Payload {
                                 signature: b"signature".to_vec(),
                                 share: b"share".to_vec(),
                             },
@@ -989,7 +989,7 @@ mod requests {
                 .body(
                     serde_json::to_string(&MessageRequest {
                         action: "packed".to_string(),
-                        message: Payload {
+                        data: Payload {
                             signature: b"signature".to_vec(),
                             share: b"share".to_vec(),
                         },
@@ -1005,7 +1005,7 @@ mod requests {
                     sender_pk,
                     base64::URL_SAFE_NO_PAD
                 ),
-                message: Payload {
+                data: Payload {
                     signature: b"signature".to_vec(),
                     share: b"share".to_vec(),
                 },

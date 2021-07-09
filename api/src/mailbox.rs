@@ -1,7 +1,5 @@
 pub use crate::store::Database;
 
-use std::error::Error;
-
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Serialize, Deserialize, PartialEq)]
@@ -18,7 +16,7 @@ pub struct Payload {
 #[derive(Debug, Serialize, Deserialize, PartialEq, Clone)]
 pub struct MessageRequest {
     pub action: String,
-    pub message: Payload,
+    pub data: Payload,
 }
 
 #[derive(Debug, Serialize, Deserialize, PartialEq)]
@@ -26,7 +24,7 @@ pub struct MessageStored {
     pub action: String,
     pub id: u64,
     pub from: String,
-    pub message: Payload,
+    pub data: Payload,
 }
 
 pub fn get_messages(
@@ -84,7 +82,7 @@ pub fn post_message(
         id: next_id,
         from: sender.to_string(),
         action: message.action.clone(),
-        message: message.message.clone(),
+        data: message.data.clone(),
     };
 
     let j = serde_json::to_vec(&m)?;
@@ -121,7 +119,7 @@ mod tests {
 
         let any_message = MessageRequest {
             action: "packed".to_string(),
-            message: Payload {
+            data: Payload {
                 signature: b"signature".to_vec(),
                 share: b"share".to_vec(),
             },
