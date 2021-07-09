@@ -83,7 +83,7 @@ pub fn post_message(
     sender: &str,
     message: &MessageRequest,
 ) -> Result<MessageStored, anyhow::Error> {
-    let prefix = format!("{}/{}/", recipient, sender);
+    let prefix = format!("{}/{}", recipient, sender);
 
     // LOCK
     let existing = async_std::task::block_on(store.list(&prefix))?;
