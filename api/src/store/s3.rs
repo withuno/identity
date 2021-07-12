@@ -16,6 +16,8 @@ use std::time::Duration;
 
 use crate::store::Database;
 
+use urlencoding::decode;
+
 #[derive(Debug, Clone)]
 pub struct DeserializationError;
 
@@ -99,7 +101,9 @@ impl S3Store {
     ) -> Result<S3Store> {
         let path_style = true;
 
-        let bucket = Bucket::new(host.parse()?, path_style, name, region)
+        let phost = host.parse()?;
+
+        let bucket = Bucket::new(phost, path_style, name, region)
             .ok_or_else(|| anyhow!("invalid bucket scheme"))?;
 
         Ok(S3Store {
@@ -127,6 +131,7 @@ impl Database for S3Store {
         let action = self.bucket.get_object(Some(&self.creds), object);
         let ttl = Duration::from_secs(60 * 60);
         let bro = Request::builder(Method::Get, action.sign(ttl)).build();
+
         let mut res = let_it_rip(bro).await?;
         let status = res.status();
         ensure!(status.is_success(), "s3 GET unexpected result ({})", status);
@@ -166,11 +171,13 @@ impl Database for S3Store {
 
         let ttl = Duration::from_secs(60 * 60);
         let bro = Request::builder(Method::Get, action.sign(ttl)).build();
+
         let mut res = let_it_rip(bro).await?;
         let status = res.status();
         ensure!(status.is_success(), "s3 GET unexpected result ({})", status);
 
         let body = res.body_bytes().await;
+
 
         match body {
             Ok(b) => {
@@ -179,7 +186,11 @@ impl Database for S3Store {
                     Err(error) => return Err(anyhow!(error)),
                 };
 
-                Ok(result.contents.into_iter().map(|c| c.key).collect())
+                Ok(result.contents.into_iter().filter_map(|c| {
+                    //XXX: i don't know if this is the right place
+                    // to URL decode...
+                    decode(&c.key).ok()
+                }).collect())
             }
             Err(error) => Err(anyhow!(error)),
         }
@@ -210,6 +221,8 @@ mod tests {
             Err(error) => panic!("{:?}", error),
         };
 
+        async_std::task::block_on(f.create_bucket_if_not_exists()).unwrap();
+
         {
             let fut = f.get("anyfile");
             let err = async_std::task::block_on(fut);
@@ -218,6 +231,7 @@ mod tests {
         {
             let fut = f.put("anyfile", b"some content");
             let yes = async_std::task::block_on(fut);
+
             assert!(yes.is_ok());
         }
         {

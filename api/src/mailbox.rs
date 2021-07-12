@@ -121,6 +121,47 @@ pub fn post_message(
 mod tests {
     use super::*;
 
+    #[cfg(feature = "s3store")]
+    use crate::store::S3Store;
+
+    #[cfg(feature = "s3store")]
+    fn new_store() -> S3Store {
+        use rand::distributions::Alphanumeric;
+        use rand::Rng;
+        use std::str;
+
+        fn tmpname(rand_len: usize) -> String {
+            let mut buf = String::with_capacity(rand_len);
+
+            // Push each character in one-by-one. Unfortunately, this is the only
+            // safe(ish) simple way to do this without allocating a temporary
+            // String/Vec.
+            unsafe {
+                rand::thread_rng()
+                    .sample_iter(&Alphanumeric)
+                    .take(rand_len)
+                    .for_each(|b| {
+                        buf.push_str(str::from_utf8_unchecked(&[b as u8]))
+                    })
+            }
+            buf.to_lowercase()
+        }
+
+        let store = S3Store::new(
+            "http://localhost:9000",
+            "minio",
+            "minioadmin",
+            "minioadmin",
+            &tmpname(32),
+        )
+        .unwrap();
+
+        async_std::task::block_on(store.create_bucket_if_not_exists())
+            .unwrap();
+
+        store
+    }
+
     #[cfg(not(feature = "s3store"))]
     use crate::store::FileStore;
 
