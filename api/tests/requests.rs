@@ -983,9 +983,8 @@ mod requests {
             MessageStored {
                 id: 1,
                 action: "packed".to_string(),
-                from: base64::encode_config(
-                    sender_pk,
-                    base64::URL_SAFE_NO_PAD
+                from: base64::encode(
+                    sender_pk
                 ),
                 data: Payload {
                     signature: "signature".to_string(),
@@ -1019,9 +1018,8 @@ mod requests {
             MessageStored {
                 id: 2,
                 action: "packed".to_string(),
-                from: base64::encode_config(
-                    sender_pk,
-                    base64::URL_SAFE_NO_PAD
+                from: base64::encode(
+                    sender_pk
                 ),
                 data: Payload {
                     signature: "signature".to_string(),
@@ -1043,16 +1041,14 @@ mod requests {
                 .body(
                     serde_json::to_string(&vec!(
                         MessageToDelete {
-                            from: base64::encode_config(
-                                sender_pk,
-                                base64::URL_SAFE_NO_PAD
+                            from: base64::encode(
+                                sender_pk
                             ),
                             id: 1
                         },
                         MessageToDelete {
-                            from: base64::encode_config(
-                                sender_pk,
-                                base64::URL_SAFE_NO_PAD
+                            from: base64::encode(
+                                sender_pk
                             ),
                             id: 2
                         }

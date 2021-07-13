@@ -211,7 +211,7 @@ where
     let id = &req.ext::<MailboxId>().unwrap().0;
     let signer = &req.ext::<UserId>().unwrap().0;
 
-    let signerb64 = base64::encode_config(signer, base64::URL_SAFE_NO_PAD);
+    let signerb64 = base64::encode(signer);
 
     let m: MessageRequest = serde_json::from_slice(&body)?;
     let message = mailbox::post_message(db, id, &signerb64, &m)?;
