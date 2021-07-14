@@ -19,7 +19,7 @@ http-types = "2.11"
 json-patch = "0.2"
 password-hash = "0.2"
 rand = "0.8"
-rusty-s3 = { git = "https://github.com/withuno/rusty-s3.git", branch = "main" }
+rusty-s3 = "0.1"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 surf = "2.2.0"

@@ -103,11 +103,16 @@ impl S3Store {
 
         let phost = host.parse()?;
 
-        let bucket = Bucket::new(phost, path_style, name, region)
-            .ok_or_else(|| anyhow!("invalid bucket scheme"))?;
+        let bucket = Bucket::new(
+            phost,
+            path_style,
+            name.to_string(),
+            region.to_string(),
+        )
+        .ok_or_else(|| anyhow!("invalid bucket scheme"))?;
 
         Ok(S3Store {
-            creds: Credentials::new(key_id, secret),
+            creds: Credentials::new(key_id.to_string(), secret.to_string()),
             bucket: bucket,
         })
     }
@@ -178,7 +183,6 @@ impl Database for S3Store {
 
         let body = res.body_bytes().await;
 
-
         match body {
             Ok(b) => {
                 let result = match ListBucketResult::from_xml(&b[..]) {
@@ -186,11 +190,15 @@ impl Database for S3Store {
                     Err(error) => return Err(anyhow!(error)),
                 };
 
-                Ok(result.contents.into_iter().filter_map(|c| {
-                    //XXX: i don't know if this is the right place
-                    // to URL decode...
-                    decode(&c.key).ok()
-                }).collect())
+                Ok(result
+                    .contents
+                    .into_iter()
+                    .filter_map(|c| {
+                        //XXX: i don't know if this is the right place
+                        // to URL decode...
+                        decode(&c.key).ok()
+                    })
+                    .collect())
             }
             Err(error) => Err(anyhow!(error)),
         }
