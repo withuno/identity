@@ -198,7 +198,7 @@ where
 
     mailbox::delete_messages(db, id, &m)?;
 
-    Ok(Response::builder(204).build())
+    Ok(Response::builder(StatusCode::NoContent).build())
 }
 
 async fn post_mailbox<T>(mut req: Request<State<T>>) -> Result
@@ -218,7 +218,7 @@ where
 
     let r = serde_json::to_string(&message)?;
 
-    Ok(Response::builder(201).body(r).build())
+    Ok(Response::builder(StatusCode::Created).body(r).build())
 }
 
 async fn fetch_mailbox<T>(req: Request<State<T>>) -> Result
@@ -232,7 +232,7 @@ where
 
     let j = serde_json::to_string(&mailbox)?;
 
-    Ok(Response::builder(200)
+    Ok(Response::builder(StatusCode::Ok)
         .header("content-type", "application/json")
         .body(j)
         .build())
@@ -264,7 +264,7 @@ async fn option_vault<T>(_req: Request<State<T>>) -> Result
 where
     T: Database + 'static,
 {
-    let response = Response::builder(200)
+    let response = Response::builder(StatusCode::Ok)
         .body("ok")
         .header("Access-Control-Allow-Origin", "*")
         .header(
@@ -285,7 +285,7 @@ where
 
     let vault = db.get(id).await.map_err(not_found)?;
 
-    let response = Response::builder(200)
+    let response = Response::builder(StatusCode::Ok)
         .body(Body::from_bytes(vault))
         .header("Access-Control-Allow-Origin", "*")
         .header(
