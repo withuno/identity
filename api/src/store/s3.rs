@@ -212,7 +212,7 @@ async fn let_it_rip(req: Request) -> Result<Response> {
 }
 
 #[cfg(test)]
-#[cfg(feature = "s3store")]
+#[cfg(feature = "s3")]
 mod tests {
     use super::*;
 

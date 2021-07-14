@@ -121,10 +121,10 @@ pub fn post_message(
 mod tests {
     use super::*;
 
-    #[cfg(feature = "s3store")]
+    #[cfg(feature = "s3")]
     use crate::store::S3Store;
 
-    #[cfg(feature = "s3store")]
+    #[cfg(feature = "s3")]
     fn new_store() -> S3Store {
         use rand::distributions::Alphanumeric;
         use rand::Rng;
@@ -162,10 +162,10 @@ mod tests {
         store
     }
 
-    #[cfg(not(feature = "s3store"))]
+    #[cfg(not(feature = "s3"))]
     use crate::store::FileStore;
 
-    #[cfg(not(feature = "s3store"))]
+    #[cfg(not(feature = "s3"))]
     fn new_store() -> FileStore {
         use tempfile::TempDir;
         let dir = TempDir::new().unwrap();

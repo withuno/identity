@@ -6,17 +6,17 @@
 
 use api::{build_api};
 
-#[cfg(not(feature = "s3store"))]
+#[cfg(not(feature = "s3"))]
 use api::store::FileStore;
-#[cfg(not(feature = "s3store"))]
+#[cfg(not(feature = "s3"))]
 fn make_db(name: &'static str) -> anyhow::Result<FileStore> {
     use std::convert::TryFrom;
     FileStore::try_from(name)
 }
 
-#[cfg(feature = "s3store")]
+#[cfg(feature = "s3")]
 use api::store::S3Store;
-#[cfg(feature = "s3store")]
+#[cfg(feature = "s3")]
 fn make_db(name: &str) -> anyhow::Result<S3Store> {
     use anyhow::Context;
 

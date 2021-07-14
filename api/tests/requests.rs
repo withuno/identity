@@ -47,10 +47,10 @@ mod requests {
         objects: T,
     }
 
-    #[cfg(not(feature = "s3store"))]
+    #[cfg(not(feature = "s3"))]
     pub use api::store::FileStore;
 
-    #[cfg(not(feature = "s3store"))]
+    #[cfg(not(feature = "s3"))]
     fn setup_tmp_api() -> anyhow::Result<(tide::Server<()>, Dbs<FileStore>)> {
         use tempfile::TempDir;
         let dir = TempDir::new().unwrap();
@@ -75,10 +75,10 @@ mod requests {
         Ok((api, dbs))
     }
 
-    #[cfg(feature = "s3store")]
+    #[cfg(feature = "s3")]
     pub use api::store::S3Store;
 
-    #[cfg(feature = "s3store")]
+    #[cfg(feature = "s3")]
     fn setup_tmp_api() -> anyhow::Result<(tide::Server<()>, Dbs<S3Store>)> {
         // modified from:
         // https://doc.servo.org/src/tempfile/util.rs.html#9

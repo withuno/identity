@@ -85,7 +85,7 @@ impl TryFrom<&'static str> for FileStore {
 }
 
 #[cfg(test)]
-#[cfg(not(feature = "s3store"))]
+#[cfg(not(feature = "s3"))]
 mod tests {
     use super::*;
     use tempfile::TempDir;
