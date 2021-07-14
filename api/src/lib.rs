@@ -516,7 +516,7 @@ where
 
     {
         let mut mailboxes =
-            tide::with_state(State::new(mailbox_db.clone(), token_db.clone()));
+            tide::with_state(State::new(mailbox_db, token_db.clone()));
         mailboxes
             .at(":id")
             .with(add_auth_info)
