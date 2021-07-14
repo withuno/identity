@@ -38,17 +38,17 @@ pub fn delete_messages(
     store: &impl Database,
     owner: &str,
     messages: &Vec<MessageToDelete>,
-) -> anyhow::Result<()> {
-    let _results: Vec<anyhow::Result<()>> = messages
+) -> anyhow::Result<usize> {
+    let results = messages
         .iter()
         .map(|m| {
             let dest = format!("{}/{}/{}", owner, m.from, m.id);
 
             async_std::task::block_on(store.del(&dest))
         })
-        .collect();
+        .collect::<Vec<_>>();
 
-    Ok(())
+    Ok(results.len())
 }
 
 pub fn get_messages(
