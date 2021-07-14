@@ -38,7 +38,7 @@ pub fn delete_messages(
     store: &impl Database,
     owner: &str,
     messages: &Vec<MessageToDelete>,
-) -> Result<(), anyhow::Error> {
+) -> anyhow::Result<()> {
     let _results: Vec<anyhow::Result<()>> = messages
         .iter()
         .map(|m| {
@@ -54,7 +54,7 @@ pub fn delete_messages(
 pub fn get_messages(
     store: &impl Database,
     owner: &str,
-) -> Result<Mailbox, anyhow::Error> {
+) -> anyhow::Result<Mailbox> {
     // LOCK
     let m = async_std::task::block_on(store.list(owner))?;
     let messages: Vec<MessageStored> = m
@@ -82,7 +82,7 @@ pub fn post_message(
     recipient: &str,
     sender: &str,
     message: &MessageRequest,
-) -> Result<MessageStored, anyhow::Error> {
+) -> anyhow::Result<MessageStored> {
     let prefix = format!("{}/{}", recipient, sender);
 
     // LOCK
