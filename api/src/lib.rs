@@ -9,12 +9,12 @@ use std::fmt;
 use std::fmt::{Debug, Display};
 
 pub mod store;
-pub use crate::store::Database;
+pub use store::Database;
 
 pub mod mailbox;
 // most of this is only used in tests, can you export there?
 pub use crate::mailbox::{
-    Mailbox, MessageRequest, MessageStored, MessageToDelete, Payload,
+    MessageRequest, MessageToDelete
 };
 
 pub mod auth;

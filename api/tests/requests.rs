@@ -1,7 +1,7 @@
 #[cfg(test)]
 mod requests {
     use api::{add_auth_info, build_api, signed_pow_auth};
-    use api::{
+    use api::mailbox::{
         Mailbox, MessageRequest, MessageStored, MessageToDelete, Payload,
     };
 
