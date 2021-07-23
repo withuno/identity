@@ -1,3 +1,4 @@
+use anyhow::bail;
 use anyhow::Result;
 use async_std::fs;
 use async_std::path::Path;
@@ -64,7 +65,16 @@ impl Database for FileStore {
 
     async fn del(&self, file: &str) -> Result<()> {
         let path = self.dir.join(file);
-        Ok(fs::remove_file(path).await?)
+        use async_std::io::ErrorKind;
+        match fs::remove_file(path).await {
+            Ok(_) => return Ok(()),
+            // Trying to delete a file that doesn't exist is okay.
+            Err(e) => if ErrorKind::NotFound == e.kind() {
+                Ok(())
+            } else {
+                bail!(e)
+            },
+        }
     }
 }
 

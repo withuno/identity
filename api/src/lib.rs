@@ -392,6 +392,17 @@ where
     Ok(Body::from_bytes(session))
 }
 
+async fn ssss_delete<T>(req: Request<State<T>>) -> Result<StatusCode>
+where
+    T: Database + 'static,
+{
+    let db = &req.state().db;
+    let sid = &req.ext::<SessionId>().unwrap().0;
+    let _ = db.del(sid).await.map_err(server_err)?;
+
+    Ok(StatusCode::NoContent)
+}
+
 fn bad_request<M>(msg: M) -> Error
 where
     M: Display + Debug + Send + Sync + 'static,
@@ -513,7 +524,8 @@ where
             .with(session_id)
             .get(ssss_get)
             .put(ssss_put)
-            .patch(ssss_patch);
+            .patch(ssss_patch)
+            .delete(ssss_delete);
         api.at("ssss").nest(ssss);
     }
 

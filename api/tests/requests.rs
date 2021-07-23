@@ -794,6 +794,46 @@ mod requests {
     }
 
     #[test]
+    fn v1_ssss_delete() -> anyhow::Result<()> {
+        let (api, dbs) = setup_tmp_api().unwrap();
+
+        let mu = Mu([0u8; MU_LENGTH]);
+        let session = Session::try_from(&mu)?;
+        let cfg = base64::URL_SAFE_NO_PAD;
+        let sid = base64::encode_config(session.0, cfg);
+        let base = Url::parse("http://example.com/ssss/")?;
+        let url = base.join(&sid).unwrap();
+
+        // add the file so the request will succeed
+        let tdata = r#"{"test":"data"}"#;
+        let foof = dbs.sessions.put(&sid, &tdata.as_bytes());
+        let _ = task::block_on(foof)?;
+
+        let req1: Request = surf::delete(url.to_string()).into();
+        let req2 = req1.clone(); // for the next request
+        let fut1 = api.respond(req1);
+        let res1: Response =
+            task::block_on(fut1).map_err(|_| anyhow!("request failed"))?;
+
+        assert_eq!(StatusCode::NoContent, res1.status());
+
+        let fut2 = api.respond(req2);
+        let res2: Response =
+            task::block_on(fut2).map_err(|_| anyhow!("request2 failed"))?;
+
+        assert_eq!(StatusCode::NoContent, res2.status());
+
+        let req3: Request = surf::get(url.to_string()).into();
+        let fut1 = api.respond(req3);
+        let res3: Response =
+            task::block_on(fut1).map_err(|_| anyhow!("request failed"))?;
+
+        assert_eq!(StatusCode::NotFound, res3.status());
+
+        Ok(())
+    }
+
+    #[test]
     fn v1_mailbox_auth() {
         let (api, dbs) = setup_tmp_api().unwrap();
 
