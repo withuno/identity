@@ -192,10 +192,10 @@ where
     let db = &req.state().db.clone();
     let id = &req.ext::<MailboxId>().unwrap().0;
 
-    // XXX: this (and other deserializations) should return a 400 Bad Request
-    // not a 500.
-    let m: Vec<MessageToDelete> = serde_json::from_slice(&body)?;
-
+    let m: Vec<MessageToDelete> = match serde_json::from_slice(&body) {
+        Ok(ms) => ms,
+        Err(_) => return Ok(StatusCode::BadRequest.into()),
+    };
     mailbox::delete_messages(db, id, &m)?;
 
     Ok(Response::builder(StatusCode::NoContent).build())
@@ -213,7 +213,10 @@ where
 
     let signerb64 = base64::encode(signer);
 
-    let m: MessageRequest = serde_json::from_slice(&body)?;
+    let m: MessageRequest = match serde_json::from_slice(&body) {
+        Ok(m) => m,
+        Err(_) => return Ok(StatusCode::BadRequest.into()),
+    };
     let message = mailbox::post_message(db, id, &signerb64, &m)?;
 
     let r = serde_json::to_string(&message)?;
