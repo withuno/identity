@@ -192,10 +192,10 @@ where
     let db = &req.state().db.clone();
     let id = &req.ext::<MailboxId>().unwrap().0;
 
-    // XXX: this (and other deserializations) should return a 400 Bad Request
-    // not a 500.
-    let m: Vec<MessageToDelete> = serde_json::from_slice(&body)?;
-
+    let m: Vec<MessageToDelete> = match serde_json::from_slice(&body) {
+        Ok(ms) => ms,
+        Err(_) => return Ok(StatusCode::BadRequest.into()),
+    };
     mailbox::delete_messages(db, id, &m)?;
 
     Ok(Response::builder(StatusCode::NoContent).build())
@@ -213,7 +213,10 @@ where
 
     let signerb64 = base64::encode(signer);
 
-    let m: MessageRequest = serde_json::from_slice(&body)?;
+    let m: MessageRequest = match serde_json::from_slice(&body) {
+        Ok(m) => m,
+        Err(_) => return Ok(StatusCode::BadRequest.into()),
+    };
     let message = mailbox::post_message(db, id, &signerb64, &m)?;
 
     let r = serde_json::to_string(&message)?;
@@ -389,6 +392,17 @@ where
     Ok(Body::from_bytes(session))
 }
 
+async fn ssss_delete<T>(req: Request<State<T>>) -> Result<StatusCode>
+where
+    T: Database + 'static,
+{
+    let db = &req.state().db;
+    let sid = &req.ext::<SessionId>().unwrap().0;
+    let _ = db.del(sid).await.map_err(server_err)?;
+
+    Ok(StatusCode::NoContent)
+}
+
 fn bad_request<M>(msg: M) -> Error
 where
     M: Display + Debug + Send + Sync + 'static,
@@ -510,7 +524,8 @@ where
             .with(session_id)
             .get(ssss_get)
             .put(ssss_put)
-            .patch(ssss_patch);
+            .patch(ssss_patch)
+            .delete(ssss_delete);
         api.at("ssss").nest(ssss);
     }
 
