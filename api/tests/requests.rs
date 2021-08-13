@@ -899,6 +899,7 @@ mod requests {
                     ))
                     .body(
                         serde_json::to_string(&MessageRequest {
+                            uuid: "1111".to_string(),
                             action: "packed".to_string(),
                             data: Payload {
                                 signature: "signature".to_string(),
@@ -1010,6 +1011,7 @@ mod requests {
                 ))
                 .body(
                     serde_json::to_string(&MessageRequest {
+                        uuid: "1111".to_string(),
                         action: "packed".to_string(),
                         data: Payload {
                             signature: "signature".to_string(),
@@ -1022,6 +1024,7 @@ mod requests {
             ),
             MessageStored {
                 id: 1,
+                uuid: "1111".to_string(),
                 action: "packed".to_string(),
                 from: base64::encode(
                     sender_pk
@@ -1046,6 +1049,7 @@ mod requests {
                 .body(
                     serde_json::to_string(&MessageRequest {
                         action: "packed".to_string(),
+                        uuid: "2222".to_string(),
                         data: Payload {
                             signature: "signature".to_string(),
                             share: "share".to_string(),
@@ -1057,6 +1061,7 @@ mod requests {
             ),
             MessageStored {
                 id: 2,
+                uuid: "2222".to_string(),
                 action: "packed".to_string(),
                 from: base64::encode(
                     sender_pk
