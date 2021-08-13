@@ -23,12 +23,14 @@ pub struct MessageToDelete {
 #[derive(Debug, Serialize, Deserialize, PartialEq, Clone)]
 pub struct MessageRequest {
     pub action: String,
+    pub uuid: String,
     pub data: Payload,
 }
 
 #[derive(Debug, Serialize, Deserialize, PartialEq)]
 pub struct MessageStored {
     pub action: String,
+    pub uuid: String,
     pub id: u64,
     pub from: String,
     pub data: Payload,
@@ -105,6 +107,7 @@ pub fn post_message(
     let m = MessageStored {
         id: next_id,
         from: sender.to_string(),
+        uuid: message.uuid.clone(),
         action: message.action.clone(),
         data: message.data.clone(),
     };
@@ -174,6 +177,28 @@ mod tests {
     }
 
     #[test]
+    fn message_uuid() {
+        let store = new_store();
+        let owner1 = "owner1".to_string();
+        let sender1 = "sender1".to_string();
+
+        let any_message = MessageRequest {
+            uuid: "1111-2222".to_string(),
+            action: "packed".to_string(),
+            data: Payload {
+                signature: "signature".to_string(),
+                share: "share".to_string(),
+            },
+        };
+
+        let _ =
+            post_message(&store, &owner1, &sender1, &any_message).unwrap();
+
+        let g1 = get_messages(&store, &owner1).unwrap();
+        assert_eq!(g1.messages[0].uuid, "1111-2222");
+    }
+
+    #[test]
     fn mailbox_messages() {
         let store = new_store();
         let owner1 = "owner1".to_string();
@@ -183,6 +208,7 @@ mod tests {
         let sender2 = "sender2".to_string();
 
         let any_message = MessageRequest {
+            uuid: "11111".to_string(),
             action: "packed".to_string(),
             data: Payload {
                 signature: "signature".to_string(),
@@ -237,8 +263,8 @@ mod tests {
 
     #[test]
     fn ios_deserialize() {
-        let s1 = r#"{"data":{"share":"IKlx5OuP22Xux5JSOeekYH+zLmhiemgHF25QV4yxK/Cq8VlYZa41qWElDD+Ue9tdzdm23j78MpfCTlLCew==","signature":"UEq/S7j5cXAuEo7K5LVEiMGdWbLwqQxxQNKVlXtgLbB8ecY4+u3YF3S\/uMhohZx5pmKJ6qWZccoj7+9dAqA/CQ=="},"action":"share-update","from":"DkxRk21yuqwA2Uf1P7At08OD8434fwEnAc9-Ckmve20"}"#;
-        let s2 = r#"{"data":{"signature":"UEq/S7j5cXAuEo7K5LVEiMGdWbLwqQxxQNKVlXtgLbB8ecY4+u3YF3S\/uMhohZx5pmKJ6qWZccoj7+9dAqA/CQ=="},"action":"share-update","from":"DkxRk21yuqwA2Uf1P7At08OD8434fwEnAc9-Ckmve20"}"#;
+        let s1 = r#"{"data":{"share":"IKlx5OuP22Xux5JSOeekYH+zLmhiemgHF25QV4yxK/Cq8VlYZa41qWElDD+Ue9tdzdm23j78MpfCTlLCew==","signature":"UEq/S7j5cXAuEo7K5LVEiMGdWbLwqQxxQNKVlXtgLbB8ecY4+u3YF3S\/uMhohZx5pmKJ6qWZccoj7+9dAqA/CQ=="},"uuid":"not_from_ios","action":"share-update","from":"DkxRk21yuqwA2Uf1P7At08OD8434fwEnAc9-Ckmve20"}"#;
+        let s2 = r#"{"data":{"signature":"UEq/S7j5cXAuEo7K5LVEiMGdWbLwqQxxQNKVlXtgLbB8ecY4+u3YF3S\/uMhohZx5pmKJ6qWZccoj7+9dAqA/CQ=="},"uuid":"not_from_ios","action":"share-update","from":"DkxRk21yuqwA2Uf1P7At08OD8434fwEnAc9-Ckmve20"}"#;
 
         // just check that we don't panic
         let _: MessageRequest = serde_json::from_slice(s1.as_bytes()).unwrap();
