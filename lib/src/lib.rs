@@ -62,9 +62,9 @@ use strum_macros::IntoStaticStr;
 #[derive(IntoStaticStr)]
 enum Usage
 {
-    #[strum(to_string = "uno seed identity keypair")]
+    #[strum(to_string = "uno seed identity signing keypair")]
     Signature,
-    #[strum(to_string = "uno seed encryption secret")]
+    #[strum(to_string = "uno seed identity encryption keypair")]
     Encryption,
 }
 
