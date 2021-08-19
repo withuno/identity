@@ -4,8 +4,7 @@
 //
 
 
-use std::option::Option;
-use std::convert::TryFrom; 
+#![feature(vec_into_raw_parts, maybe_uninit_extra)]
 
 ///
 /// The Uno ffi module contains a c-compatible abi for calling into libuno.
@@ -20,7 +19,15 @@ use std::convert::TryFrom;
 /// they become FFI-safe. The prefix `Uno` is appened to the uno::Type typename
 /// since, again, C does not have namespaces.
 /// 
-mod ffi;
+
+use std::convert::TryFrom; 
+use std::ffi::CStr;
+use std::ffi::CString;
+use std::mem::MaybeUninit;
+use std::option::Option;
+use std::os::raw::c_char;
+use std::ptr::NonNull;
+
 
 ///
 /// The Uno FFI uses a trailing error out param call style. The return value
@@ -54,24 +61,32 @@ pub const UNO_ERR_SPLIT: u32 = 2;
 pub const UNO_ERR_SHARE_ID: u32 = 3;
 pub const UNO_ERR_SHARE_MISS: u32 = 4;
 pub const UNO_ERR_CHECKSUM: u32 = 5;
+pub const UNO_ERR_MNEMONIC: u32 = 6;
 
-const ERR_SUCCESS_STR: CString =
-    CString::new("success");
+const ERR_SUCCESS_STR: &[u8] =
+    b"success\0";
 
-const ERR_ILLEGAL_ARG_STR: CString =
-    CString::new("illegal argument");
+const ERR_ILLEGAL_ARG_STR: &[u8] =
+    b"illegal argument\0";
 
-const ERR_S39_SPLIT_STR: CString =
-    CString::new("s39 split failed");
+const ERR_S39_SPLIT_STR: &[u8] =
+    b"s39 split failed\0";
 
-const ERR_S39_SHARE_ID_MISMATCH_STR: CString =
-    CString::new("s39 combine share id mismatch");
+const ERR_S39_SHARE_ID_MISMATCH_STR: &[u8] =
+    b"s39 combine share id mismatch\0";
 
-const ERR_S39_SHARE_MISSING_STR: CString =
-    CString::new("s39 combine missing shares");
+const ERR_S39_SHARE_MISSING_STR: &[u8] =
+    b"s39 combine missing shares\0";
 
-const ERR_S39_CHECKSUM_FAILURE_STR: CString =
-    CString::new("s39 combine share checksum invalid");
+const ERR_S39_CHECKSUM_FAILURE_STR: &[u8] =
+    b"s39 combine share checksum invalid\0";
+
+const ERR_S39_MNEMONIC_STR: &[u8] =
+    b"s39 mnemonic conversion failed\0";
+
+const ERR_UNRECOGNIZED: &[u8] =
+    b"s39 unrecognized error\0";
+
 
 ///
 /// Get a description for the provided error code. The lifetime of the returned
@@ -79,7 +94,7 @@ const ERR_S39_CHECKSUM_FAILURE_STR: CString =
 ///
 #[no_mangle]
 pub extern "C"
-fn uno_get_msg_from_err(err: Error) -> NonNull<c_char>
+fn uno_get_msg_from_err(err: Error) -> *const c_char
 {
     let msg = match err {
         UNO_ERR_SUCCESS => ERR_SUCCESS_STR,
@@ -88,8 +103,16 @@ fn uno_get_msg_from_err(err: Error) -> NonNull<c_char>
         UNO_ERR_SHARE_ID => ERR_S39_SHARE_ID_MISMATCH_STR,
         UNO_ERR_SHARE_MISS => ERR_S39_SHARE_MISSING_STR,
         UNO_ERR_CHECKSUM => ERR_S39_CHECKSUM_FAILURE_STR,
-    }
-    NonNull::from(msg)
+        UNO_ERR_MNEMONIC => ERR_S39_MNEMONIC_STR,
+        _ => ERR_UNRECOGNIZED,
+    };
+
+    // SAFETY: err "strings" are static and can be verified manually above ^ 
+    let cstr = unsafe { CStr::from_bytes_with_nul_unchecked(msg) };
+
+    // TODO: This may possibly be unsound. as_ptr() says the returned pointer
+    //       is valid as long as the cstr is, and cstr falls out of scope.     
+    cstr.as_ptr()
 }
 
 ///
@@ -112,17 +135,17 @@ fn uno_get_id_from_bytes
 )
 -> Option<NonNull<UnoId>>
 {
-    if len < 0 {
-        err.map(|e| e.write(UNO_ERR_ILLEGAL_ARG);
-        return None;
-    }
+    let seed = unsafe { std::slice::from_raw_parts(bytes.as_ptr(), len) };
+  
+    let id = match uno::Id::try_from(seed) {
+        Ok(id) => UnoId(id),
+        Err(_) => {
+            err.map(|e| e.write(UNO_ERR_ILLEGAL_ARG));
+            return None;
+        },
+    };
 
-    // TODO: make sure this copies, I have doubts
-    let seed = unsafe { std::slice::from_raw_parts(bytes, len) };
-   
-    UnoId::try_from(seed)
-        .map(|id| Box::leak(Box::new(id)) )
-        .ok()
+    NonNull::new(Box::leak(Box::new(id)))
 }
 
 ///
@@ -133,17 +156,17 @@ pub extern "C"
 fn uno_copy_id_bytes
 (
     uno_id: NonNull<UnoId>,
-    bytes: NonNull<MaybeUninit<[u8]>>,
+    bytes: NonNull<u8>,
     len: usize,
     err: Option<&mut MaybeUninit<Error>>,
 )
 {
     if len < 32 {
-        err.map(|e| e.write(UNO_ERR_ILLEGAL_ARG);
+        err.map(|e| e.write(UNO_ERR_ILLEGAL_ARG));
         return;
     }
     for i in 0..32 {
-        unsafe { *bytes.add(i) = uno_id.0[i] }
+        unsafe { bytes.as_ptr().add(i).write(uno_id.as_ref().0.0[i]) }
     }
 }
 
@@ -152,16 +175,17 @@ fn uno_copy_id_bytes
 ///
 #[no_mangle]
 pub extern "C"
-fn uno_free_id(id: Option<NonNull<UnoId>>)
+fn uno_free_id(maybe_id: Option<NonNull<UnoId>>)
 { 
-    id.map(|i| drop( unsafe { Box::from_raw(i) } ));
+    maybe_id.map(|id| unsafe { Box::from_raw(id.as_ptr()) } );
 }
 
 #[repr(C)]
-struct UnoByteSlice {
+#[derive(Debug)]
+pub struct UnoByteSlice {
     ptr: NonNull<u8>,
     len: usize,
-    cap: usize,
+    _cap: usize,
 }
 
 ///
@@ -175,22 +199,31 @@ fn uno_id_get_bytes
 )
 -> UnoByteSlice
 {
-    let out = ManuallyDrop::new(Vec<u8>::with_capacity(32));
-    uno_copy_id_bytes(uno_id, &out, out.len(), None);
+    let out = Vec::<u8>::with_capacity(32);
+    let (ptr, len, cap) = out.into_raw_parts();
+    // SAFETY: ptr is never null
+    let nnptr = unsafe { NonNull::new_unchecked(ptr) };
 
-    UnoByteSlice{ NonNull::new(out), out.len(), out.capacity() }
+    uno_copy_id_bytes(uno_id, nnptr, len, None);
+
+    // assume init
+
+    UnoByteSlice { ptr: nnptr, len: len, _cap: cap, }
 }
 
 ///
-/// Free the backing array on an UnoByteSlice from `uno_get_id_bytes`.
+/// Free the backing array on an UnoByteSlice from a function that returns an
+/// allocated UnoByteSlice, e.g. `uno_get_id_bytes`.
 ///
 #[no_mangle]
 pub extern "C"
-fn uno_id_get_bytes(byte_slice: UnoByteSlice)
+fn uno_free_byte_slice(byte_slice: UnoByteSlice)
 {
-    Vec::from_raw_parts(byte_slice.ptr, byte_slice.len, byte_slice.cap));
+    let bs = byte_slice;
+    unsafe {
+        Vec::from_raw_parts(bs.ptr.as_ptr(), bs.len, bs._cap)
+    };
 }
-
 
 ///
 /// A GroupSpec is a tuple of (threshold, total) shares in a given s39 group
@@ -231,24 +264,25 @@ pub extern "C"
 fn uno_s39_split
 (
     uno_id: NonNull<UnoId>,
-    group_threshold: usize,
+    _group_threshold: usize,
     group_total: usize,
-    group_specs: NonNull<[UnoGroupSpec]>,
+    group_specs: NonNull<UnoGroupSpec>,
     err: Option<&mut MaybeUninit<Error>>,
 )
 -> Option<NonNull<UnoSplitResult>>
 {
-    // convert group specs
+    // convert group specs to spec tuples
     let mut specs = Vec::<(u8,u8)>::with_capacity(group_total);
     for i in 0..group_total {
-        let gs: &UnoGroupSpec;
-        unsafe { 
-            gs = *group_specs.add(i) as &UnoGroupSpec;
-        }
+        // SAFETY: TODO I don't know why this is safe!!
+        let gs = unsafe { &*group_specs.as_ptr().add(i) };
         specs.push( (gs.threshold, gs.total) );
     }
 
-    let group_splits = match uno::split(uno_id, &specs[..]) {
+    // SAFETY: TODO I don't know why this is safe!!
+    let id = unsafe { uno_id.as_ref().0 };
+
+    let group_splits = match uno::split(id, &specs[..]) {
         Ok(sp) => sp,
         Err(_) => {
             err.map(|e| e.write(UNO_ERR_ILLEGAL_ARG) );
@@ -256,9 +290,14 @@ fn uno_s39_split
         },
     };
     let (ptr, len, cap) = group_splits.into_raw_parts();
-    let res = SplitResult { NonNull::new(ptr), len, cap }
 
-    Some(Box::leak(Box::new(res)))
+    let res = UnoSplitResult {
+        // SAFETY: ptr is never null
+        ptr: unsafe { NonNull::new_unchecked(ptr) },
+        len: len,
+        cap: cap
+    };
+    NonNull::new(Box::leak(Box::new(res)))
 }
 
 ///
@@ -266,11 +305,11 @@ fn uno_s39_split
 ///
 #[no_mangle]
 pub extern "C"
-fn uno_free_split_result(id: Option<NonNull<UnoSplitResult>>)
+fn uno_free_split_result(maybe_sr: Option<NonNull<UnoSplitResult>>)
 { 
-    id.map(|i| unsafe { 
-        Vec::from_raw_parts(i.ptr, i.len, i.cap);
-        Box::from_raw(i);
+    maybe_sr.map(|sr| unsafe { 
+        let srb = Box::from_raw(sr.as_ptr());
+        Vec::from_raw_parts((*srb).ptr.as_ptr(), (*srb).len, (*srb).cap);
     });
 }
 
@@ -292,16 +331,17 @@ pub struct UnoGroupSplit
     /// secret.
     pub member_threshold: u8,
     /// Total number of member_shares
-    pub share_count: u8,
+    pub share_count: usize,
     /// Opaque reference to the constituent member shares. Acquire one of the
     /// shares with `uno_get_member_share_by_index`.
-    pub member_shares: UnoMemberSharesVec,
+    pub member_shares: NonNull<UnoMemberSharesVec>,
 }
 
 ///
 /// Opaque array containing share metadata. Get a member share by index using
 /// `uno_get_member_share_by_index`.
 ///
+#[derive(Debug)]
 pub struct UnoMemberSharesVec
 {
     ptr: NonNull<uno::Share>,
@@ -322,27 +362,27 @@ fn uno_get_group_from_split_result
 )
 -> Option<NonNull<UnoGroupSplit>>
 {
-    let groups = ManuallyDrop::new(Vec<uno::GroupShare>.from_raw_parts(
-        split_result.ptr,
-        split_result.len,
-        split_result.cap,
-    ));
+    let groups = unsafe {
+        let sr = split_result.as_ref();
+        std::slice::from_raw_parts(sr.ptr.as_ptr(), sr.len)
+    };
+
     if index >= groups.len() {
-        err.map(|e| e.write(1));
+        err.map(|e| e.write(UNO_ERR_ILLEGAL_ARG));
         return None;
     }
-    let item = groups[index];
+    let item = &groups[index];
 
-    // prune unused vector capacity
-    item.member_shares.shrink_to_fit();
-    // leak the share vector
-    let share_vec = ManuallyDrop::new(item.member_shares);
+    // TODO: figure out if we can avoid clone().
+    let (ptr, len, cap) = item.member_shares.clone().into_raw_parts();
 
     let shares = UnoMemberSharesVec { 
-        ptr: share_vec.as_mut_ptr()
-        len: share_vec.len(),
-        cap: share_vec.capacity(),
-    }
+        // SAFETY: ptr is never null
+        ptr: unsafe { NonNull::new_unchecked(ptr) },
+        len: len,
+        cap: cap,
+    };
+
     let res = UnoGroupSplit { 
         group_id: item.group_id,
         iteration_exponent: item.iteration_exponent,
@@ -350,11 +390,14 @@ fn uno_get_group_from_split_result
         group_threshold: item.group_threshold,
         group_count: item.group_count,
         member_threshold: item.member_threshold,
-        share_count: share_vec.len(),
-        member_shares: Box::leak(Box::new(shares)),
+        share_count: shares.len,
+        // SAFETY: prt will never be null
+        member_shares: unsafe {
+            NonNull::new_unchecked(Box::leak(Box::new(shares)))
+        },
     };
 
-    Some(Box::leak(Box::new(res)))
+    NonNull::new(Box::leak(Box::new(res)))
 }
 
 ///
@@ -366,9 +409,9 @@ pub extern "C"
 fn uno_free_group_split(maybe_gs: Option<NonNull<UnoGroupSplit>>)
 { 
     maybe_gs.map(|gs| unsafe { 
-        let gsb = Box::from_raw(gs);
-        let msb = Box::from_raw(gs.member_shares);
-        Vec::from_raw_parts(msb.ptr, msb.len, mbs.cap);
+        let gsb = Box::from_raw(gs.as_ptr());
+        let msb = Box::from_raw((*gsb).member_shares.as_ptr());
+        Vec::from_raw_parts((*msb).ptr.as_ptr(), (*msb).len, (*msb).cap);
     });
 }
 
@@ -383,7 +426,7 @@ fn uno_free_group_split(maybe_gs: Option<NonNull<UnoGroupSplit>>)
 #[derive(Debug)]
 pub struct UnoShare
 {
-    mnemonic: *const c_char,
+    mnemonic: NonNull<c_char>,
 }
 
 ///
@@ -399,43 +442,50 @@ fn uno_get_s93_share_by_index
 )
 -> Option<NonNull<UnoShare>>
 {
-    let mbs = group_split.member_shares
-    let shares = ManuallyDrop::new(Vec::from_raw_parts(
-        mbs.ptr,
-        mbs.len,
-        mbs.cap
-    ));
+    let shares = unsafe {
+        let mbs = group_split.as_ref().member_shares.as_ref();
+        std::slice::from_raw_parts(mbs.ptr.as_ptr(), mbs.len)
+    };
 
-    if index >= shares.len() {
+    if usize::from(index) >= shares.len() {
         err.map(|e| e.write(UNO_ERR_ILLEGAL_ARG));
         return None;
     }
-    let share = shares[index];
+    let share = &shares[usize::from(index)];
 
-    // the mnemonic form as a slice of words rather than a whole string
-    let mnemonic = share.to_mnemonic().join(" ");
+    let mnemonic = match share.to_mnemonic() {
+        Ok(words) => words.join(" "),
+        Err(_) => {
+            err.map(|e| e.write(UNO_ERR_MNEMONIC));
+            return None;
+        },
+    };
     let c_string = match CString::new(mnemonic) {
-        OK(cs) => cs,
-        Err(e) => {
-            err.map(|e| e.write(ErrInternal)); 
+        Ok(cs) => cs,
+        Err(_) => {
+            err.map(|e| e.write(UNO_ERR_MNEMONIC)); 
             return None;
         },
     };  
-    
-    let res = UnoShare(mnemonic: c_string.into_raw());
+    let res = UnoShare {
+        // SAFETY: into_raw is never null
+        mnemonic: unsafe { NonNull::new_unchecked(c_string.into_raw()) },
+    };
 
-    Some(Box::leak(Box::new(res))
+    NonNull::new(Box::leak(Box::new(res)))
 }
 
 ///
 /// Free a previously allocated share returned by `uno_get_s39_share_by_index`.
 ///
-fn uno_free_s39_share(share: Option<NonNull<UnoS39Share>>)
+#[no_mangle]
+pub extern "C"
+fn uno_free_s39_share(maybe_share: Option<NonNull<UnoShare>>)
 {
-    share.map(|s| 
-        CString::from_raw(s.mnemonic);
-        Box::from_raw(s);
-    );
+    maybe_share.map(|s| unsafe { 
+        let share = Box::from_raw(s.as_ptr());
+        CString::from_raw((*share).mnemonic.as_ptr());
+    });
 }
 
 ///
@@ -486,9 +536,6 @@ pub struct UnoShareMetadata
     /// (that is id || e || GI || Gt || g || I || t || ps). The customization
     /// string (cs) of RS1024 is "shamir". (30 bits)
     pub checksum: u32,
-
-    // configuration values
-//    pub config: ShareConfig,
 }
 
 ///
@@ -503,20 +550,35 @@ fn uno_get_s39_share_metadata
 )
 -> Option<NonNull<UnoShareMetadata>>
 {
-    let mnemonic_c = ManuallyDrop::new(CString::from_raw(share.mnemonic));
-    let mnemonic_str = String::from_utf8(mnemonic_c.as_bytes());
+    let mnemonic_c = unsafe { 
+        CStr::from_ptr(share.as_ref().mnemonic.as_ptr())
+    };
+    let mnemonic_str = match mnemonic_c.to_str() {
+        Ok(ms) => ms,
+        Err(_) => {
+            err.map(|e| e.write(UNO_ERR_ILLEGAL_ARG));
+            return None;
+        },
+    };
 
     let words: Vec<String> = mnemonic_str.split(' ')
         .map(|s| s.to_owned())
         .collect();
 
-    let share = uno::Share::from_mnemonic(&words); 
+    let share = match uno::Share::from_mnemonic(&words) {
+        Ok(s) => s,
+        Err(_) => {
+            err.map(|e| e.write(UNO_ERR_ILLEGAL_ARG));
+            return None;
+        }
+    };
 
     let (ptr, len, cap) = share.share_value.into_raw_parts();
     let share_value = UnoByteSlice {
-        ptr: NonNull::new(ptr),
+        // SAFETY: ptr from Vec::into_raw_parts is never null.
+        ptr: unsafe { NonNull::new_unchecked(ptr) },
         len: len,
-        cap: cap,
+        _cap: cap,
     };
     let res = UnoShareMetadata {
         identifier: share.identifier,
@@ -530,7 +592,7 @@ fn uno_get_s39_share_metadata
         checksum: share.checksum,
     };
 
-    Some(Box::leak(Box::new(res)))
+    NonNull::new(Box::leak(Box::new(res)))
 }
 
 ///
@@ -542,9 +604,8 @@ pub extern "C"
 fn uno_free_s39_share_metadata(maybe_md: Option<NonNull<UnoShareMetadata>>)
 { 
     maybe_md.map(|md| unsafe { 
-        let md = Box::from_raw(md);
-        let bs = md.share_value;
-        Vec::from_raw_parts(bs.ptr, sb.len, bs.cap);
+        let md = Box::from_raw(md.as_ptr());
+        uno_free_byte_slice((*md).share_value);
     });
 }
 
@@ -558,24 +619,26 @@ fn uno_free_s39_share_metadata(maybe_md: Option<NonNull<UnoShareMetadata>>)
 pub extern "C"
 fn uno_s39_combine
 (
-    /// An array of mnemonic strings.
-    share_mnemonics: NonNull<[NonNull<c_char>]>,
+    share_mnemonics: NonNull<NonNull<c_char>>,
     total_shares: usize,
     err: Option<&mut MaybeUninit<Error>>,
 )
 -> Option<NonNull<UnoId>>
 {
+    let shares_ptr = share_mnemonics.as_ptr();
     let mut shares = Vec::<Vec<String>>::with_capacity(total_shares);
     for i in 0..total_shares {
-        let mnemonic_c = CStr::from_ptr(share_mnemonics.add(i));
+        let mnemonic_c = unsafe { 
+            CStr::from_ptr((*shares_ptr.add(i)).as_ptr())
+        };
         let mnemonic_str = match mnemonic_c.to_str() {
             Ok(s) => s,
-            Err(e) => {
+            Err(_) => {
                 err.map(|e| e.write(UNO_ERR_ILLEGAL_ARG));
                 return None;
             },
         };
-        let words: Vec<String> = mnemonic.split(' ')
+        let words: Vec<String> = mnemonic_str.split(' ')
             .map(|s| s.to_owned())
             .collect();
  
@@ -583,14 +646,14 @@ fn uno_s39_combine
     }
 
     let uno_id = match uno::combine(&shares[..]) {
-        Ok(id) => id,
-        Err(e) => {
+        Ok(id) => UnoId(id),
+        Err(_) => {
             err.map(|e| e.write(UNO_ERR_ILLEGAL_ARG));
             return None;
         },
     };
 
-    Some(Box::leak(Box::new(uno_id)))
+    NonNull::new(Box::leak(Box::new(uno_id)))
 }
 
 

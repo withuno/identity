@@ -21,11 +21,19 @@
 #include <stdlib.h>
 
 
-typedef struct Option_UnoShare Option_UnoShare;
+#define UNO_ERR_CHECKSUM 5
 
-typedef struct Vec_GroupShare Vec_GroupShare;
+#define UNO_ERR_ILLEGAL_ARG 1
 
-typedef struct Vec_Share Vec_Share;
+#define UNO_ERR_MNEMONIC 6
+
+#define UNO_ERR_SHARE_ID 3
+
+#define UNO_ERR_SHARE_MISS 4
+
+#define UNO_ERR_SPLIT 2
+
+#define UNO_ERR_SUCCESS 0
 
 /**
  *
@@ -33,10 +41,58 @@ typedef struct Vec_Share Vec_Share;
  * `uno_get_member_share_by_index`.
  *
  */
-typedef struct UnoMemberShares
+typedef struct UnoMemberSharesVec UnoMemberSharesVec;
+
+/**
+ *
+ * A SplitResult is the output of successfully running `uno_s39_split` on an
+ * UnoId. The result is a list of GroupSplits, but for now there is only ever
+ * one. Generally, there can be up to 16 so the value is returned as an opaque
+ * list.
+ *
+ */
+typedef struct UnoSplitResult UnoSplitResult;
+
+/**
+ *
+ * 32 bytes of seed entropy. See uno::Id.
+ *
+ */
+typedef Id UnoId;
+
+/**
+ *
+ * The Uno FFI uses a trailing error out param call style. The return value
+ * of FFI functions is most always a pointer to a rust allocated, sometimes
+ * opaque, struct.
+ * ```
+ * pub extern "C" fn uno_frob(...) -> Option<NonNull<Frob>>
+ * ```
+ * Null is not a valid value for any of the FFI types and represents the None
+ * value of the Option. If you wish only for a pass/fail result when calling
+ * a function, you can pass null as the err out-param and simply match on the
+ * returned Option.
+ *
+ * If you desire more error information such as a code and a message, then you
+ * must use the trailing error out-parameter.
+ * ```
+ * pub extern "C" fn uno_frob(..., err: Option<&mut MaybeUninit<Error>>) -> ...
+ * ```
+ * After calling the function, check the value of your local Error type for a
+ * code that specifies the exact error.
+ *
+ * Error codes can be used to lookup an error message using
+ * `uno_get_msg_for_error`.
+ *
+ */
+typedef uint32_t Error;
+
+typedef struct UnoByteSlice
 {
-  struct Vec_Share vec;
-} UnoMemberShares;
+  uint8_t *ptr;
+  size_t len;
+  size_t _cap;
+} UnoByteSlice;
 
 /**
  *
@@ -60,26 +116,87 @@ typedef struct UnoGroupSplit
   /**
    * Total number of member_shares
    */
-  uint8_t share_count;
+  size_t share_count;
   /**
-   * The constituent member shares. Acquire one of these with
-   * `uno_get_gorup_share_by_index`.
+   * Opaque reference to the constituent member shares. Acquire one of the
+   * shares with `uno_get_member_share_by_index`.
    */
-  const struct UnoMemberShares *member_shares;
+  struct UnoMemberSharesVec *member_shares;
 } UnoGroupSplit;
 
 /**
  *
- * A SplitResult is the output of successfully running `uno_s39_split` on an
- * UnoId. The result is a list of GroupSplits, but for now there is only ever
- * one. Generally, there can be up to 16 so the value is returned as an opaque
- * list.
+ * Share mnemonic string. Obtained by index from an UnoGroupSplit type using
+ * `uno_get_s39_share_by_index`. The mnemonic share data is a c string
+ * reference and can be handled in a read-only (const) fashion using the
+ * standard c string api. An UnoShare must be freed using `uno_free_s39_share`
+ * when you are done using it.
  *
  */
-typedef struct UnoSplitResult
+typedef struct UnoShare
 {
-  struct Vec_GroupShare groups;
-} UnoSplitResult;
+  char *mnemonic;
+} UnoShare;
+
+/**
+ *
+ * Share metadata struct. Metadata about a share can be obtained by calling
+ * `uno_get_share_metadata` with an UnoS39Share.
+ *
+ */
+typedef struct UnoShareMetadata
+{
+  /**
+   * Random 15 bit value which is the same for all shares and is used to
+   * verify that the shares belong together; it is also used as salt in the
+   * encryption of the master secret. (15 bits)
+   */
+  uint16_t identifier;
+  /**
+   * Indicates the total number of iterations to be used in PBKDF2. The
+   * number of iterations is calculated as 10000x2^e. (5 bits)
+   */
+  uint8_t iteration_exponent;
+  /**
+   * The x value of the group share (4 bits)
+   */
+  uint8_t group_index;
+  /**
+   * indicates how many group shares are needed to reconstruct the master
+   * secret. The actual value is endoded as Gt = GT - 1, so a value of 0
+   * indicates that a single group share is needed (GT = 1), a value of 1
+   * indicates that two group shares are needed (GT = 2) etc. (4 bits)
+   */
+  uint8_t group_threshold;
+  /**
+   * indicates the total number of groups. The actual value is encoded as
+   * g = G - 1 (4 bits)
+   */
+  uint8_t group_count;
+  /**
+   * Member index, or x value of the member share in the given group (4 bits)
+   */
+  uint8_t member_index;
+  /**
+   * indicates how many member shares are needed to reconstruct the group
+   * share. The actual value is encoded as t = T − 1. (4 bits)
+   */
+  uint8_t member_threshold;
+  /**
+   * corresponds to a list of the SSS part's fk(x) values 1 ≤ k ≤ n. Each
+   * fk(x) value is encoded as a string of eight bits in big-endian order.
+   * The concatenation of these bit strings is the share value. This value is
+   * left-padded with "0" bits so that the length of the padded share value
+   * in bits becomes the nearest multiple of 10. (padding + 8n bits)
+   */
+  struct UnoByteSlice share_value;
+  /**
+   * an RS1024 checksum of the data part of the share
+   * (that is id || e || GI || Gt || g || I || t || ps). The customization
+   * string (cs) of RS1024 is "shamir". (30 bits)
+   */
+  uint32_t checksum;
+} UnoShareMetadata;
 
 /**
  *
@@ -90,16 +207,24 @@ typedef struct UnoSplitResult
  */
 typedef struct UnoGroupSpec
 {
-  int32_t threshold;
-  int32_t total;
+  uint8_t threshold;
+  uint8_t total;
 } UnoGroupSpec;
 
 /**
  *
- * Copy the share as an s39 mnemonic string of 33 words.
+ * Copy the raw 32 bytes backing an uno id.
  *
  */
-int32_t uno_copy_share_data(void);
+void uno_copy_id_bytes(UnoId *uno_id, uint8_t *bytes, size_t len, Error *err);
+
+/**
+ *
+ * Free the backing array on an UnoByteSlice from a function that returns an
+ * allocated UnoByteSlice, e.g. `uno_get_id_bytes`.
+ *
+ */
+void uno_free_byte_slice(struct UnoByteSlice byte_slice);
 
 /**
  *
@@ -107,58 +232,95 @@ int32_t uno_copy_share_data(void);
  * `uno_get_group_from_split_result`.
  *
  */
-void uno_free_group_split(struct UnoGroupSplit *id);
+void uno_free_group_split(struct UnoGroupSplit *maybe_gs);
 
 /**
  *
- * Free a previously allocated UnoId from `uno_id_from_bytes`.
+ * Free a previously allocated UnoId from `uno_get_id_from_bytes`.
  *
  */
-void uno_free_id(UnoId *id);
+void uno_free_id(UnoId *maybe_id);
+
+/**
+ *
+ * Free a previously allocated share returned by `uno_get_s39_share_by_index`.
+ *
+ */
+void uno_free_s39_share(struct UnoShare *maybe_share);
+
+/**
+ *
+ * Free a previously allocated ShareMetadata returned by
+ * `uno_get_s39_share_metadata`.
+ *
+ */
+void uno_free_s39_share_metadata(struct UnoShareMetadata *maybe_md);
 
 /**
  *
  * Free a previously allocated SplitResult from `uno_s39_split`.
  *
  */
-void uno_free_split_result(struct UnoSplitResult *id);
+void uno_free_split_result(struct UnoSplitResult *maybe_sr);
 
 /**
  *
  * uno_get_group_from_split_result
  *
  */
-int32_t uno_get_group_from_split_result(const struct UnoSplitResult *maybe_splits,
-                                        size_t index,
-                                        struct UnoGroupSplit *group_split);
+struct UnoGroupSplit *uno_get_group_from_split_result(struct UnoSplitResult *split_result,
+                                                      size_t index,
+                                                      Error *err);
+
+/**
+ *
+ * Create an uno id struct from a 32 byte seed data array. The caller is
+ * responsible calling `uno_free_id` on the returned struct once finished.
+ *
+ */
+UnoId *uno_get_id_from_bytes(uint8_t *bytes, size_t len, Error *err);
+
+/**
+ *
+ * Get a description for the provided error code. The lifetime of the returned
+ * string does not need to be managed by the caller.
+ *
+ */
+const char *uno_get_msg_from_err(Error err);
+
+/**
+ *
+ * Get the share metadata from an UnoShare.
+ *
+ */
+struct UnoShareMetadata *uno_get_s39_share_metadata(struct UnoShare *share,
+                                                    Error *err);
 
 /**
  *
  * Returns the actual member share by index.
  *
  */
-int32_t uno_get_share_by_index(const struct UnoMemberShares *shares,
-                               uint8_t idx,
-                               struct Option_UnoShare out);
+struct UnoShare *uno_get_s93_share_by_index(struct UnoGroupSplit *group_split,
+                                            uint8_t index,
+                                            Error *err);
 
 /**
  *
- * Create an uno id struct from a 32 byte seed data array. The caller is
- * responsible calling `uno_id_free` on the returned struct once finished.
+ * Get the raw bytes backing an uno id.
  *
  */
-UnoId *uno_id_from_bytes(const uint8_t *bytes, size_t len);
+struct UnoByteSlice uno_id_get_bytes(UnoId *uno_id);
 
 /**
  *
- * See s39::combine
+ * See s39::combine.
  *
+ * Provided an array of c-stirng s39 shamir's shares, recombine and recover
+ * the original UnoId. The returned UnoId must be freed using `uno_free_id`.
  *
  */
-int32_t uno_s39_combine(const uint8_t *shares_buffer,
-                        size_t nparts,
-                        size_t part_len,
-                        UnoId *uno_id);
+UnoId *uno_s39_combine(char **share_mnemonics, size_t total_shares, Error *err);
 
 /**
  *
@@ -169,10 +331,10 @@ int32_t uno_s39_combine(const uint8_t *shares_buffer,
  * unused.
  *
  */
-int32_t uno_s39_split(const UnoId *maybe_id,
-                      size_t group_threshold,
-                      size_t group_total,
-                      struct UnoGroupSpec **group_specs,
-                      struct UnoSplitResult *split);
+struct UnoSplitResult *uno_s39_split(UnoId *uno_id,
+                                     size_t _group_threshold,
+                                     size_t group_total,
+                                     struct UnoGroupSpec *group_specs,
+                                     Error *err);
 
 #endif /* uno_ffi_h */

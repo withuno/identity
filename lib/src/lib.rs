@@ -10,7 +10,7 @@ pub use error::Error;
 pub const ID_LENGTH: usize = 32;
 
 /// And uno identity newtype.
-#[derive(Debug)]
+#[derive(Debug, Copy, Clone)]
 pub struct Id(pub [u8; ID_LENGTH]);
 
 impl Id
