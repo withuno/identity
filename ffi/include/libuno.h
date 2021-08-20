@@ -21,15 +21,17 @@
 #include <stdlib.h>
 
 
-#define UNO_ERR_CHECKSUM 5
+#define UNO_ERR_CHECKSUM 6
+
+#define UNO_ERR_COMBINE 3
 
 #define UNO_ERR_ILLEGAL_ARG 1
 
-#define UNO_ERR_MNEMONIC 6
+#define UNO_ERR_MNEMONIC 7
 
-#define UNO_ERR_SHARE_ID 3
+#define UNO_ERR_SHARE_ID 4
 
-#define UNO_ERR_SHARE_MISS 4
+#define UNO_ERR_SHARE_MISS 5
 
 #define UNO_ERR_SPLIT 2
 
@@ -46,9 +48,7 @@ typedef struct UnoMemberSharesVec UnoMemberSharesVec;
 /**
  *
  * A SplitResult is the output of successfully running `uno_s39_split` on an
- * UnoId. The result is a list of GroupSplits, but for now there is only ever
- * one. Generally, there can be up to 16 so the value is returned as an opaque
- * list.
+ * UnoId. The structure represents an opaque array of UnoGroupSplit structs.
  *
  */
 typedef struct UnoSplitResult UnoSplitResult;
@@ -62,43 +62,23 @@ typedef Id UnoId;
 
 /**
  *
- * The Uno FFI uses a trailing error out param call style. The return value
- * of FFI functions is most always a pointer to a rust allocated, sometimes
- * opaque, struct.
- * ```
- * pub extern "C" fn uno_frob(...) -> Option<NonNull<Frob>>
- * ```
- * Null is not a valid value for any of the FFI types and represents the None
- * value of the Option. If you wish only for a pass/fail result when calling
- * a function, you can pass null as the err out-param and simply match on the
- * returned Option.
- *
- * If you desire more error information such as a code and a message, then you
- * must use the trailing error out-parameter.
- * ```
- * pub extern "C" fn uno_frob(..., err: Option<&mut MaybeUninit<Error>>) -> ...
- * ```
- * After calling the function, check the value of your local Error type for a
- * code that specifies the exact error.
- *
- * Error codes can be used to lookup an error message using
- * `uno_get_msg_for_error`.
+ * UnoByteSlice can be treated like an array of uint8_t bytes on the C side.
+ * You may not modify the bytes and the struct must be freed once it is no
+ * longer needed.
  *
  */
-typedef uint32_t Error;
-
 typedef struct UnoByteSlice
 {
-  uint8_t *ptr;
+  const uint8_t *ptr;
   size_t len;
   size_t _cap;
 } UnoByteSlice;
 
 /**
  *
- * A GroupSplit represents one of the group splits requested during the split
- * call. For now, there is only ever one. But there can be up to 16 so the
- * value is returned in a list.
+ * A GroupSplit contains metadata related to one of the groups of shares
+ * requested during the split call. The actual shares are contained in the
+ * opaque UnoMemberSharesVec struct.
  *
  */
 typedef struct UnoGroupSplit
@@ -121,7 +101,7 @@ typedef struct UnoGroupSplit
    * Opaque reference to the constituent member shares. Acquire one of the
    * shares with `uno_get_member_share_by_index`.
    */
-  struct UnoMemberSharesVec *member_shares;
+  const struct UnoMemberSharesVec *member_shares;
 } UnoGroupSplit;
 
 /**
@@ -135,7 +115,7 @@ typedef struct UnoGroupSplit
  */
 typedef struct UnoShare
 {
-  char *mnemonic;
+  const char *mnemonic;
 } UnoShare;
 
 /**
@@ -201,7 +181,7 @@ typedef struct UnoShareMetadata
 /**
  *
  * A GroupSpec is a tuple of (threshold, total) shares in a given s39 group
- * split. For instance, if you want a group go be split into 3 pieces, two
+ * split. For instance, if you want a group to be split into 3 pieces, two
  * of which are requred to reconstitute the group secret, you'd pass (2, 3).
  *
  */
@@ -216,7 +196,7 @@ typedef struct UnoGroupSpec
  * Copy the raw 32 bytes backing an uno id.
  *
  */
-void uno_copy_id_bytes(UnoId *uno_id, uint8_t *bytes, size_t len, Error *err);
+int uno_copy_id_bytes(const UnoId *uno_id, uint8_t *bytes, size_t len);
 
 /**
  *
@@ -232,21 +212,21 @@ void uno_free_byte_slice(struct UnoByteSlice byte_slice);
  * `uno_get_group_from_split_result`.
  *
  */
-void uno_free_group_split(struct UnoGroupSplit *maybe_gs);
+void uno_free_group_split(struct UnoGroupSplit *group_split);
 
 /**
  *
  * Free a previously allocated UnoId from `uno_get_id_from_bytes`.
  *
  */
-void uno_free_id(UnoId *maybe_id);
+void uno_free_id(UnoId *id);
 
 /**
  *
  * Free a previously allocated share returned by `uno_get_s39_share_by_index`.
  *
  */
-void uno_free_s39_share(struct UnoShare *maybe_share);
+void uno_free_s39_share(struct UnoShare share);
 
 /**
  *
@@ -254,23 +234,23 @@ void uno_free_s39_share(struct UnoShare *maybe_share);
  * `uno_get_s39_share_metadata`.
  *
  */
-void uno_free_s39_share_metadata(struct UnoShareMetadata *maybe_md);
+void uno_free_s39_share_metadata(struct UnoShareMetadata metadata);
 
 /**
  *
- * Free a previously allocated SplitResult from `uno_s39_split`.
+ * Free a previously allocated UnoSplitResult from `uno_s39_split`.
  *
  */
-void uno_free_split_result(struct UnoSplitResult *maybe_sr);
+void uno_free_split_result(struct UnoSplitResult *split_result);
 
 /**
  *
- * uno_get_group_from_split_result
+ * Get an UnoGroupSplit by index from an opaque UnoSplitResult.
  *
  */
-struct UnoGroupSplit *uno_get_group_from_split_result(struct UnoSplitResult *split_result,
-                                                      size_t index,
-                                                      Error *err);
+int uno_get_group_from_split_result(const struct UnoSplitResult *split_result,
+                                    size_t index,
+                                    const struct UnoGroupSplit **out);
 
 /**
  *
@@ -278,7 +258,7 @@ struct UnoGroupSplit *uno_get_group_from_split_result(struct UnoSplitResult *spl
  * responsible calling `uno_free_id` on the returned struct once finished.
  *
  */
-UnoId *uno_get_id_from_bytes(uint8_t *bytes, size_t len, Error *err);
+int uno_get_id_from_bytes(const uint8_t *bytes, size_t len, const UnoId **out);
 
 /**
  *
@@ -286,31 +266,31 @@ UnoId *uno_get_id_from_bytes(uint8_t *bytes, size_t len, Error *err);
  * string does not need to be managed by the caller.
  *
  */
-const char *uno_get_msg_from_err(Error err);
+const char *uno_get_msg_from_err(int err);
 
 /**
  *
  * Get the share metadata from an UnoShare.
  *
  */
-struct UnoShareMetadata *uno_get_s39_share_metadata(struct UnoShare *share,
-                                                    Error *err);
+int uno_get_s39_share_metadata(const struct UnoShare *share,
+                               struct UnoShareMetadata *out);
 
 /**
  *
  * Returns the actual member share by index.
  *
  */
-struct UnoShare *uno_get_s93_share_by_index(struct UnoGroupSplit *group_split,
-                                            uint8_t index,
-                                            Error *err);
+int uno_get_s93_share_by_index(const struct UnoGroupSplit *group_split,
+                               uint8_t index,
+                               struct UnoShare *out);
 
 /**
  *
  * Get the raw bytes backing an uno id.
  *
  */
-struct UnoByteSlice uno_id_get_bytes(UnoId *uno_id);
+int uno_id_get_bytes(const UnoId *uno_id, struct UnoByteSlice *out);
 
 /**
  *
@@ -320,21 +300,26 @@ struct UnoByteSlice uno_id_get_bytes(UnoId *uno_id);
  * the original UnoId. The returned UnoId must be freed using `uno_free_id`.
  *
  */
-UnoId *uno_s39_combine(char **share_mnemonics, size_t total_shares, Error *err);
+int uno_s39_combine(const char *const *share_nmemonics,
+                    size_t total_shares,
+                    const UnoId **out);
 
 /**
  *
- * See s39::split
+ * See s39::split.
  *
  * Rather than an array of tuples, the caller provides an array of GroupSpec
  * structs. The group_threshold is fixed at 1 so this parameter is currently
  * unused.
  *
+ * Upon success, the SplitResult represents an array of UnoGroupSplits of
+ * length group_total.
+ *
  */
-struct UnoSplitResult *uno_s39_split(UnoId *uno_id,
-                                     size_t _group_threshold,
-                                     size_t group_total,
-                                     struct UnoGroupSpec *group_specs,
-                                     Error *err);
+int uno_s39_split(const UnoId *uno_id,
+                  size_t _group_threshold,
+                  const struct UnoGroupSpec *group_specs,
+                  size_t group_total,
+                  const struct UnoSplitResult **out);
 
 #endif /* uno_ffi_h */
