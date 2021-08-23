@@ -46,15 +46,13 @@ line_endings = "LF" # also "CR", "CRLF", "Native"
 ############################# Codegen Options ##################################
 
 style = "both"
-sort_by = "Name" # default for `fn.sort_by` and `const.sort_by`
+sort_by = "None" # default for `fn.sort_by` and `const.sort_by`
 usize_is_size_t = true
-
 
 
 [defines]
 # "target_os = freebsd" = "DEFINE_FREEBSD"
 # "feature = serde" = "DEFINE_SERDE"
-
 
 
 [export]
@@ -65,9 +63,7 @@ item_types = []
 renaming_overrides_prefixing = false
 
 
-
 [export.rename]
-
 
 
 [export.body]
@@ -83,9 +79,7 @@ rename_args = "None"
 # prefix = "START_FUNC"
 # postfix = "END_FUNC"
 args = "auto"
-sort_by = "Name"
-
-
+sort_by = "None"
 
 
 [struct]
@@ -98,8 +92,6 @@ derive_lt = false
 derive_lte = false
 derive_gt = false
 derive_gte = false
-
-
 
 
 [enum]
@@ -117,19 +109,26 @@ enum_class = true
 private_default_tagged_enum_constructor = false
 
 
-
-
 [const]
 allow_static_const = true
 allow_constexpr = false
-sort_by = "Name"
+sort_by = "None"
 
 
+[ptr]
+# An optional string to decorate all pointers that are
+# required to be non null. Nullability is inferred from the Rust type: `&T`,
+# `&mut T` and `NonNull<T>` all require a valid pointer value.
+#
+# clang uses __nonnull:
+#
+#   https://clang.llvm.org/docs/analyzer/developer-docs/nullability.html
+#
+non_null_attribute = "__nonnull"
 
 
 [macro_expansion]
 bitflags = false
-
 
 
 ############## Options for How Your Rust library Should Be Parsed ##############
@@ -142,9 +141,9 @@ clean = false
 extra_bindings = []
 
 
-
 [parse.expand]
 crates = []
 all_features = false
 default_features = true
 features = []
+

@@ -21,21 +21,21 @@
 #include <stdlib.h>
 
 
-#define UNO_ERR_CHECKSUM 6
-
-#define UNO_ERR_COMBINE 3
+#define UNO_ERR_SUCCESS 0
 
 #define UNO_ERR_ILLEGAL_ARG 1
 
-#define UNO_ERR_MNEMONIC 7
+#define UNO_ERR_SPLIT 2
+
+#define UNO_ERR_COMBINE 3
 
 #define UNO_ERR_SHARE_ID 4
 
 #define UNO_ERR_SHARE_MISS 5
 
-#define UNO_ERR_SPLIT 2
+#define UNO_ERR_CHECKSUM 6
 
-#define UNO_ERR_SUCCESS 0
+#define UNO_ERR_MNEMONIC 7
 
 /**
  *
@@ -73,6 +73,19 @@ typedef struct UnoByteSlice
   size_t len;
   size_t _cap;
 } UnoByteSlice;
+
+/**
+ *
+ * A GroupSpec is a tuple of (threshold, total) shares in a given s39 group
+ * split. For instance, if you want a group to be split into 3 pieces, two
+ * of which are requred to reconstitute the group secret, you'd pass (2, 3).
+ *
+ */
+typedef struct UnoGroupSpec
+{
+  uint8_t threshold;
+  uint8_t total;
+} UnoGroupSpec;
 
 /**
  *
@@ -180,16 +193,19 @@ typedef struct UnoShareMetadata
 
 /**
  *
- * A GroupSpec is a tuple of (threshold, total) shares in a given s39 group
- * split. For instance, if you want a group to be split into 3 pieces, two
- * of which are requred to reconstitute the group secret, you'd pass (2, 3).
+ * Get a description for the provided error code. The lifetime of the returned
+ * string does not need to be managed by the caller.
  *
  */
-typedef struct UnoGroupSpec
-{
-  uint8_t threshold;
-  uint8_t total;
-} UnoGroupSpec;
+const char *uno_get_msg_from_err(int err);
+
+/**
+ *
+ * Create an uno id struct from a 32 byte seed data array. The caller is
+ * responsible calling `uno_free_id` on the returned struct once finished.
+ *
+ */
+int uno_get_id_from_bytes(const uint8_t *bytes, size_t len, const UnoId **out);
 
 /**
  *
@@ -197,6 +213,20 @@ typedef struct UnoGroupSpec
  *
  */
 int uno_copy_id_bytes(const UnoId *uno_id, uint8_t *bytes, size_t len);
+
+/**
+ *
+ * Free a previously allocated UnoId from `uno_get_id_from_bytes`.
+ *
+ */
+void uno_free_id(UnoId *id);
+
+/**
+ *
+ * Get the raw bytes backing an uno id.
+ *
+ */
+int uno_id_get_bytes(const UnoId *uno_id, struct UnoByteSlice *out);
 
 /**
  *
@@ -208,33 +238,21 @@ void uno_free_byte_slice(struct UnoByteSlice byte_slice);
 
 /**
  *
- * Free a previously allocated GroupSplit returned by
- * `uno_get_group_from_split_result`.
+ * See s39::split.
+ *
+ * Rather than an array of tuples, the caller provides an array of GroupSpec
+ * structs. The group_threshold is fixed at 1 so this parameter is currently
+ * unused.
+ *
+ * Upon success, the SplitResult represents an array of UnoGroupSplits of
+ * length group_total.
  *
  */
-void uno_free_group_split(struct UnoGroupSplit *group_split);
-
-/**
- *
- * Free a previously allocated UnoId from `uno_get_id_from_bytes`.
- *
- */
-void uno_free_id(UnoId *id);
-
-/**
- *
- * Free a previously allocated share returned by `uno_get_s39_share_by_index`.
- *
- */
-void uno_free_s39_share(struct UnoShare share);
-
-/**
- *
- * Free a previously allocated ShareMetadata returned by
- * `uno_get_s39_share_metadata`.
- *
- */
-void uno_free_s39_share_metadata(struct UnoShareMetadata metadata);
+int uno_s39_split(const UnoId *uno_id,
+                  size_t _group_threshold,
+                  const struct UnoGroupSpec *group_specs,
+                  size_t group_total,
+                  const struct UnoSplitResult **out);
 
 /**
  *
@@ -254,27 +272,11 @@ int uno_get_group_from_split_result(const struct UnoSplitResult *split_result,
 
 /**
  *
- * Create an uno id struct from a 32 byte seed data array. The caller is
- * responsible calling `uno_free_id` on the returned struct once finished.
+ * Free a previously allocated GroupSplit returned by
+ * `uno_get_group_from_split_result`.
  *
  */
-int uno_get_id_from_bytes(const uint8_t *bytes, size_t len, const UnoId **out);
-
-/**
- *
- * Get a description for the provided error code. The lifetime of the returned
- * string does not need to be managed by the caller.
- *
- */
-const char *uno_get_msg_from_err(int err);
-
-/**
- *
- * Get the share metadata from an UnoShare.
- *
- */
-int uno_get_s39_share_metadata(const struct UnoShare *share,
-                               struct UnoShareMetadata *out);
+void uno_free_group_split(struct UnoGroupSplit *group_split);
 
 /**
  *
@@ -287,10 +289,26 @@ int uno_get_s93_share_by_index(const struct UnoGroupSplit *group_split,
 
 /**
  *
- * Get the raw bytes backing an uno id.
+ * Free a previously allocated share returned by `uno_get_s39_share_by_index`.
  *
  */
-int uno_id_get_bytes(const UnoId *uno_id, struct UnoByteSlice *out);
+void uno_free_s39_share(struct UnoShare share);
+
+/**
+ *
+ * Get the share metadata from an UnoShare.
+ *
+ */
+int uno_get_s39_share_metadata(const struct UnoShare *share,
+                               struct UnoShareMetadata *out);
+
+/**
+ *
+ * Free a previously allocated ShareMetadata returned by
+ * `uno_get_s39_share_metadata`.
+ *
+ */
+void uno_free_s39_share_metadata(struct UnoShareMetadata metadata);
 
 /**
  *
@@ -303,23 +321,5 @@ int uno_id_get_bytes(const UnoId *uno_id, struct UnoByteSlice *out);
 int uno_s39_combine(const char *const *share_nmemonics,
                     size_t total_shares,
                     const UnoId **out);
-
-/**
- *
- * See s39::split.
- *
- * Rather than an array of tuples, the caller provides an array of GroupSpec
- * structs. The group_threshold is fixed at 1 so this parameter is currently
- * unused.
- *
- * Upon success, the SplitResult represents an array of UnoGroupSplits of
- * length group_total.
- *
- */
-int uno_s39_split(const UnoId *uno_id,
-                  size_t _group_threshold,
-                  const struct UnoGroupSpec *group_specs,
-                  size_t group_total,
-                  const struct UnoSplitResult **out);
 
 #endif /* uno_ffi_h */
