@@ -5,6 +5,10 @@ authors = ["David Cowden <david@withuno.com>"]
 license = "AGPL-3.0-only"
 edition = "2018"
 
+[lib]
+name = "uno"
+crate-type = ["staticlib"]
+
 [dependencies]
 uno = "0.1"
 
