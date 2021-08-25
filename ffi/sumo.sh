@@ -2,7 +2,7 @@
 set -ex
 
 : "${LIBNAME:=libuno}"
-: "${OUTNAME:=Uno}"
+: "${OUTNAME:=UnoRust}"
 : "${TOOLCHAIN:=nightly}"
 : "${PROFILE:=release}"
 : "${PROFDIR:=$PROFILE}"
