@@ -156,12 +156,11 @@ fn uno_get_id_from_bytes
     let res = unsafe { raw.as_ref() };
 
     out.map(|ptr| ptr.write(res));
-
     UNO_ERR_SUCCESS
 }
 
 ///
-/// Copy the raw 32 bytes backing an uno id.
+/// Copy the raw 32 bytes backing an uno Id into caller-owned memory.
 ///
 #[no_mangle]
 pub extern "C"
@@ -189,7 +188,6 @@ fn uno_copy_id_bytes
         // SAFETY: bptr is not null and is obtained mutable
         unsafe { bptr.add(i).write(id.0[i]) }
     }
-
     UNO_ERR_SUCCESS
 }
 
@@ -218,11 +216,11 @@ pub struct UnoByteSlice
 }
 
 ///
-/// Get the raw bytes backing an uno id. 
+/// Get the raw bytes backing an uno Id.
 ///
 #[no_mangle]
 pub extern "C"
-fn uno_id_get_bytes
+fn uno_get_bytes_from_id
 (
     uno_id: Option<&UnoId>,
     out: Option<&mut MaybeUninit<UnoByteSlice>>,
@@ -244,7 +242,6 @@ fn uno_id_get_bytes
     let res = UnoByteSlice { ptr: rptr, len: len, _cap: cap, };
 
     out.map(|ptr| ptr.write(res));
-   
     UNO_ERR_SUCCESS 
 }
 
@@ -353,7 +350,6 @@ fn uno_s39_split
     let res = unsafe { raw.as_ref() };
 
     out.map(|ptr| ptr.write(res));
-
     UNO_ERR_SUCCESS
 }
 
@@ -415,7 +411,7 @@ fn uno_get_group_from_split_result
 (
     split_result: Option<&UnoSplitResult>,
     index: usize,
-    out: Option<&mut MaybeUninit<Option<&UnoGroupSplit>>>,
+    out: Option<&mut MaybeUninit<UnoGroupSplit>>,
 )
 -> c_int
 {
@@ -442,7 +438,7 @@ fn uno_get_group_from_split_result
         cap: cap,
     };
 
-    let group_split = UnoGroupSplit { 
+    let res = UnoGroupSplit {
         group_id: item.group_id,
         iteration_exponent: item.iteration_exponent,
         group_index: item.group_index,
@@ -453,11 +449,7 @@ fn uno_get_group_from_split_result
         member_shares: Box::into_raw(Box::new(shares)),
     };
 
-    let raw = Box::into_raw(Box::new(group_split));
-    let res = unsafe { raw.as_ref() };
-
     out.map(|ptr| ptr.write(res));
-
     UNO_ERR_SUCCESS
 }
 
@@ -467,15 +459,21 @@ fn uno_get_group_from_split_result
 ///
 #[no_mangle]
 pub extern "C"
-fn uno_free_group_split(group_split: Option<NonNull<UnoGroupSplit>>)
+fn uno_free_group_split(group_split: UnoGroupSplit)
 { 
-    group_split.map(|gs| unsafe { 
-        let gsb = Box::from_raw(gs.as_ptr());
-        let msb = Box::from_raw(
-            (*gsb).member_shares as *mut UnoMemberSharesVec
-        );
-        Vec::from_raw_parts((*msb).ptr.as_ptr(), (*msb).len, (*msb).cap);
-    });
+    // ptr originally obtained mutable but presented as const for C
+    let raw = group_split.member_shares as *mut UnoMemberSharesVec;
+    let mbs = match NonNull::new(raw) {
+        // SAFETY: originally boxed by us unless caller passes in uninit
+        //         memory which they shant do.
+        Some(nn) => unsafe { nn.as_ref() },
+        None => return,
+    };
+    // SAFETY: we generated these values ourself, mbs is opaque
+    unsafe {
+        Vec::from_raw_parts(mbs.ptr.as_ptr(), mbs.len, mbs.cap);
+        Box::from_raw(raw);
+    };
 }
 
 ///
@@ -499,16 +497,13 @@ pub struct UnoShare
 pub extern "C"
 fn uno_get_s93_share_by_index
 (
-    group_split: Option<&UnoGroupSplit>,
+    group_split: UnoGroupSplit,
     index: u8,
     out: Option<&mut MaybeUninit<UnoShare>>,
 )
 -> c_int
 {
-    let mbsp = match group_split {
-        Some(gs) => gs.member_shares as *mut UnoMemberSharesVec,
-        None => return UNO_ERR_ILLEGAL_ARG,
-    };
+    let mbsp = group_split.member_shares as *mut UnoMemberSharesVec;
     let mbsr = match NonNull::new(mbsp) {
         Some(nn) => unsafe { nn.as_ref() },
         None => return UNO_ERR_ILLEGAL_ARG,
@@ -534,7 +529,6 @@ fn uno_get_s93_share_by_index
     out.map(|ptr| ptr.write(
         UnoShare { mnemonic: c_string.into_raw(), })
     );
-
     UNO_ERR_SUCCESS
 }
 
@@ -607,16 +601,13 @@ pub struct UnoShareMetadata
 pub extern "C"
 fn uno_get_s39_share_metadata
 (
-    share: Option<&UnoShare>,
+    share: UnoShare,
     out: Option<&mut MaybeUninit<UnoShareMetadata>>,
 )
 -> c_int
 {
-    let mnemonic_c = match share {
-        // SAFETY: previously generated c_string ^
-        Some(s) => unsafe { CStr::from_ptr(s.mnemonic) },
-        None => return UNO_ERR_ILLEGAL_ARG,
-    };
+    let mnemonic_c = unsafe { CStr::from_ptr(share.mnemonic) };
+
     let mnemonic_str = match mnemonic_c.to_str() {
         Ok(ms) => ms,
         Err(_) => return UNO_ERR_ILLEGAL_ARG,
@@ -713,7 +704,6 @@ fn uno_s39_combine
     let res = unsafe { raw.as_ref() };
 
     out.map(|ptr| ptr.write(res));
-
     UNO_ERR_SUCCESS
 }
 
