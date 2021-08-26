@@ -692,7 +692,7 @@ fn uno_s39_combine
             .map(|s| s.to_owned())
             .collect();
  
-        shares[i] = words; 
+        shares.push(words);
     }
 
     let uno_id = match uno::combine(&shares[..]) {
