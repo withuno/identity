@@ -57,6 +57,8 @@ use std::os::raw::c_char;
 use std::os::raw::c_int;
 use std::ptr::NonNull;
 
+// TODO: generally convert everything to _Nonnull compatible declarations. This
+// involves using refs and NonNull<> instead of const * and MaybeUninit<>. 
 
 // TODO: make enum
 pub const UNO_ERR_SUCCESS: c_int = 0;
@@ -495,7 +497,7 @@ pub struct UnoShare
 ///
 #[no_mangle]
 pub extern "C"
-fn uno_get_s93_share_by_index
+fn uno_get_s39_share_by_index
 (
     group_split: UnoGroupSplit,
     index: u8,
@@ -533,7 +535,53 @@ fn uno_get_s93_share_by_index
 }
 
 ///
-/// Free a previously allocated share returned by `uno_get_s39_share_by_index`.
+/// Convert a mnemonic string of 33 space separated words to an internal share
+/// representation.
+///
+#[no_mangle]
+pub extern "C"
+fn uno_get_s39_share_from_mnemonic(
+    ptr: *const c_char,
+    out: Option<&mut MaybeUninit<UnoShare>>,
+)
+-> c_int
+{
+    // Looks like this if we pas ptr as an &c_char:    
+    // let cstr = unsafe { CStr::from_ptr(ptr as *const c_char) };
+
+    // SAFETY: call is responsible for providing a valid c_char
+    // TODO: maybe have the caller pass a byte pointer and len?
+    let cstr = unsafe { CStr::from_ptr(ptr) };
+    let str = match cstr.to_str() {
+        Ok(str) => str,
+        Err(_) => return UNO_ERR_ILLEGAL_ARG,
+    };
+
+    let words: Vec<String> = str.split(' ')
+        .map(|s| s.to_owned())
+        .collect();
+
+    let share = match uno::Share::from_mnemonic(&words) {
+        Ok(share) => share,
+        Err(_) => return UNO_ERR_MNEMONIC,
+    };
+    let mnemonic = match share.to_mnemonic() {
+        Ok(words) => words.join(" "),
+        Err(_) => return UNO_ERR_MNEMONIC,
+    };
+    let c_string = match CString::new(mnemonic) {
+        Ok(cs) => cs,
+        Err(_) => return UNO_ERR_MNEMONIC,
+    };  
+    let res = UnoShare { mnemonic: c_string.into_raw(), };
+
+    out.map(|ptr| ptr.write(res));
+    UNO_ERR_SUCCESS
+}
+
+///
+/// Free a previously allocated share returned by `uno_get_s39_share_by_index`
+/// or `uno_get_s39_share_from_mnemonic`.
 ///
 #[no_mangle]
 pub extern "C"

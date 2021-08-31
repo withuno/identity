@@ -125,11 +125,12 @@ sort_by = "None"
 # required to be non null. Nullability is inferred from the Rust type: `&T`,
 # `&mut T` and `NonNull<T>` all require a valid pointer value.
 #
-# clang uses __nonnull:
+# clang uses _Nonnull and __nonnull, _Nullable and __nullable:
 #
+#   https://clang.llvm.org/docs/AttributeReference.html#nullability-attributes
 #   https://clang.llvm.org/docs/analyzer/developer-docs/nullability.html
 #
-non_null_attribute = "__nonnull"
+non_null_attribute = "_Nonnull"
 
 
 [macro_expansion]
