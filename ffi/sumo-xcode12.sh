@@ -68,18 +68,29 @@ xc_args="$xc_args
 # I guess we can't build for Xcode12 iOS simulator in rust because llvm doesn't
 # have the right target.
 #
+lipo_args=""
 TRIPLE="x86_64-apple-ios7.0.0-sim"
 cargo +$TOOLCHAIN build \
     -Z unstable-options --profile $PROFILE \
     -Z build-std \
     --target xcode12/$TRIPLE.json
 
-cp ../target/$TRIPLE/$PROFDIR/$LIBNAME.a libs/$LIBNAME-ios-sim.a
+lipo_args="$lipo_args
+  -arch x86_64 ../target/$TRIPLE/$PROFDIR/$LIBNAME.a"
 
-xc_args="$xc_args
-    -library libs/$LIBNAME-ios-sim.a"
-xc_args="$xc_args
-    -headers include"
+TRIPLE="aarch64-apple-ios14.0-sim"
+cargo +$TOOLCHAIN build \
+    -Z unstable-options --profile $PROFILE \
+    -Z build-std \
+    --target xcode12/$TRIPLE.json
+
+lipo_args="$lipo_args
+  -arch arm64v8 ../target/$TRIPLE/$PROFDIR/$LIBNAME.a"
+
+lipo -create $lipo_args -output libs/$LIBNAME-ios-sim.a
+
+# !
+# Manually add these to the xcframework later.
 
 
 #
@@ -117,4 +128,32 @@ xc_args="$xc_args
 #
 mkdir -p out
 xcodebuild -create-xcframework $xc_args -output out/$OUTNAME.xcframework
+
+# Manually add simulator since xcodebuild can't figure its shit out.
+#
+mkdir -p out/$OUTNAME.xcframework/ios-arm64_x86_64-simulator/Headers
+cp include/libuno.h out/$OUTNAME.xcframework/ios-arm64_x86_64-simulator/Headers
+cp libs/$LIBNAME-ios-sim.a out/$OUTNAME.xcframework/ios-arm64_x86_64-simulator
+plutil -insert AvailableLibraries.0 \
+    -xml "$(cat <<-EOF
+	<dict>
+		<key>HeadersPath</key>
+		<string>Headers</string>
+		<key>LibraryIdentifier</key>
+		<string>ios-arm64_x86_64-simulator</string>
+		<key>LibraryPath</key>
+		<string>$LIBNAME-ios-sim.a</string>
+		<key>SupportedArchitectures</key>
+		<array>
+			<string>arm64</string>
+			<string>x86_64</string>
+		</array>
+		<key>SupportedPlatform</key>
+		<string>ios</string>
+		<key>SupportedPlatformVariant</key>
+		<string>simulator</string>
+	</dict>
+	EOF
+    )" \
+    out/$OUTNAME.xcframework/Info.plist
 
