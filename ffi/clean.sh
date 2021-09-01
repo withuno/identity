@@ -6,6 +6,6 @@ set -x
 rm libs/*
 
 # Uno.xcframework
-rm -rf out/*
+rm -rf out/UnoRust.xcframework
 
 rmdir libs out 

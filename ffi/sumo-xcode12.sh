@@ -3,7 +3,7 @@ set -ex
 
 : "${LIBNAME:=libuno}"
 : "${OUTNAME:=UnoRust}"
-: "${TOOLCHAIN:=nightly}"
+: "${TOOLCHAIN:=nightly-2021-02-06}"
 : "${PROFILE:=release}"
 : "${PROFDIR:=$PROFILE}"
 
@@ -24,7 +24,6 @@ mkdir -p libs
 # Build macOS.
 #
 lipo_args=""
-
 for ARCH in $ARCHS
 do
   TRIPLE="$ARCH-apple-darwin"
@@ -49,12 +48,13 @@ xc_args="$xc_args
 #
 # Build iOS.
 #
+TRIPLE=aarch64-apple-ios7.0.0
 cargo +$TOOLCHAIN build \
     -Z unstable-options --profile $PROFILE \
     -Z build-std \
-    --target aarch64-apple-ios
+    --target xcode12/$TRIPLE.json
 
-cp ../target/aarch64-apple-ios/$PROFDIR/$LIBNAME.a libs/$LIBNAME-ios.a
+cp ../target/$TRIPLE/$PROFDIR/$LIBNAME.a libs/$LIBNAME-ios.a
 
 xc_args="$xc_args
     -library libs/$LIBNAME-ios.a"
@@ -65,24 +65,16 @@ xc_args="$xc_args
 #
 # Build ios simulator.
 #
+# I guess we can't build for Xcode12 iOS simulator in rust because llvm doesn't
+# have the right target.
+#
+TRIPLE="x86_64-apple-ios7.0.0-sim"
 cargo +$TOOLCHAIN build \
     -Z unstable-options --profile $PROFILE \
     -Z build-std \
-    --target aarch64-apple-ios-sim
+    --target xcode12/$TRIPLE.json
 
-lipo_args="
-    -arch arm64v8 ../target/aarch64-apple-ios-sim/$PROFDIR/$LIBNAME.a"
-
-# The simulator target doesn't end in `-sim` on x86_64
-cargo +$TOOLCHAIN build \
-    -Z unstable-options --profile $PROFILE \
-    -Z build-std \
-    --target x86_64-apple-ios
-
-lipo_args="$lipo_args
-    -arch x86_64 ../target/x86_64-apple-ios/$PROFDIR/$LIBNAME.a"
-
-lipo -create $lipo_args -output libs/$LIBNAME-ios-sim.a
+cp ../target/$TRIPLE/$PROFDIR/$LIBNAME.a libs/$LIBNAME-ios-sim.a
 
 xc_args="$xc_args
     -library libs/$LIBNAME-ios-sim.a"
@@ -94,18 +86,23 @@ xc_args="$xc_args
 # Build mac catalyst.
 #
 lipo_args=""
-for ARCH in $ARCHS
-do
-  TRIPLE="$ARCH-apple-ios-macabi"
-  cargo +$TOOLCHAIN build \
-      -Z unstable-options --profile $PROFILE \
-      -Z build-std \
-      --target $TRIPLE
+TRIPLE=aarch64-apple-ios14.0-macabi
+cargo +$TOOLCHAIN build \
+    -Z unstable-options --profile $PROFILE \
+    -Z build-std \
+    --target xcode12/$TRIPLE.json
 
-  larch=$(< $subarchs/$ARCH)
-  lipo_args="$lipo_args
-    -arch $larch ../target/$TRIPLE/$PROFDIR/$LIBNAME.a"
-done
+lipo_args="$lipo_args
+  -arch arm64v8 ../target/$TRIPLE/$PROFDIR/$LIBNAME.a"
+
+TRIPLE=x86_64-apple-ios-macabi
+cargo +$TOOLCHAIN build \
+    -Z unstable-options --profile $PROFILE \
+    -Z build-std \
+    --target $TRIPLE
+
+lipo_args="$lipo_args
+  -arch x86_64 ../target/$TRIPLE/$PROFDIR/$LIBNAME.a"
 
 lipo -create $lipo_args -output libs/$LIBNAME-ios-macabi.a
 

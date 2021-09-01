@@ -1,0 +1,36 @@
+{
+  "abi-return-struct-as-int": true,
+  "arch": "aarch64",
+  "archive-format": "darwin",
+  "bitcode-llvm-cmdline": "-triple\u0000arm64-apple-ios11.0.0\u0000-emit-obj\u0000-disable-llvm-passes\u0000-target-abi\u0000darwinpcs\u0000-Os\u0000",
+  "cpu": "apple-a7",
+  "data-layout": "e-m:o-i64:64-i128:128-n32:64-S128",
+  "dll-suffix": ".dylib",
+  "dwarf-version": 2,
+  "eh-frame-header": false,
+  "emit-debug-gdb-scripts": false,
+  "executables": true,
+  "features": "+neon,+fp-armv8,+apple-a7",
+  "forces-embed-bitcode": true,
+  "frame-pointer": "non-leaf",
+  "function-sections": false,
+  "has-rpath": true,
+  "is-builtin": false,
+  "is-like-osx": true,
+  "link-env": [
+    "ZERO_AR_DATE=1"
+  ],
+  "link-env-remove": [
+    "MACOSX_DEPLOYMENT_TARGET"
+  ],
+  "linker-is-gnu": false,
+  "llvm-target": "arm64-apple-ios7.0.0",
+  "max-atomic-width": 128,
+  "os": "ios",
+  "split-debuginfo": "packed",
+  "target-family": [
+    "unix"
+  ],
+  "target-pointer-width": "64",
+  "vendor": "apple"
+}

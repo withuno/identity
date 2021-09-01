@@ -465,10 +465,11 @@ fn uno_free_group_split(group_split: UnoGroupSplit)
 { 
     // ptr originally obtained mutable but presented as const for C
     let raw = group_split.member_shares as *mut UnoMemberSharesVec;
-    let mbs = match NonNull::new(raw) {
+    let nnraw = NonNull::new(raw);
+    let mbs = match nnraw {
         // SAFETY: originally boxed by us unless caller passes in uninit
         //         memory which they shant do.
-        Some(nn) => unsafe { nn.as_ref() },
+        Some(ref nn) => unsafe { nn.as_ref() },
         None => return,
     };
     // SAFETY: we generated these values ourself, mbs is opaque
@@ -506,8 +507,10 @@ fn uno_get_s39_share_by_index
 -> c_int
 {
     let mbsp = group_split.member_shares as *mut UnoMemberSharesVec;
-    let mbsr = match NonNull::new(mbsp) {
-        Some(nn) => unsafe { nn.as_ref() },
+
+    let maybe_mbsp = NonNull::new(mbsp);
+    let mbsr = match maybe_mbsp {
+        Some(ref nn) => unsafe { nn.as_ref() },
         None => return UNO_ERR_ILLEGAL_ARG,
     };
     let shares = unsafe {
