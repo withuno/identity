@@ -1,8 +1,8 @@
-FROM rust:latest as builder
+FROM rustlang/rust:nightly as builder
 WORKDIR /app
 COPY . .
-RUN cargo test --release
-RUN cargo install --path api --root . --features s3
+RUN cargo +nightly test --release
+RUN cargo +nightly install --path api --root . --features s3
 
 FROM debian:buster-slim
 RUN apt update && apt install -y libcurl4
