@@ -129,5 +129,6 @@ xc_args="$xc_args
 #
 # Build the sumo xcframework.
 #
+rm -rf $OUTDIR/$OUTNAME.xcframework
 xcodebuild -create-xcframework $xc_args -output $OUTDIR/$OUTNAME.xcframework
 
