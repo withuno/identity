@@ -1,11 +1,12 @@
 #!/bin/sh
 set -ex
 
-: "${LIBNAME:=libuno}"
+: "${LIBNAME:=libunoxcf}"
 : "${OUTNAME:=UnoRust}"
-: "${TOOLCHAIN:=nightly}"
+: "${TOOLCHAIN:=nightly-2021-07-24}"
 : "${PROFILE:=release}"
 : "${PROFDIR:=$PROFILE}"
+: "${OUTDIR:=../target/$PROFDIR/xcode13}"
 
 #
 # Build an archs table because the triple arch is not the same as lipo arch.
@@ -18,13 +19,12 @@ subarchs=$(mktemp -d)
 echo "arm64v8" > $subarchs/aarch64
 echo "x86_64" > $subarchs/x86_64
 
-mkdir -p libs
+mkdir -p $OUTDIR/a
 
 #
 # Build macOS.
 #
 lipo_args=""
-
 for ARCH in $ARCHS
 do
   TRIPLE="$ARCH-apple-darwin"
@@ -38,10 +38,10 @@ do
     -arch $larch ../target/$TRIPLE/$PROFDIR/$LIBNAME.a"
 done
 
-lipo -create $lipo_args -output libs/$LIBNAME-macos.a
+lipo -create $lipo_args -output $OUTDIR/a/$LIBNAME-macos.a
 
 xc_args="$xc_args
-    -library libs/$LIBNAME-macos.a"
+    -library $OUTDIR/a/$LIBNAME-macos.a"
 xc_args="$xc_args
     -headers include"
 
@@ -49,15 +49,16 @@ xc_args="$xc_args
 #
 # Build iOS.
 #
+TRIPLE=aarch64-apple-ios7.0.0
 cargo +$TOOLCHAIN build \
     -Z unstable-options --profile $PROFILE \
     -Z build-std \
-    --target aarch64-apple-ios
+    --target xcode13/$TRIPLE.json
 
-cp ../target/aarch64-apple-ios/$PROFDIR/$LIBNAME.a libs/$LIBNAME-ios.a
+cp ../target/$TRIPLE/$PROFDIR/$LIBNAME.a $OUTDIR/a/$LIBNAME-ios.a
 
 xc_args="$xc_args
-    -library libs/$LIBNAME-ios.a"
+    -library $OUTDIR/a/$LIBNAME-ios.a"
 xc_args="$xc_args
     -headers include"
 
@@ -74,18 +75,19 @@ lipo_args="
     -arch arm64v8 ../target/aarch64-apple-ios-sim/$PROFDIR/$LIBNAME.a"
 
 # The simulator target doesn't end in `-sim` on x86_64
+TRIPLE=x86_64-apple-ios7.0.0-sim
 cargo +$TOOLCHAIN build \
     -Z unstable-options --profile $PROFILE \
     -Z build-std \
-    --target x86_64-apple-ios
+    --target xcode13/$TRIPLE.json
 
 lipo_args="$lipo_args
-    -arch x86_64 ../target/x86_64-apple-ios/$PROFDIR/$LIBNAME.a"
+    -arch x86_64 ../target/$TRIPLE/$PROFDIR/$LIBNAME.a"
 
-lipo -create $lipo_args -output libs/$LIBNAME-ios-sim.a
+lipo -create $lipo_args -output $OUTDIR/a/$LIBNAME-ios-sim.a
 
 xc_args="$xc_args
-    -library libs/$LIBNAME-ios-sim.a"
+    -library $OUTDIR/a/$LIBNAME-ios-sim.a"
 xc_args="$xc_args
     -headers include"
 
@@ -107,10 +109,10 @@ do
     -arch $larch ../target/$TRIPLE/$PROFDIR/$LIBNAME.a"
 done
 
-lipo -create $lipo_args -output libs/$LIBNAME-ios-macabi.a
+lipo -create $lipo_args -output $OUTDIR/a/$LIBNAME-ios-macabi.a
 
 xc_args="$xc_args
-    -library libs/$LIBNAME-ios-macabi.a"
+    -library $OUTDIR/a/$LIBNAME-ios-macabi.a"
 xc_args="$xc_args
     -headers include"
 
@@ -119,5 +121,5 @@ xc_args="$xc_args
 # Build the sumo xcframework.
 #
 mkdir -p out
-xcodebuild -create-xcframework $xc_args -output out/$OUTNAME.xcframework
+xcodebuild -create-xcframework $xc_args -output $OUTDIR/$OUTNAME.xcframework
 

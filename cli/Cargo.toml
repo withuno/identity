@@ -1,7 +1,7 @@
 [package]
 name = "cli"
 version = "0.1.0"
-authors = ["David Cowden <david@withuno.com>"]
+authors = ["David Cowden <david@uno.app>"]
 license = "AGPL-3.0-only"
 edition = "2018"
 
@@ -10,8 +10,8 @@ name = "uno"
 path = "src/main.rs"
 
 [dependencies]
-uno = "0.1.0"
-djb = "0.1.0"
+uno = { path = "../lib" }
+djb = { path = "../djb" }
 
 anyhow = "1.0"
 argon2 = "0.2"

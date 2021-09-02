@@ -1,16 +1,12 @@
 [package]
 name = "ffi"
 version = "0.1.0"
-authors = ["David Cowden <david@withuno.com>"]
+authors = ["David Cowden <david@uno.app>"]
 license = "AGPL-3.0-only"
 edition = "2018"
 
-[lib]
-name = "uno"
-crate-type = ["staticlib"]
-
 [dependencies]
-uno = "0.1"
+uno = { path = "../lib" }
 
 [build-dependencies]
 cbindgen = "0.20"

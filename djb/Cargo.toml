@@ -1,11 +1,9 @@
 [package]
 name = "djb"
 version = "0.1.0"
-authors = ["David Cowden <david@withuno.com>"]
+authors = ["David Cowden <david@uno.app>"]
 license = "AGPL-3.0-only"
 edition = "2018"
-
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
 chacha20poly1305 = { version = "0.7.1", features = ["std"] }

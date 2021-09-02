@@ -1,7 +1,7 @@
 [package]
 name = "s39"
 version = "0.1.0"
-authors = ["dcow <david@withuno.com>"]
+authors = ["dcow <david@uno.app>"]
 license = "AGPL-3.0-only"
 edition = "2018"
 
@@ -9,4 +9,9 @@ edition = "2018"
 anyhow = "1.0"
 failure = "0.1"
 rand = "0.8"
-sssmc39 = "0.0.3"
+
+[dependencies.sssmc39]
+version = "0.0.3"
+features = ["rust_crypto_pbkdf2"]
+default-features = false
+

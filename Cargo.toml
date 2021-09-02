@@ -7,7 +7,7 @@
 
 # The following is a list of all the projects to include.
 [workspace]
-members = ["adi", "api", "cli", "djb", "ffi", "s39", "lib"]
+members = ["adi", "api", "cli", "djb", "ffi", "s39", "lib", "xcf"]
 
 # While cargo supports specifying both a path and version dependency, doing so
 # in any one of the sibling projects here would impose a file-system structure
@@ -19,10 +19,11 @@ members = ["adi", "api", "cli", "djb", "ffi", "s39", "lib"]
 # Each member should also be patched so that building happens from the local
 # filesystem.
 [patch.crates-io]
-adi = { path = "adi" }
-api = { path = "api" }
-cli = { path = "cli" }
-djb = { path = "djb" }
-ffi = { path = "ffi" }
-s39 = { path = "s39" }
-uno = { path = "lib" }
+#adi = { path = "adi" }
+#api = { path = "api" }
+#cli = { path = "cli" }
+#djb = { path = "djb" }
+#ffi = { path = "ffi" }
+#s39 = { path = "s39" }
+#uno = { path = "lib" }
+#xcf = { path = "xcf" }
