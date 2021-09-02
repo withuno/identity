@@ -20,9 +20,11 @@
 //! The actual data being returned is conveyed through a trailing out param.
 //! The output of FFI functions is most always a pointer to a rust allocated,
 //! sometimes opaque, struct. If you're expecting a Frob:
-//! ```
+//!
+//! ```ignore
 //! pub extern "C" fn uno_get_frob(..., Option<NonNull<*const Frob>>) -> Error
 //! ```
+//!
 //! Null is not a valid value for any of the FFI types and represents the None
 //! value of the Option. You must pass a non-null pointer as the value of the 
 //! out param, but you should not allocate (and cannot in the case of opaque
@@ -39,7 +41,8 @@
 //! If the call fails the return value will be > 0 and nothing will be written
 //! to the location specified in the out param. Error codes can be used to
 //! lookup an error message using:
-//! ```
+//!
+//! ```ignore
 //! uno_get_msg_for_error.
 //! ``` 
 //!
