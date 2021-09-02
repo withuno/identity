@@ -434,7 +434,7 @@ struct S39Combine
     #[clap(
         long,
         value_name = "nmemonic",
-        multiple = true,
+        multiple_values = true,
         multiple_occurrences = true)]
     shares: Vec<String>,
 }
