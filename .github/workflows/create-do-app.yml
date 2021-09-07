@@ -67,6 +67,9 @@ jobs:
                 - key: SPACES_REGION
                   value: "nyc3"
                   scope: RUN_TIME
+                - key: SPACES_BUCKET_PREFIX
+                  value: "u1o.dev"
+                  scope: RUN_TIME
           EOF
 
       - name: Create New App

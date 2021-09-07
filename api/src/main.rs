@@ -32,7 +32,10 @@ fn make_db(name: &str) -> anyhow::Result<S3Store> {
     let region = std::env::var("SPACES_REGION")
         .context("Failed to lookup SPACES_REGION")?;
 
-    let name = String::from(name) + ".u1o.dev";
+    let bucket = std::env::var("SPACES_BUCKET_PREFIX")
+        .context("Failed to lookup SPACES_BUCKET_PREFIX")?;
+
+    let name = String::from(name) + "." + &String::from(bucket);
 
     S3Store::new(&host, &region, &key_id, &secret, &name)
 }
