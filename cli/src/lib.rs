@@ -430,7 +430,7 @@ mod unit
         let pair = KeyPair::from(&id);
         let endpoint = "https://example.com";
         let actual = vault_url_from_key(endpoint, &pair)?;
-        let expected = "https://example.com/v1/vaults/jvB9pRmsHw-87BTEBB9CvbQI_ENDFiNM_PmcQGmaId8";
+        let expected = "https://example.com/v1/vaults/BOfVSES5eXi3HbbB0GIcmK35V57JyngUeDrnK_LJn5k";
         assert_eq!(expected, actual.to_string());
 
         Ok(())

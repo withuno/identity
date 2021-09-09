@@ -68,9 +68,9 @@ use strum_macros::IntoStaticStr;
 #[derive(IntoStaticStr)]
 enum Usage
 {
-    #[strum(to_string = "uno seed identity keypair")]
+    #[strum(to_string = "uno seed identity signing keypair")]
     Signature,
-    #[strum(to_string = "uno seed encryption secret")]
+    #[strum(to_string = "uno seed private symmetric encryption key")]
     Encryption,
 }
 
@@ -307,7 +307,9 @@ mod unit
         let id = Id::try_from(&*bytes)?;
         let actual = KeyPair::from(&id);
         let expected64 =
-            "gRQq+TCi1596pHN185cSiVE6Fi8ngbnUdQHVDWv3DNuXGtGDkgXQJgM1tj6Aoly75nrpAh1gY10Ravd/jiAP7w";
+            "18ORHYIJBf48uXH9tj3uSx/0/hK1EtIxB6aY/fedPHYdQFZwBfUaRtU33C/w7eeqC0G+vHbLq/nmFFZay2/8Vg==";
+
+
         let expected = base64::decode(expected64)?;
         assert_eq!(expected, actual.to_bytes());
 
@@ -321,8 +323,9 @@ mod unit
         let bytes = base64::decode(bytes64)?;
         let id = Id::try_from(&*bytes)?;
         let actual = SymmetricKey::from(&id);
-        let expected64 = "C5CHBqyvqyRWv5IFGAUjcCkq4OWSI5sDQ4PL8I5e7Z8";
+        let expected64 = "DrEDTahFReS8G+dCGz5GjUnG+idrEWZbOXfsgo7ZGFc=";
         let expected = base64::decode(expected64)?;
+
         assert_eq!(expected, actual.as_slice());
 
         Ok(())
