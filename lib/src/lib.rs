@@ -185,7 +185,7 @@ impl From<&Mu> for SymmetricKey
 {
     fn from(mu: &Mu) -> Self
     {
-        let ctx = "uno shamir secret share encryption key";
+        let ctx = "uno recovery share secret";
         let mut key = SymmetricKey::default();
         blake3::derive_key(ctx, &mu.0, key.as_mut_slice());
         key
@@ -265,11 +265,11 @@ impl<'a> Binding<'a>
     {
         match self {
             Binding::Vault =>
-                "uno user vault",
+                "authentication vault",
             Binding::Split =>
                 "uno ssss split",
             Binding::Combine =>
-                "uno ssss combine",
+                "uno share combine",
             Binding::Transfer =>
                 "uno ssss transfer",
             Binding::Custom(s) =>

@@ -1,0 +1,24 @@
+[package]
+name = "wsm"
+version = "0.1.0"
+authors = ["Chris Eberly <chris@uno.app>"]
+license = "AGPL-3.0-only"
+edition = "2018"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+[lib]
+crate-type = ['cdylib', 'rlib']
+
+[dev-dependencies]
+wasm-bindgen-test = "0.3"
+
+[dependencies]
+# this is required for a random source in a wasm environment
+# https://docs.rs/getrandom/0.2.3/getrandom/#webassembly-support
+getrandom = { version = "0.2.3", features = ["js"] }
+
+argon2 = "0.3"
+base64 = "0.13"
+blake3 = "1.0"
+uno = { path = "../lib" }
+wasm-bindgen = "0.2"
