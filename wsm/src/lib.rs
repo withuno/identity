@@ -142,12 +142,7 @@ pub fn wasm_decrypt_share(share: String, seed: String) -> Option<String> {
 }
 
 #[wasm_bindgen]
-pub fn wasm_decrypt_vault(vault: String, seed: String) -> Option<String> {
-    let decoded_vault = match base64::decode(vault) {
-        Ok(v) => v,
-        Err(_) => return None,
-    };
-
+pub fn wasm_decrypt_vault(vault: &[u8], seed: String) -> Option<String> {
     let decoded_seed = match base64::decode(seed) {
         Ok(v) => v,
         Err(_) => return None,
@@ -161,7 +156,7 @@ pub fn wasm_decrypt_vault(vault: String, seed: String) -> Option<String> {
     let key = uno::SymmetricKey::from(&id);
     let ctx = uno::Binding::Vault;
 
-    let decrypted_vault = match uno::decrypt(ctx, key, &decoded_vault) {
+    let decrypted_vault = match uno::decrypt(ctx, key, vault) {
         Ok(v) => v,
         Err(_) => return None,
     };
