@@ -10,4 +10,4 @@ anyhow = "1.0"
 failure = "0.1"
 rand = "0.8"
 
-sssmc39 = { git = "ssh://git@github.com/withuno/rust-sssmc39.git", features = ["rust_crypto_pbkdf2"], default-features = false }
+sssmc39 = { git = "https://github.com/withuno/rust-sssmc39.git", features = ["rust_crypto_pbkdf2"], default-features = false }
