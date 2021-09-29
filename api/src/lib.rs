@@ -25,6 +25,7 @@ use std::pin::Pin;
 
 use json_patch::merge;
 
+use serde_derive::Deserialize;
 use serde_json::Value;
 
 use http_types::Method;
@@ -314,14 +315,24 @@ where
     Ok(Body::from_bytes(vault))
 }
 
+#[derive(Debug, PartialEq, Deserialize)]
+struct ServiceQuery {
+    branch: String,
+}
+
 async fn fetch_service<T>(req: Request<State<T>>) -> Result<Body>
 where
     T: Database + 'static,
 {
     let db = &req.state().db;
     let name = req.param("name").map_err(bad_request)?;
-    let service = db.get(name).await.map_err(not_found)?;
-    Ok(Body::from_bytes(service))
+    let query: Result<ServiceQuery> = req.query();
+    let path = match query {
+        Ok(q) => format!("{}/{}", q.branch, name),
+        Err(_) => name.to_string(),
+    };
+    let service = db.get(&path).await.map_err(not_found)?;
+    Ok(service.into())
 }
 
 struct SessionId(String);
