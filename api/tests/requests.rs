@@ -616,7 +616,7 @@ mod requests {
 
         // add the file so the next request will succeed
         let tdata = r#"{"test": "data"}"#;
-        let foof = dbs.services.put("foo.json", &tdata.as_bytes());
+        let foof = dbs.services.put("main/foo.json", &tdata.as_bytes());
         let _ = task::block_on(foof)?;
 
         // gen a new salt and redo the request

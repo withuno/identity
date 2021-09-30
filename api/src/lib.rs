@@ -327,10 +327,11 @@ where
     let db = &req.state().db;
     let name = req.param("name").map_err(bad_request)?;
     let query: Result<ServiceQuery> = req.query();
-    let path = match query {
-        Ok(q) => format!("{}/{}", q.branch, name),
-        Err(_) => name.to_string(),
+    let prefix = match query {
+        Ok(ref q) => &q.branch,
+        Err(_) => "main",
     };
+    let path = format!("{}/{}", prefix, name);
     let service = db.get(&path).await.map_err(not_found)?;
     Ok(service.into())
 }
