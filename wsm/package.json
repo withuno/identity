@@ -1,8 +1,8 @@
 {
-  "name": "uno-identity",
+  "name": "wsm",
   "version": "1.0.0",
   "description": "",
-  "main": "index.js",
+  "main": "pkg/wsm.js",
   "directories": {
     "test": "tests"
   },
