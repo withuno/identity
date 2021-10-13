@@ -616,7 +616,7 @@ mod requests {
 
         // add the file so the next request will succeed
         let tdata = r#"{"test": "data"}"#;
-        let foof = dbs.services.put("foo.json", &tdata.as_bytes());
+        let foof = dbs.services.put("main/foo.json", &tdata.as_bytes());
         let _ = task::block_on(foof)?;
 
         // gen a new salt and redo the request
@@ -635,6 +635,40 @@ mod requests {
         let actual_body2 = task::block_on(res2.take_body().into_bytes())
             .map_err(|_| anyhow!("body read failed"))?;
         assert_eq!(&expected_body2.as_bytes(), &actual_body2);
+
+        // test branch query param
+
+        let resource3 = "http://example.com/services/bar.json?branch=pr-add";
+        let url3 = Url::parse(resource3)?;
+        let mut req3: Request = surf::get(url3.to_string()).into();
+
+        let aih3 = res2
+            .header("authentication-info")
+            .ok_or(anyhow!("expected auth-info"))?;
+        let auth_info3 = parse_auth_info(aih3.last().as_str())?;
+        let n64_3 = &auth_info3.params["nextnonce"];
+
+        let mut salt3 = [0u8; 8];
+        rand::thread_rng().fill_bytes(&mut salt3);
+        let salt64_3 = base64::encode_config(&salt3, STANDARD_NO_PAD);
+        let alg3 = &auth_info3.params["argon"];
+
+        sign_req(&mut req3, &n64_3, alg3, &salt64_3, &id)?;
+
+        // add the file pr-add/bar.json so the next request will succeed
+        let tdata3 = r#"{"newservice": "bar"}"#;
+        let foof = dbs.services.put("pr-add/bar.json", &tdata3.as_bytes());
+        let _ = task::block_on(foof)?;
+
+        let fut3 = api.respond(req3);
+        let mut res3: Response =
+            task::block_on(fut3).map_err(|_| anyhow!("request3 failed"))?;
+
+        assert_eq!(StatusCode::Ok, res3.status());
+        let expected_body3 = r#"{"newservice": "bar"}"#;
+        let actual_body3 = task::block_on(res3.take_body().into_bytes())
+            .map_err(|_| anyhow!("body read failed"))?;
+        assert_eq!(&expected_body3.as_bytes(), &actual_body3);
 
         Ok(())
     }
