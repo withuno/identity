@@ -6,21 +6,21 @@
 /// The uno utility is a cli frontend to operations that can be performed with
 /// an uno identity.
 
-use clap::Clap;
+use clap::Parser;
 use anyhow::{anyhow, bail, Context, Result};
 use uno::Binding;
 
 use std::convert::TryFrom;
 use std::convert::TryInto;
 
-#[derive(Clap)]
+#[derive(Parser)]
 #[clap(version = "0.1", author = "David C. <david@withuno.com>")]
 struct Opts {
    #[clap(subcommand)]
    subcmd: SubCommand, 
 }
 
-#[derive(Clap)]
+#[derive(Parser)]
 enum SubCommand {
     Seed(Seed),
     Encrypt(Encrypt),
@@ -36,7 +36,7 @@ enum SubCommand {
 }
 
 /// Generate an uno identity.
-#[derive(Clap)]
+#[derive(Parser)]
 struct Seed;
 
 fn do_seed(_: Seed) -> Result<String>
@@ -46,7 +46,7 @@ fn do_seed(_: Seed) -> Result<String>
 }
 
 /// Print the public key corresponding to the signing keypair.
-#[derive(Clap)]
+#[derive(Parser)]
 struct Pubkey
 {
     /// identity seed
@@ -63,7 +63,7 @@ fn do_pubkey(c: Pubkey) -> Result<String>
 
 /// AEAD open The decrypt operation works with both 32 byte identity seeds and
 /// the 8 byte Mu. The actual symmetric key is derived appropriate in each case.
-#[derive(Clap)]
+#[derive(Parser)]
 struct Decrypt
 {
     /// Identity seed.
@@ -117,7 +117,7 @@ fn do_decrypt(c: Decrypt) -> Result<String>
 
 /// AEAD seal. The encrypt operation works with both 32 byte identity seeds and
 /// the 8 byte Mu. The actual symmetric key is derived appropriate in each case.
-#[derive(Clap)]
+#[derive(Parser)]
 struct Encrypt
 {
     /// 32 byte identity seed.
@@ -167,7 +167,7 @@ fn do_encrypt(c: Encrypt) -> Result<String>
 }
 
 /// Sign a message using an Uno ID.
-#[derive(Clap)]
+#[derive(Parser)]
 struct Sign
 {
     /// Identity seed to use.
@@ -187,7 +187,7 @@ fn do_sign(c: Sign) -> Result<String>
 }
 
 /// Verify a signature on a message.
-#[derive(Clap)]
+#[derive(Parser)]
 struct Verify
 {
     /// EdDSA public key.
@@ -223,7 +223,7 @@ fn do_verify(c: Verify) -> Result<String>
 }
 
 /// Operate on a vault.
-#[derive(Clap)]
+#[derive(Parser)]
 struct Vault
 {
     /// HTTP method (GET or PUT). Download or Upload?
@@ -269,7 +269,7 @@ fn do_vault(c: Vault) -> Result<String>
 }
 
 /// Generate an uno shamir's secert sharing session entropy seed.
-#[derive(Clap)]
+#[derive(Parser)]
 struct Mu;
 
 fn do_mu(_: Mu) -> Result<String>
@@ -279,7 +279,7 @@ fn do_mu(_: Mu) -> Result<String>
 }
 
 /// Print the session id derived from Mu entropy.
-#[derive(Clap)]
+#[derive(Parser)]
 struct Session
 {
     /// identity seed
@@ -298,7 +298,7 @@ fn do_session(c: Session) -> Result<String>
 ///
 /// When operating on the session endpoint, data in the "share" field will be
 /// encrypted prior to uploading and decrypted when downloading.
-#[derive(Clap)]
+#[derive(Parser)]
 struct Ssss
 {
     /// HTTP method (GET or PUT or PATCH). Download or Upload/Update?
@@ -353,7 +353,7 @@ fn do_ssss(c: Ssss) -> Result<String>
 
 /// SLIP-0039 operations.
 ///
-#[derive(Clap)]
+#[derive(Parser)]
 enum S39
 {
     Split(S39Split),
@@ -362,7 +362,7 @@ enum S39
 }
 
 /// SLIP-0039 Options
-#[derive(Clap)]
+#[derive(Parser)]
 struct S39Cmd
 {
     // TODO group threshold, group support, etc.
@@ -371,7 +371,7 @@ struct S39Cmd
 }
 
 /// Split an uno identity seed into a number of shares
-#[derive(Clap)]
+#[derive(Parser)]
 struct S39Split
 {
     /// minimum shares needed to reconstitute the seed
@@ -427,7 +427,7 @@ fn do_s39_split(c: S39Split) -> Result<String>
 }
 
 /// Combine shares of a split seed back into the whole identity seed.
-#[derive(Clap)]
+#[derive(Parser)]
 struct S39Combine
 {
     /// mnemonic share obtained from a previous s39 split operation
@@ -452,7 +452,7 @@ fn do_s39_combine(c: S39Combine) -> Result<String>
 }
 
 /// View metadata about a mnemonic share.
-#[derive(Clap)]
+#[derive(Parser)]
 struct S39View
 {
     /// mnemonic share obtained from a previous s39 split operation
@@ -526,6 +526,6 @@ mod test
     #[test]
     fn test_id() {
         // use:
-        // https://docs.rs/clap/3.0.0-beta.2/clap/struct.App.html#method.try_get_matches_from
+        // https://docs.rs/clap/3.0.0-beta.5/clap/struct.App.html#method.try_get_matches_from
     }
 }

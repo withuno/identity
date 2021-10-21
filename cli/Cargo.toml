@@ -18,7 +18,7 @@ argon2 = "0.2"
 async-std = "1.9"
 base64 = "0.13"
 blake3 = "0.3"
-clap = { version = "3.0.0-beta.4", features = ["wrap_help"] }
+clap = { version = "3.0.0-beta.5", features = ["wrap_help"] }
 chrono = "0.4"
 http-types = "2.10"
 rand = "0.8"
