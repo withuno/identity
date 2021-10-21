@@ -25,6 +25,7 @@ use std::pin::Pin;
 
 use json_patch::merge;
 
+use serde_derive::Serialize;
 use serde_derive::Deserialize;
 use serde_json::Value;
 
@@ -315,6 +316,163 @@ where
     Ok(Body::from_bytes(vault))
 }
 
+use vclock::VClock;
+
+///
+/// We need to store both the vault data and the version (vclock). Wrap them
+/// together into one document so we don't need transactions.
+///
+#[derive(Serialize, Deserialize)]
+struct Vault {
+    data: Vec<u8>,
+    vclock: VClock<String>,
+}
+
+async fn fetch_vault_v2<T>(req: Request<State<T>>) -> Result
+where
+    T: Database + 'static,
+{
+    let db = &req.state().db;
+    let id = &req.ext::<VaultId>().unwrap().0;
+
+    let vault_bytes = db.get(id).await.map_err(not_found)?;
+    let vault = serde_json::from_slice::<Vault>(&vault_bytes)
+        .map_err(server_err)?;
+
+    let resp = Response::builder(StatusCode::Ok)
+        .header("vclock", write_vclock(vault.vclock).map_err(server_err)?)
+        .header("Access-Control-Allow-Origin", "*")
+        .header(
+            "Access-Control-Allow-Headers",
+            "WWW-Authenticate, Authentication-Info",
+        )
+        .body(Body::from_bytes(vault.data))
+        .build();
+
+    Ok(resp)
+}
+
+async fn store_vault_v2<T>(req: Request<State<T>>) -> Result<Response>
+where
+    T: Database + 'static,
+{
+    let db = &req.state().db;
+    let id = &req.ext::<VaultId>().unwrap().0;
+
+    // The client is required to provide a vclock that progresses time forward
+    // in the vault's reference frame. This ensures each client sees a
+    // consistent vault before issuing its own writes. This is not a security
+    // measure, a malicious client could deliberately choose to do bad things
+    // like send an empty vault way in the future. Rather, this is a strategy
+    // that enables clients to cooperate to avoid thrashing on the state of the
+    // vault and potentially dropping data as a result. It also allows clients
+    // to confirm whether their writes happened successfully.
+
+    // The `vclock` header is required, always. If this is the first put, then
+    // the client should provide an initial clock with its own id and the
+    // counter initialized to 0.
+    let vclock_new_str = match &req.header("vclock") {
+        Some(v) => v.last().as_str(),
+        None => {
+            let resp = Response::builder(StatusCode::BadRequest)
+                .body("missing vclock")
+                .build();
+            return Ok(resp);
+        },
+    };
+
+    let v_new = parse_vclock(vclock_new_str)
+        .map_err(bad_request)?;
+
+    // Now read the vault. If it exists, parse the vclock. If not, use an empty
+    // vclock.
+    let v_cur = match db.get(id).await {
+        Ok(v) => {
+            serde_json::from_slice::<Vault>(&v).map_err(server_err)?.vclock
+        },
+        Err(_) => VClock::<String>::default(),
+    };
+
+    // If the vclock the client provides is not a child of the current vclock,
+    // reject the request.
+    use std::cmp::Ordering;
+    if v_new.partial_cmp(&v_cur) != Some(Ordering::Greater) {
+        let resp = Response::builder(StatusCode::Conflict)
+            .body("causality violation")
+            .build();
+        return Ok(resp);
+    }
+
+    let body = &req.ext::<BodyBytes>().unwrap().0;
+
+    let vault = Vault {
+        data: body.to_vec(),
+        vclock: v_new,
+    };
+    let vault_bytes = serde_json::to_vec(&vault)
+        .map_err(server_err)?;
+
+    db.put(id, &vault_bytes).await.map_err(server_err)?;
+
+    // Read our own write...
+    let read_bytes = db.get(id).await.map_err(not_found)?;
+    let v_read = serde_json::from_slice::<Vault>(&read_bytes)
+        .map_err(server_err)?;
+
+    let resp = Response::builder(StatusCode::Ok)
+        .header("vclock", write_vclock(v_read.vclock).map_err(server_err)?) 
+        .body(Body::from_bytes(v_read.data))
+        .build();
+
+    Ok(resp)
+}
+
+/// Parse a vclock header into a VClock. A vclock is a list of tuples,
+/// (key,count), so a map. Our keys are client ids.
+///
+///   client-id1=count,client-id2=count,client-id3=count
+///
+fn parse_vclock(vc_str: &str)
+-> std::result::Result<VClock<String>, anyhow::Error>
+{
+    // TODO: write a serde_rfc8941 crate. For now, manually parse.
+    //
+    let items = vc_str.trim().split(",");
+    use std::collections::HashMap;
+    let mut map = HashMap::<String, u64>::new(); // TODO: faster hasher
+    for i in items {
+        let kv: Vec<&str> = i.trim().splitn(2, "=").collect();
+        let count = kv[1].parse()?;
+        map.insert(kv[0].into(), count);
+    }
+
+    Ok(VClock::from(map))
+}
+
+fn write_vclock(vc: VClock<String>)
+-> std::result::Result<String, anyhow::Error>
+{
+    use anyhow::anyhow;
+    // TODO: write a serde_rfc8941 crate. For now, manually print.
+    //
+    let value = serde_json::to_value(&vc)?;
+    let clock = match value.get("c") {
+        Some(Value::Object(ref m)) => m,
+        _ => return Err(anyhow!("bad vclock structure")),
+    };
+
+    let mut out = String::new();
+    for key in clock.keys() {
+        let count = &clock[key];
+        out.push_str(&format!("{}={}", key, count));
+        out.push(',');
+    }
+    // remove the trailing ','
+    out.remove(out.len() - 1);
+
+    Ok(out)
+}
+
 #[derive(Debug, PartialEq, Deserialize)]
 struct ServiceQuery {
     branch: String,
@@ -514,6 +672,76 @@ where
             .options(option_vault)
             .get(fetch_vault)
             .put(store_vault);
+        api.at("vaults").nest(vaults);
+    }
+
+    {
+        let mut services =
+            tide::with_state(State::new(service_db, token_db.clone()));
+        services
+            .at(":name")
+            .with(add_auth_info)
+            .with(signed_pow_auth)
+            .get(fetch_service);
+        api.at("services").nest(services);
+    }
+
+    {
+        // Shamir's Secret Sharing Session
+        let mut ssss =
+            tide::with_state(State::new(session_db, token_db.clone()));
+        ssss.at(":id")
+            .with(session_id)
+            .get(ssss_get)
+            .put(ssss_put)
+            .patch(ssss_patch)
+            .delete(ssss_delete);
+        api.at("ssss").nest(ssss);
+    }
+
+    {
+        let mut mailboxes =
+            tide::with_state(State::new(mailbox_db, token_db.clone()));
+        mailboxes
+            .at(":id")
+            .with(add_auth_info)
+            .with(signed_pow_auth)
+            .with(ensure_mailbox_id)
+            .with(check_mailbox_ownership)
+            .get(fetch_mailbox)
+            .post(post_mailbox)
+            .delete(delete_messages);
+        api.at("mailboxes").nest(mailboxes);
+    }
+
+    Ok(api)
+}
+
+pub fn build_api_v2<T>(
+    token_db: T,
+    vault_db: T,
+    service_db: T,
+    session_db: T,
+    mailbox_db: T,
+) -> anyhow::Result<tide::Server<()>>
+where
+    T: Database + 'static,
+{
+    let mut api = tide::new();
+    api.at("health").get(health);
+
+    {
+        let mut vaults =
+            tide::with_state(State::new(vault_db, token_db.clone()));
+        vaults
+            .at(":id")
+            .with(add_auth_info)
+            .with(signed_pow_auth)
+            .with(ensure_vault_id)
+            .with(check_vault_ownership)
+            .options(option_vault)
+            .get(fetch_vault_v2)
+            .put(store_vault_v2);
         api.at("vaults").nest(vaults);
     }
 

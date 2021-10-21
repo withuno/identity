@@ -4,7 +4,7 @@
 //
 
 
-use api::{build_api};
+use api::{build_api, build_api_v2};
 
 #[cfg(not(feature = "s3"))]
 use api::store::FileStore;
@@ -50,8 +50,19 @@ async fn main() -> anyhow::Result<()> {
 
     let api = build_api(tok, vau, srv, ses, mbx)?;
 
+    // TODO: version db
+    let tok2 = make_db("tokens")?;
+    let vau2 = make_db("vaults")?;
+    let srv2 = make_db("services")?;
+    let ses2 = make_db("sessions")?;
+    let mbx2 = make_db("mailboxes")?;
+
+    let api_v2 = build_api_v2(tok2, vau2, srv2, ses2, mbx2)?;
+
     let mut srv = tide::new();
+
     srv.at("/v1").nest(api);
+    srv.at("/v2").nest(api_v2);
 
     tide::log::start();
 
