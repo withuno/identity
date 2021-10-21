@@ -594,7 +594,7 @@ pub extern "C"
 fn uno_free_s39_share(share: UnoShare)
 {
     unsafe { 
-        CString::from_raw(share.mnemonic as *mut c_char);
+        let _ = CString::from_raw(share.mnemonic as *mut c_char);
     };
 }
 
