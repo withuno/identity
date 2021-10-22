@@ -65,6 +65,7 @@ where
 /// Clients are required to privide authorization in the form of a signed
 /// response to a challenge. In the authorization form,
 ///
+#[allow(dead_code)]
 #[derive(Debug)]
 struct Authorization {
     /// base64 encoded public key of the person sending the request
