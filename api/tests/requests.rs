@@ -1,6 +1,6 @@
 #[cfg(test)]
 mod requests {
-    use api::{add_auth_info, build_api, signed_pow_auth};
+    use api::{add_auth_info, build_api, build_api_v2, signed_pow_auth};
     use api::mailbox::{
         Mailbox, MessageRequest, MessageStored, MessageToDelete, Payload,
     };
@@ -32,6 +32,8 @@ mod requests {
     use uno::Signer;
     use uno::ID_LENGTH;
     use uno::MU_LENGTH;
+
+    use vclock::VClock;
 
     use api::Database;
 
@@ -75,11 +77,37 @@ mod requests {
         Ok((api, dbs))
     }
 
+    #[cfg(not(feature = "s3"))]
+    fn setup_tmp_api_v2()
+    -> anyhow::Result<(tide::Server<()>, Dbs<FileStore>)> {
+        use tempfile::TempDir;
+        let dir = TempDir::new().unwrap();
+
+        let dbs = Dbs {
+            objects: FileStore::new(dir.path().as_os_str()).unwrap(),
+            tokens: FileStore::new(dir.path().as_os_str()).unwrap(),
+            vaults: FileStore::new(dir.path().as_os_str()).unwrap(),
+            services: FileStore::new(dir.path().as_os_str()).unwrap(),
+            sessions: FileStore::new(dir.path().as_os_str()).unwrap(),
+            mailboxes: FileStore::new(dir.path().as_os_str()).unwrap(),
+        };
+
+        // we don't include objects db here because its only used in tests
+        let api = build_api_v2(
+            dbs.tokens.clone(),
+            dbs.vaults.clone(),
+            dbs.services.clone(),
+            dbs.sessions.clone(),
+            dbs.mailboxes.clone(),
+        )?;
+        Ok((api, dbs))
+    }
+
     #[cfg(feature = "s3")]
     pub use api::store::S3Store;
 
     #[cfg(feature = "s3")]
-    fn setup_tmp_api() -> anyhow::Result<(tide::Server<()>, Dbs<S3Store>)> {
+    fn setup_dbs() -> anyhow::Result<Dbs> {
         // modified from:
         // https://doc.servo.org/src/tempfile/util.rs.html#9
         use rand::distributions::Alphanumeric;
@@ -89,9 +117,9 @@ mod requests {
         fn tmpname(rand_len: usize) -> String {
             let mut buf = String::with_capacity(rand_len);
 
-            // Push each character in one-by-one. Unfortunately, this is the only
-            // safe(ish) simple way to do this without allocating a temporary
-            // String/Vec.
+            // Push each character in one-by-one. Unfortunately, this is the
+            // only safe(ish) simple way to do this without allocating a
+            // temporary String/Vec.
             unsafe {
                 rand::thread_rng()
                     .sample_iter(&Alphanumeric)
@@ -148,24 +176,43 @@ mod requests {
             )?,
         };
 
-        async_std::task::block_on(dbs.objects.create_bucket_if_not_exists())?;
-        async_std::task::block_on(dbs.tokens.create_bucket_if_not_exists())?;
-        async_std::task::block_on(dbs.vaults.create_bucket_if_not_exists())?;
-        async_std::task::block_on(dbs.services.create_bucket_if_not_exists())?;
-        async_std::task::block_on(dbs.sessions.create_bucket_if_not_exists())?;
-        async_std::task::block_on(
-            dbs.mailboxes.create_bucket_if_not_exists(),
-        )?;
+        use async_std::task;
+        task::block_on(dbs.objects.create_bucket_if_not_exists())?;
+        task::block_on(dbs.tokens.create_bucket_if_not_exists())?;
+        task::block_on(dbs.vaults.create_bucket_if_not_exists())?;
+        task::block_on(dbs.services.create_bucket_if_not_exists())?;
+        task::block_on(dbs.sessions.create_bucket_if_not_exists())?;
+        task::block_on(dbs.mailboxes.create_bucket_if_not_exists())?;
 
-        async_std::task::block_on(dbs.objects.empty_bucket())?;
-        async_std::task::block_on(dbs.tokens.empty_bucket())?;
-        async_std::task::block_on(dbs.vaults.empty_bucket())?;
-        async_std::task::block_on(dbs.services.empty_bucket())?;
-        async_std::task::block_on(dbs.sessions.empty_bucket())?;
-        async_std::task::block_on(dbs.mailboxes.empty_bucket())?;
+        task::block_on(dbs.objects.empty_bucket())?;
+        task::block_on(dbs.tokens.empty_bucket())?;
+        task::block_on(dbs.vaults.empty_bucket())?;
+        task::block_on(dbs.services.empty_bucket())?;
+        task::block_on(dbs.sessions.empty_bucket())?;
+        task::block_on(dbs.mailboxes.empty_bucket())?;
 
+        Ok(dbs)
+    }
+
+    #[cfg(feature = "s3")]
+    fn setup_tmp_api() -> anyhow::Result<(tide::Server<()>, Dbs<S3Store>)> {
         // we don't include objects db here because its only used in tests
+        let dbs = setup_dbs()?;
         let api = build_api(
+            dbs.tokens.clone(),
+            dbs.vaults.clone(),
+            dbs.services.clone(),
+            dbs.sessions.clone(),
+            dbs.mailboxes.clone(),
+        )?;
+        Ok((api, dbs))
+    }
+
+    #[cfg(feature = "s3")]
+    fn setup_tmp_api_v2() -> anyhow::Result<(tide::Server<()>, Dbs<S3Store>)> {
+        // we don't include objects db here because its only used in tests
+        let dbs = setup_dbs()?;
+        let api = build_api_v2(
             dbs.tokens.clone(),
             dbs.vaults.clone(),
             dbs.services.clone(),
@@ -230,6 +277,33 @@ mod requests {
         let s = format!("signature={}", sig64);
         let auth = format!("tuned-digest-signature {};{};{};{}", i, n, r, s);
         req.insert_header("authorization", auth);
+
+        Ok(())
+    }
+
+    // Sign next request using previous request test helper.
+    // TODO: put this in a util somewhere in the lib crate...
+    fn sign_req_using_res_with_id(
+        prev: &Response,
+        next: &mut Request,
+        id: &Id,
+    )
+    -> anyhow::Result<()>
+    {
+        let auth_info_str = prev
+            .header("authentication-info")
+            .ok_or(anyhow!("expected auth-info"))?
+            .last()
+            .as_str();
+
+        let auth_info = parse_auth_info(auth_info_str)?;
+        let nonce_b64 = &auth_info.params["nextnonce"];
+        let mut salt = [0u8; 8];
+        rand::thread_rng().fill_bytes(&mut salt);
+        let salt_b64 = base64::encode_config(&salt, STANDARD_NO_PAD);
+        let hash_alg = &auth_info.params["argon"];
+
+        sign_req(next, &nonce_b64, hash_alg, &salt_b64, id)?;
 
         Ok(())
     }
@@ -487,8 +561,8 @@ mod requests {
         let n64_2 = &auth_info1.params["nextnonce"];
 
         let tdata = "vault data is opaque";
-        let foof = dbs.vaults.put(&vid, &tdata.as_bytes());
-        let _ = task::block_on(foof)?;
+        let tdata_task = dbs.vaults.put(&vid, &tdata.as_bytes());
+        let _ = task::block_on(tdata_task)?;
 
         let mut req2: Request = surf::get(url.to_string()).into();
         let mut salt2 = [0u8; 8];
@@ -499,6 +573,8 @@ mod requests {
 
         let mut res2: Response = task::block_on(api.respond(req2))
             .map_err(|_| anyhow!("request failed"))?;
+
+        assert_eq!(StatusCode::Ok, res2.status());
 
         let expected_body = "vault data is opaque";
         let actual_body = task::block_on(res2.take_body().into_bytes())
@@ -1154,6 +1230,336 @@ mod requests {
             ),
             Mailbox { messages: vec!() }
         );
+    }
+
+    #[test]
+    fn v2_vault_get() -> anyhow::Result<()> {
+        let (api, dbs) = setup_tmp_api_v2().unwrap();
+
+        let nonce_b64 = init_nonce(&dbs.tokens, &["read"])?;
+
+        let id = Id([0u8; ID_LENGTH]);
+        let keypair = KeyPair::from(&id);
+        let pubkey = keypair.public.as_bytes();
+        let vid = base64::encode_config(&pubkey, base64::URL_SAFE_NO_PAD);
+        let base = Url::parse("http://example.com/vaults/")?;
+        let url = base.join(&vid).unwrap();
+
+        let mut req1: Request = surf::get(url.to_string()).into();
+        sign_req(&mut req1, &nonce_b64, TUNE, SALT, &id)?;
+
+        let res1: Response = task::block_on(api.respond(req1))
+            .map_err(|_| anyhow!("request failed"))?;
+
+        assert_eq!(StatusCode::NotFound, res1.status());
+
+        let tdata_json1 = json!({
+            "data": b"vault data is opaque",
+            "vclock": { "c": { "c1": 1, "c2": 3, "c3": 2 } }
+        });
+        let tdata_vec1 = serde_json::to_vec(&tdata_json1)?;
+        let tdata_task1 = dbs.vaults.put(&vid, &tdata_vec1);
+        let _ = task::block_on(tdata_task1)?;
+
+        let mut req2: Request = surf::get(url.to_string()).into();
+        sign_req_using_res_with_id(&res1, &mut req2, &id)?;
+
+        let mut res2: Response = task::block_on(api.respond(req2))
+            .map_err(|_| anyhow!("request failed"))?;
+
+        assert_eq!(StatusCode::Ok, res2.status());
+
+        let vc_hdr_str = res2.header("vclock")
+            .ok_or(anyhow!("expected vclock"))?
+            .last()
+            .as_str();
+        let expected_vclock = "c1=1,c2=3,c3=2";
+        assert_eq!(expected_vclock, vc_hdr_str);
+
+        let expected_body = "vault data is opaque";
+        let actual_body = task::block_on(res2.take_body().into_bytes())
+            .map_err(|_| anyhow!("body read failed"))?;
+        assert_eq!(expected_body.as_bytes(), actual_body);
+
+        // use the wrong identity
+        let bad_id_bytes = [0xFFu8; uno::ID_LENGTH];
+        let bad_id = uno::Id(bad_id_bytes);
+
+        let mut req3: Request = surf::get(url.to_string()).into();
+        sign_req_using_res_with_id(&res2, &mut req3, &bad_id)?;
+
+        let res3: Response = task::block_on(api.respond(req3))
+            .map_err(|_| anyhow!("request failed"))?;
+
+        assert_eq!(StatusCode::Forbidden, res3.status());
+
+        Ok(())
+    }
+
+    #[test]
+    fn v2_vault_put() -> anyhow::Result<()> {
+        let (api, dbs) = setup_tmp_api_v2().unwrap();
+
+        let nonce_b64 = init_nonce(&dbs.tokens, &["create", "update"])?;
+
+        let id = Id([0u8; ID_LENGTH]);
+        let keypair = KeyPair::from(&id);
+        let pubkey = keypair.public.as_bytes();
+        let vid = base64::encode_config(&pubkey, base64::URL_SAFE_NO_PAD);
+        let base = Url::parse("http://example.com/vaults/")?;
+        let url = base.join(&vid).unwrap();
+        let mut vc = VClock::new("c1");
+
+        // don't attach the vclock, req1 should fail
+
+        let mut req1: Request = surf::put(url.to_string())
+            .body("vault data is opaque")
+            .into();
+        sign_req(&mut req1, &nonce_b64, TUNE, SALT, &id)?;
+
+        let res1: Response = task::block_on(api.respond(req1))
+            .map_err(|_| anyhow!("request failed"))?;
+
+        assert_eq!(StatusCode::BadRequest, res1.status());
+
+        // add the vclock
+
+        let mut req2: Request = surf::put(url.to_string())
+            .header("vclock", api::write_vclock(&vc)?)
+            .body("vault data is opaque")
+            .into();
+
+        let nonce2_b64 = init_nonce(&dbs.tokens, &["create", "update"])?;
+        sign_req(&mut req2, &nonce2_b64, TUNE, SALT, &id)?;
+
+        let mut res2: Response = task::block_on(api.respond(req2))
+            .map_err(|_| anyhow!("request failed"))?;
+
+        assert_eq!(StatusCode::Ok, res2.status());
+
+        let vc_hdr_str2 = res2.header("vclock")
+            .ok_or(anyhow!("expected vclock"))?
+            .last()
+            .as_str();
+
+        assert_eq!("c1=1", vc_hdr_str2);
+
+        let expected_body2 = "vault data is opaque";
+        let actual_body2 = task::block_on(res2.take_body().into_bytes())
+            .map_err(|_| anyhow!("body read failed"))?;
+        assert_eq!(expected_body2.as_bytes(), actual_body2);
+
+        // use the wrong identity
+
+        let bad_id_bytes = [0xFFu8; uno::ID_LENGTH];
+        let bad_id = uno::Id(bad_id_bytes);
+
+        let mut req3: Request = surf::get(url.to_string()).into();
+        sign_req_using_res_with_id(&res2, &mut req3, &bad_id)?;
+
+        let res3: Response = task::block_on(api.respond(req3))
+            .map_err(|_| anyhow!("request failed"))?;
+
+        assert_eq!(StatusCode::Forbidden, res3.status());
+
+        let mut req4: Request = surf::put(url.to_string())
+            .header("vclock", api::write_vclock(&vc)?)
+            .body("vault data is outdated")
+            .into();
+        sign_req_using_res_with_id(&res3, &mut req4, &id)?;
+
+        let res4: Response = task::block_on(api.respond(req4))
+            .map_err(|_| anyhow!("request failed"))?;
+
+        assert_eq!(StatusCode::Conflict, res4.status());
+
+        // increment the clock
+
+        vc.incr("c1");
+
+        let mut req5: Request = surf::put(url.to_string())
+            .header("vclock", api::write_vclock(&vc)?)
+            .body("vault data is fresh")
+            .into();
+        sign_req_using_res_with_id(&res4, &mut req5, &id)?;
+
+        let mut res5: Response = task::block_on(api.respond(req5))
+            .map_err(|_| anyhow!("request failed"))?;
+
+        assert_eq!(StatusCode::Ok, res5.status());
+
+        let vc_hdr_str5 = res5.header("vclock")
+            .ok_or(anyhow!("expected vclock"))?
+            .last()
+            .as_str();
+
+        assert_eq!("c1=2", vc_hdr_str5);
+
+        let expected_body5 = "vault data is fresh";
+        let actual_body5 = task::block_on(res5.take_body().into_bytes())
+            .map_err(|_| anyhow!("body read failed"))?;
+        assert_eq!(expected_body5.as_bytes(), actual_body5);
+
+        // simulate foreign write
+
+        vc.incr("c1");
+
+        let mut req6: Request = surf::put(url.to_string())
+            .header("vclock", api::write_vclock(&vc)?)
+            .body("vault data is incoming")
+            .into();
+        sign_req_using_res_with_id(&res5, &mut req6, &id)?;
+
+        let tdata_json6 = json!({
+            "data": b"vault data is foreign",
+            "vclock": { "c": { "c1": 2, "c2": 1 } }
+        });
+        let tdata_vec6 = serde_json::to_vec(&tdata_json6)?;
+        let tdata_task6 = dbs.vaults.put(&vid, &tdata_vec6);
+        let _ = task::block_on(tdata_task6)?;
+
+        let res6: Response = task::block_on(api.respond(req6))
+            .map_err(|_| anyhow!("request failed"))?;
+
+        assert_eq!(StatusCode::Conflict, res6.status());
+
+        let vc_hdr_str6 = res6.header("vclock")
+            .ok_or(anyhow!("expected vclock"))?
+            .last()
+            .as_str();
+        assert_eq!("c1=2,c2=1", vc_hdr_str6);
+
+        // correct the timeline
+
+        vc.incr("c2"); // we've seen client 2's change
+
+        let mut req7: Request = surf::put(url.to_string())
+            .header("vclock", api::write_vclock(&vc)?)
+            .body("vault data is merged")
+            .into();
+        sign_req_using_res_with_id(&res6, &mut req7, &id)?;
+
+        let mut res7: Response = task::block_on(api.respond(req7))
+            .map_err(|_| anyhow!("request failed"))?;
+
+        assert_eq!(StatusCode::Ok, res7.status());
+
+        let vc_hdr_str7 = res7.header("vclock")
+            .ok_or(anyhow!("expected vclock"))?
+            .last()
+            .as_str();
+
+        assert_eq!("c1=3,c2=1", vc_hdr_str7);
+
+        let expected_body7 = "vault data is merged";
+        let actual_body7 = task::block_on(res7.take_body().into_bytes())
+            .map_err(|_| anyhow!("body read failed"))?;
+        assert_eq!(expected_body7.as_bytes(), actual_body7);
+
+        // malformed vclock
+
+        let mut req8: Request = surf::put(url.to_string())
+            .header("vclock", "c1=nope")
+            .body("vault data is irrelevant")
+            .into();
+        sign_req_using_res_with_id(&res7, &mut req8, &id)?;
+
+        let res8: Response = task::block_on(api.respond(req8))
+            .map_err(|_| anyhow!("request failed"))?;
+
+        assert_eq!(StatusCode::BadRequest, res8.status());
+
+        let mut req9: Request = surf::put(url.to_string())
+            .header("vclock", "not an rfc8941 map")
+            .body("vault data is irrelevant")
+            .into();
+        sign_req_using_res_with_id(&res8, &mut req9, &id)?;
+
+        let res9: Response = task::block_on(api.respond(req9))
+            .map_err(|_| anyhow!("request failed"))?;
+
+        assert_eq!(StatusCode::BadRequest, res9.status());
+
+        Ok(())
+    }
+
+    // This tests that the server can read the data that the server wrote.
+    // Technically tested during the put tests but not explicitly.
+    #[test]
+    fn v2_vault_roundtrip() -> anyhow::Result<()> {
+        let (api, dbs) = setup_tmp_api_v2().unwrap();
+
+        let nonce_b64 = init_nonce(&dbs.tokens, &["create", "update"])?;
+
+        let id = Id([0u8; ID_LENGTH]);
+        let keypair = KeyPair::from(&id);
+        let pubkey = keypair.public.as_bytes();
+        let vid = base64::encode_config(&pubkey, base64::URL_SAFE_NO_PAD);
+        let base = Url::parse("http://example.com/vaults/")?;
+        let url = base.join(&vid).unwrap();
+        let mut vc = VClock::new("cz");
+
+        // we'll make it version 5
+        vc.incr("cz"); vc.incr("cz"); vc.incr("cz"); vc.incr("cz");
+
+        // put data
+
+        let mut req1: Request = surf::put(url.to_string())
+            .header("vclock", api::write_vclock(&vc)?)
+            .body("vault data is opaque")
+            .into();
+        sign_req(&mut req1, &nonce_b64, TUNE, SALT, &id)?;
+
+        let mut res1: Response = task::block_on(api.respond(req1))
+            .map_err(|_| anyhow!("request failed"))?;
+
+        assert_eq!(StatusCode::Ok, res1.status());
+
+        let vc_hdr_str = res1.header("vclock")
+            .ok_or(anyhow!("expected vclock"))?
+            .last()
+            .as_str();
+        let expected_vclock = "cz=5";
+        assert_eq!(expected_vclock, vc_hdr_str);
+
+        let expected_body1 = "vault data is opaque";
+        let actual_body1 = task::block_on(res1.take_body().into_bytes())
+            .map_err(|_| anyhow!("body read failed"))?;
+        assert_eq!(expected_body1, std::str::from_utf8(&actual_body1)?);
+
+        let expected_data_json2 = json!({
+            "data": b"vault data is opaque",
+            "vclock": { "c": { "cz": 5 } }
+        });
+        let expected_data_str2 = serde_json::to_string(&expected_data_json2)?;
+
+        let stored_data2 = task::block_on(dbs.vaults.get(&vid))?;
+
+        assert_eq!(expected_data_str2, String::from_utf8(stored_data2)?);
+
+        // get data
+
+        let mut req2: Request = surf::get(url.to_string()).into();
+        sign_req_using_res_with_id(&res1, &mut req2, &id)?;
+
+        let mut res2: Response = task::block_on(api.respond(req2))
+            .map_err(|_| anyhow!("request failed"))?;
+
+        assert_eq!(StatusCode::Ok, res2.status());
+
+        let vc_hdr_str = res2.header("vclock")
+            .ok_or(anyhow!("expected vclock"))?
+            .last()
+            .as_str();
+        let expected_vclock = "cz=5";
+        assert_eq!(expected_vclock, vc_hdr_str);
+
+        let expected_body2 = "vault data is opaque";
+        let actual_body2 = task::block_on(res2.take_body().into_bytes())
+            .map_err(|_| anyhow!("body read failed"))?;
+        assert_eq!(expected_body2.as_bytes(), actual_body2);
+
+        Ok(())
     }
 
     #[allow(dead_code)]

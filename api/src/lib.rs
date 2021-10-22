@@ -17,6 +17,8 @@ pub use crate::mailbox::{
     MessageRequest, MessageToDelete
 };
 
+use anyhow::bail;
+
 pub mod auth;
 use auth::{BodyBytes, UserId};
 
@@ -340,7 +342,7 @@ where
         .map_err(server_err)?;
 
     let resp = Response::builder(StatusCode::Ok)
-        .header("vclock", write_vclock(vault.vclock).map_err(server_err)?)
+        .header("vclock", write_vclock(&vault.vclock).map_err(server_err)?)
         .header("Access-Control-Allow-Origin", "*")
         .header(
             "Access-Control-Allow-Headers",
@@ -398,6 +400,7 @@ where
     use std::cmp::Ordering;
     if v_new.partial_cmp(&v_cur) != Some(Ordering::Greater) {
         let resp = Response::builder(StatusCode::Conflict)
+            .header("vclock", write_vclock(&v_cur).map_err(server_err)?)
             .body("causality violation")
             .build();
         return Ok(resp);
@@ -420,7 +423,7 @@ where
         .map_err(server_err)?;
 
     let resp = Response::builder(StatusCode::Ok)
-        .header("vclock", write_vclock(v_read.vclock).map_err(server_err)?) 
+        .header("vclock", write_vclock(&v_read.vclock).map_err(server_err)?)
         .body(Body::from_bytes(v_read.data))
         .build();
 
@@ -432,7 +435,7 @@ where
 ///
 ///   client-id1=count,client-id2=count,client-id3=count
 ///
-fn parse_vclock(vc_str: &str)
+pub fn parse_vclock(vc_str: &str)
 -> std::result::Result<VClock<String>, anyhow::Error>
 {
     // TODO: write a serde_rfc8941 crate. For now, manually parse.
@@ -442,6 +445,9 @@ fn parse_vclock(vc_str: &str)
     let mut map = HashMap::<String, u64>::new(); // TODO: faster hasher
     for i in items {
         let kv: Vec<&str> = i.trim().splitn(2, "=").collect();
+        if kv.len() != 2 {
+            bail!("malformed vclock header");
+        }
         let count = kv[1].parse()?;
         map.insert(kv[0].into(), count);
     }
@@ -449,22 +455,26 @@ fn parse_vclock(vc_str: &str)
     Ok(VClock::from(map))
 }
 
-fn write_vclock(vc: VClock<String>)
+pub fn write_vclock<K>(vc: &VClock<K>)
 -> std::result::Result<String, anyhow::Error>
+where
+    K: std::cmp::Eq,
+    K: std::hash::Hash,
+    K: serde::Serialize,
+    K: Into<String>,
 {
-    use anyhow::anyhow;
     // TODO: write a serde_rfc8941 crate. For now, manually print.
     //
     let value = serde_json::to_value(&vc)?;
     let clock = match value.get("c") {
         Some(Value::Object(ref m)) => m,
-        _ => return Err(anyhow!("bad vclock structure")),
+        _ => bail!("bad vclock structure"),
     };
 
     let mut out = String::new();
     for key in clock.keys() {
         let count = &clock[key];
-        out.push_str(&format!("{}={}", key, count));
+        out.push_str(&format!("{}={}", String::from(key), count));
         out.push(',');
     }
     // remove the trailing ','
