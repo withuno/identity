@@ -388,20 +388,31 @@ where
 
     // Now read the vault. If it exists, parse the vclock. If not, use an empty
     // vclock.
-    let v_cur = match db.get(id).await {
-        Ok(v) => {
-            serde_json::from_slice::<Vault>(&v).map_err(server_err)?.vclock
-        },
-        Err(_) => VClock::<String>::default(),
+
+
+    let mut v_sto = Vault {
+        data: Vec::<u8>::default(),
+        vclock: VClock::<String>::default(),
     };
+
+    if db.exists(id).await.map_err(server_err)? {
+        v_sto = db.get(id).await
+            .and_then(|b| serde_json::from_slice(&b).map_err(|e| e.into()))
+            .map_err(server_err)?;
+    }
+    let v_cur = v_sto.vclock;
 
     // If the vclock the client provides is not a child of the current vclock,
     // reject the request.
     use std::cmp::Ordering;
     if v_new.partial_cmp(&v_cur) != Some(Ordering::Greater) {
+        let data = serde_json::to_string(&v_sto.data)
+            .map_err(server_err)?;
         let resp = Response::builder(StatusCode::Conflict)
             .header("vclock", write_vclock(&v_cur).map_err(server_err)?)
-            .body("causality violation")
+            .body(format!(
+                r#"{{"error": "causality violation", "vault": {}}}"#, data)
+             )
             .build();
         return Ok(resp);
     }

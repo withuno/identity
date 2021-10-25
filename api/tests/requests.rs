@@ -1368,10 +1368,18 @@ mod requests {
             .into();
         sign_req_using_res_with_id(&res3, &mut req4, &id)?;
 
-        let res4: Response = task::block_on(api.respond(req4))
+        let mut res4: Response = task::block_on(api.respond(req4))
             .map_err(|_| anyhow!("request failed"))?;
 
         assert_eq!(StatusCode::Conflict, res4.status());
+
+        let expected_body4 = format!("{{\
+            \"error\": \"causality violation\", \
+            \"vault\": {}\
+        }}", serde_json::to_string(b"vault data is opaque")?);
+        let actual_body4 = task::block_on(res4.take_body().into_bytes())
+            .map_err(|_| anyhow!("body read failed"))?;
+        assert_eq!(expected_body4, String::from_utf8(actual_body4)?);
 
         // increment the clock
 
