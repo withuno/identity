@@ -107,7 +107,7 @@ mod requests {
     pub use api::store::S3Store;
 
     #[cfg(feature = "s3")]
-    fn setup_dbs() -> anyhow::Result<Dbs> {
+    fn setup_dbs() -> anyhow::Result<Dbs<S3Store>> {
         // modified from:
         // https://doc.servo.org/src/tempfile/util.rs.html#9
         use rand::distributions::Alphanumeric;
@@ -176,7 +176,6 @@ mod requests {
             )?,
         };
 
-        use async_std::task;
         task::block_on(dbs.objects.create_bucket_if_not_exists())?;
         task::block_on(dbs.tokens.create_bucket_if_not_exists())?;
         task::block_on(dbs.vaults.create_bucket_if_not_exists())?;
