@@ -549,7 +549,9 @@ where
         out.push(',');
     }
     // remove the trailing ','
-    out.remove(out.len() - 1);
+    if out.len() > 0 {
+        out.remove(out.len() - 1);
+    }
 
     Ok(out)
 }

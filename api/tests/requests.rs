@@ -1295,6 +1295,35 @@ mod requests {
 
         assert_eq!(StatusCode::Forbidden, res3.status());
 
+        // test migrate
+
+        let tdata_bytes4 = b"vault data is migrating";
+        let tdata_task4 = dbs.vaults.put(&vid, &*tdata_bytes4);
+        let _ = task::block_on(tdata_task4)?;
+
+        let tdata_del_task4 = dbs.vaults.del(&vpath);
+        let _ = task::block_on(tdata_del_task4)?;
+
+        let mut req4: Request = surf::get(url.to_string()).into();
+        sign_req_using_res_with_id(&res3, &mut req4, &id)?;
+
+        let mut res4: Response = task::block_on(api.respond(req4))
+            .map_err(|_| anyhow!("request failed"))?;
+
+        assert_eq!(StatusCode::Ok, res4.status());
+
+        let vc_hdr_str4 = res4.header("vclock")
+            .ok_or(anyhow!("expected vclock"))?
+            .last()
+            .as_str();
+        let expected_vclock4 = "";
+        assert_eq!(expected_vclock4, vc_hdr_str4);
+
+        let expected_body4 = "vault data is migrating";
+        let actual_body4 = task::block_on(res4.take_body().into_bytes())
+            .map_err(|_| anyhow!("body read failed"))?;
+        assert_eq!(expected_body4, String::from_utf8(actual_body4)?);
+
         Ok(())
     }
 
