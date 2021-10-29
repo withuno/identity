@@ -22,6 +22,8 @@ use anyhow::bail;
 pub mod auth;
 use auth::{BodyBytes, UserId};
 
+pub mod auth2;
+
 use std::future::Future;
 use std::pin::Pin;
 
@@ -45,6 +47,25 @@ where
 {
     Box::pin(async {
         let resp = match auth::check(&mut req).await {
+            Ok(()) => next.run(req).await,
+            Err(reason) => reason,
+        };
+
+        Ok(resp)
+    })
+}
+
+/// Short circuit the middleware chain if the request is not authorized.
+///
+pub fn signed_pow_auth2<'a, T>(
+    mut req: Request<State<T>>,
+    next: Next<'a, State<T>>,
+) -> Pin<Box<dyn Future<Output = Result> + Send + 'a>>
+where
+    T: Database + 'static,
+{
+    Box::pin(async {
+        let resp = match auth2::check(&mut req).await {
             Ok(()) => next.run(req).await,
             Err(reason) => reason,
         };
@@ -267,6 +288,28 @@ where
     })
 }
 
+// Make sure the vault in the url matches the public key that generated the
+// signature on the request. Requires VaultId middleware. Returns status 403
+// forbidden if there is a mismatch.
+//
+fn check_vault_ownership2<'a, T>(
+    req: Request<State<T>>,
+    next: Next<'a, State<T>>,
+) -> Pin<Box<dyn Future<Output = Result> + Send + 'a>>
+where
+    T: Database + 'static,
+{
+    Box::pin(async {
+        let id = req.ext::<VaultId>().unwrap();
+        let target = pubkey_from_url_b64(&id.0).map_err(bad_request)?;
+        let user = req.ext::<auth2::UserId>().unwrap().0;
+        if target != user {
+            return Err(forbidden("pubkey mismatch"));
+        }
+        Ok(next.run(req).await)
+    })
+}
+
 async fn option_vault<T>(_req: Request<State<T>>) -> Result
 where
     T: Database + 'static,
@@ -337,7 +380,25 @@ where
     let db = &req.state().db;
     let id = &req.ext::<VaultId>().unwrap().0;
 
-    let vault_bytes = db.get(id).await.map_err(not_found)?;
+    let vpath = format!("v2/{}", id);
+
+    let vault_bytes = match db.get(&vpath).await {
+        Ok(vb) => vb,
+        Err(_) => {
+            // check the v1 location, if found migrate the vault, if not 404
+            let vb_old = db.get(id).await.map_err(not_found)?;
+            let vault = Vault {
+                data: vb_old,
+                vclock: VClock::<String>::default()
+            };
+            let vb_new = serde_json::to_vec(&vault)
+               .map_err(server_err)?;
+            db.put(&vpath, &vb_new).await.map_err(server_err)?;
+
+            db.get(&vpath).await.map_err(not_found)?
+        },
+    };
+
     let vault = serde_json::from_slice::<Vault>(&vault_bytes)
         .map_err(server_err)?;
 
@@ -354,12 +415,14 @@ where
     Ok(resp)
 }
 
-async fn store_vault_v2<T>(req: Request<State<T>>) -> Result<Response>
+async fn store_vault_v2<T>(mut req: Request<State<T>>) -> Result<Response>
 where
     T: Database + 'static,
 {
+    let body = &req.body_bytes().await.map_err(server_err)?;
     let db = &req.state().db;
     let id = &req.ext::<VaultId>().unwrap().0;
+    let vpath = format!("v2/{}", id);
 
     // The client is required to provide a vclock that progresses time forward
     // in the vault's reference frame. This ensures each client sees a
@@ -383,33 +446,32 @@ where
         },
     };
 
-    let v_new = parse_vclock(vclock_new_str)
+    let vclock_new = parse_vclock(vclock_new_str)
         .map_err(bad_request)?;
 
     // Now read the vault. If it exists, parse the vclock. If not, use an empty
     // vclock.
-
 
     let mut v_sto = Vault {
         data: Vec::<u8>::default(),
         vclock: VClock::<String>::default(),
     };
 
-    if db.exists(id).await.map_err(server_err)? {
-        v_sto = db.get(id).await
+    if db.exists(&vpath).await.map_err(server_err)? {
+        v_sto = db.get(&vpath).await
             .and_then(|b| serde_json::from_slice(&b).map_err(|e| e.into()))
             .map_err(server_err)?;
     }
-    let v_cur = v_sto.vclock;
+    let vclock_cur = v_sto.vclock;
 
     // If the vclock the client provides is not a child of the current vclock,
     // reject the request.
     use std::cmp::Ordering;
-    if v_new.partial_cmp(&v_cur) != Some(Ordering::Greater) {
+    if vclock_new.partial_cmp(&vclock_cur) != Some(Ordering::Greater) {
         let data = serde_json::to_string(&v_sto.data)
             .map_err(server_err)?;
         let resp = Response::builder(StatusCode::Conflict)
-            .header("vclock", write_vclock(&v_cur).map_err(server_err)?)
+            .header("vclock", write_vclock(&vclock_cur).map_err(server_err)?)
             .body(format!(
                 r#"{{"error": "causality violation", "vault": {}}}"#, data)
              )
@@ -417,19 +479,17 @@ where
         return Ok(resp);
     }
 
-    let body = &req.ext::<BodyBytes>().unwrap().0;
-
     let vault = Vault {
         data: body.to_vec(),
-        vclock: v_new,
+        vclock: vclock_new,
     };
     let vault_bytes = serde_json::to_vec(&vault)
         .map_err(server_err)?;
 
-    db.put(id, &vault_bytes).await.map_err(server_err)?;
+    db.put(&vpath, &vault_bytes).await.map_err(server_err)?;
 
     // Read our own write...
-    let read_bytes = db.get(id).await.map_err(not_found)?;
+    let read_bytes = db.get(&vpath).await.map_err(not_found)?;
     let v_read = serde_json::from_slice::<Vault>(&read_bytes)
         .map_err(server_err)?;
 
@@ -757,9 +817,9 @@ where
         vaults
             .at(":id")
             .with(add_auth_info)
-            .with(signed_pow_auth)
+            .with(signed_pow_auth2)
             .with(ensure_vault_id)
-            .with(check_vault_ownership)
+            .with(check_vault_ownership2)
             .options(option_vault)
             .get(fetch_vault_v2)
             .put(store_vault_v2);

@@ -1242,6 +1242,7 @@ mod requests {
         let keypair = KeyPair::from(&id);
         let pubkey = keypair.public.as_bytes();
         let vid = base64::encode_config(&pubkey, base64::URL_SAFE_NO_PAD);
+        let vpath = format!("v2/{}", &vid);
         let base = Url::parse("http://example.com/vaults/")?;
         let url = base.join(&vid).unwrap();
 
@@ -1253,12 +1254,14 @@ mod requests {
 
         assert_eq!(StatusCode::NotFound, res1.status());
 
+        // add data
+
         let tdata_json1 = json!({
             "data": b"vault data is opaque",
             "vclock": { "c": { "c1": 1, "c2": 3, "c3": 2 } }
         });
         let tdata_vec1 = serde_json::to_vec(&tdata_json1)?;
-        let tdata_task1 = dbs.vaults.put(&vid, &tdata_vec1);
+        let tdata_task1 = dbs.vaults.put(&vpath, &tdata_vec1);
         let _ = task::block_on(tdata_task1)?;
 
         let mut req2: Request = surf::get(url.to_string()).into();
@@ -1306,6 +1309,7 @@ mod requests {
         let keypair = KeyPair::from(&id);
         let pubkey = keypair.public.as_bytes();
         let vid = base64::encode_config(&pubkey, base64::URL_SAFE_NO_PAD);
+        let vpath = format!("v2/{}", &vid);
         let base = Url::parse("http://example.com/vaults/")?;
         let url = base.join(&vid).unwrap();
         let mut vc = VClock::new("c1");
@@ -1423,7 +1427,7 @@ mod requests {
             "vclock": { "c": { "c1": 2, "c2": 1 } }
         });
         let tdata_vec6 = serde_json::to_vec(&tdata_json6)?;
-        let tdata_task6 = dbs.vaults.put(&vid, &tdata_vec6);
+        let tdata_task6 = dbs.vaults.put(&vpath, &tdata_vec6);
         let _ = task::block_on(tdata_task6)?;
 
         let res6: Response = task::block_on(api.respond(req6))
@@ -1503,6 +1507,7 @@ mod requests {
         let keypair = KeyPair::from(&id);
         let pubkey = keypair.public.as_bytes();
         let vid = base64::encode_config(&pubkey, base64::URL_SAFE_NO_PAD);
+        let vpath = format!("v2/{}", &vid);
         let base = Url::parse("http://example.com/vaults/")?;
         let url = base.join(&vid).unwrap();
         let mut vc = VClock::new("cz");
@@ -1541,7 +1546,7 @@ mod requests {
         });
         let expected_data_str2 = serde_json::to_string(&expected_data_json2)?;
 
-        let stored_data2 = task::block_on(dbs.vaults.get(&vid))?;
+        let stored_data2 = task::block_on(dbs.vaults.get(&vpath))?;
 
         assert_eq!(expected_data_str2, String::from_utf8(stored_data2)?);
 
