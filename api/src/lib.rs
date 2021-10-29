@@ -373,7 +373,7 @@ struct Vault {
     vclock: VClock<String>,
 }
 
-async fn fetch_vault_v2<T>(req: Request<State<T>>) -> Result
+async fn fetch_vault_v2<T>(req: Request<State<T>>) -> Result<Response>
 where
     T: Database + 'static,
 {
