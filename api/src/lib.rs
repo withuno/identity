@@ -730,6 +730,44 @@ where
     })
 }
 
+// Premium registration
+//
+async fn premium_post<T>(mut req: Request<State<T>>) -> Result<Body>
+where
+    T: Database + 'static,
+{
+    let body = req.body_bytes().await?;
+    let db = &req.state().db;
+
+    let body_json =
+        serde_json::from_slice::<Value>(&body).map_err(bad_request)?;
+
+    let pu = match db.get(pub_key).await {
+    // if exists, return the info about the subscription status to the user
+    // if not exists, process payment token, gather required details, poke
+    // the phonebook to create a number, and return info/status to the user.
+    }
+
+    // Ignore the payment token, we haven't implemented that yet and won't for
+    // awhile. Premium is free for now.
+    // TODO: check if payment token is valid against <payment_api> (stripe)
+
+    // take the CID and pass it along to the phonebook service which will
+    // provision an sms number for the given CID.
+    let req = surf::post(Url::from("http://phonebook/"));
+
+    resp = surf::client(req).await.map_err(server_err)?;
+
+    // if 200 then
+
+    let subscription = db.get(pub_key).await.map_err(not_found)?;
+
+    Ok(Body::from_bytes(session))
+}
+
+
+
+
 pub fn build_api<T>(
     token_db: T,
     vault_db: T,
@@ -806,6 +844,7 @@ pub fn build_api_v2<T>(
     service_db: T,
     session_db: T,
     mailbox_db: T,
+    premium_db: T,
 ) -> anyhow::Result<tide::Server<()>>
 where
     T: Database + 'static,
@@ -865,6 +904,17 @@ where
             .post(post_mailbox)
             .delete(delete_messages);
         api.at("mailboxes").nest(mailboxes);
+    }
+
+    {
+        let mut premium =
+            tide::with_state(State::new(premium_db, token_db.clone()));
+        premium
+            .at("register")
+            .with(add_auth_info)
+            .with(signed_pow_auth)
+            .post(register_post);
+        api.at("premium").nest(premium);
     }
 
     Ok(api)
