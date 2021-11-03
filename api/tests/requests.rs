@@ -49,6 +49,17 @@ mod requests {
         objects: T,
     }
 
+    struct Dbs2<T: Database> {
+        tokens: T,
+        vaults: T,
+        services: T,
+        sessions: T,
+        mailboxes: T,
+        subscriptions: T,
+        #[allow(dead_code)]
+        objects: T,
+    }
+
     #[cfg(not(feature = "s3"))]
     pub use api::store::FileStore;
 
@@ -74,22 +85,24 @@ mod requests {
             dbs.sessions.clone(),
             dbs.mailboxes.clone(),
         )?;
+
         Ok((api, dbs))
     }
 
     #[cfg(not(feature = "s3"))]
     fn setup_tmp_api_v2()
-    -> anyhow::Result<(tide::Server<()>, Dbs<FileStore>)> {
+    -> anyhow::Result<(tide::Server<()>, Dbs2<FileStore>)> {
         use tempfile::TempDir;
         let dir = TempDir::new().unwrap();
 
-        let dbs = Dbs {
+        let dbs = Dbs2 {
             objects: FileStore::new(dir.path().as_os_str()).unwrap(),
             tokens: FileStore::new(dir.path().as_os_str()).unwrap(),
             vaults: FileStore::new(dir.path().as_os_str()).unwrap(),
             services: FileStore::new(dir.path().as_os_str()).unwrap(),
             sessions: FileStore::new(dir.path().as_os_str()).unwrap(),
             mailboxes: FileStore::new(dir.path().as_os_str()).unwrap(),
+            subscriptions: FileStore::new(dir.path().as_os_str()).unwrap(),
         };
 
         // we don't include objects db here because its only used in tests
@@ -99,7 +112,9 @@ mod requests {
             dbs.services.clone(),
             dbs.sessions.clone(),
             dbs.mailboxes.clone(),
+            dbs.subscriptions.clone(),
         )?;
+
         Ok((api, dbs))
     }
 
@@ -208,7 +223,33 @@ mod requests {
     }
 
     #[cfg(feature = "s3")]
-    fn setup_tmp_api_v2() -> anyhow::Result<(tide::Server<()>, Dbs<S3Store>)> {
+    fn setup_dbs2() -> anyhow::Result<(tide::Server<()>, Dbs2<S3Store>)> {
+        let dbs = setup_dbs()?;
+
+        let dbs2 = Dbs2 {
+            objects: dbs.objects,
+            tokens: dbs.tokens,
+            vaults: dbs.vaults,
+            services: dbs.services,
+            sessions: dbs.sessions,
+            mailboxes: dbs.mailboxes,
+            subscriptions: S3Store::new(
+                "http://localhost:9000",
+                "minio",
+                "minioadmin",
+                "minioadmin",
+                &tmpname(32),
+            )?,
+        };
+
+        task::block_on(dbs2.subscriptions.create_bucket_if_not_exists())?;
+        task::block_on(dbs2.subscriptions.empty_bucket())?;
+
+        Ok(dbs2)
+    }
+
+    #[cfg(feature = "s3")]
+    fn setup_tmp_api_v2() -> anyhow::Result<(tide::Server<()>, Dbs2<S3Store>)> {
         // we don't include objects db here because its only used in tests
         let dbs = setup_dbs()?;
         let api = build_api_v2(
@@ -217,6 +258,7 @@ mod requests {
             dbs.services.clone(),
             dbs.sessions.clone(),
             dbs.mailboxes.clone(),
+            dbs.subscriptions.clone(),
         )?;
         Ok((api, dbs))
     }

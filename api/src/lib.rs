@@ -730,42 +730,82 @@ where
     })
 }
 
+//
+#[derive(Serialize, Deserialize)]
+struct PremiumRegReq {
+    token_id: String,
+}
+
+#[derive(Serialize, Deserialize)]
+struct PhoneBookResp {
+    number: String,
+}
+
+#[derive(Serialize, Deserialize)]
+struct PremiumRegistration {
+    // phone number digit string
+    sms: String,
+    // e.g. valid, expired, past-due, etc.
+    status: String,
+}
+
 // Premium registration
 //
-async fn premium_post<T>(mut req: Request<State<T>>) -> Result<Body>
+async fn registration_post<T>(mut req: Request<State<T>>) -> Result<Response>
 where
     T: Database + 'static,
 {
     let body = req.body_bytes().await?;
     let db = &req.state().db;
+    let pubkey = &req.ext::<auth2::UserId>().unwrap().0;
+    let pk_bytes = pubkey.as_bytes();
+    let pk_b64_url = base64::encode_config(&pk_bytes, base64::URL_SAFE_NO_PAD);
 
-    let body_json =
-        serde_json::from_slice::<Value>(&body).map_err(bad_request)?;
+    let reg_req: PremiumRegReq =
+        serde_json::from_slice(&body).map_err(bad_request)?;
 
-    let pu = match db.get(pub_key).await {
-    // if exists, return the info about the subscription status to the user
     // if not exists, process payment token, gather required details, poke
     // the phonebook to create a number, and return info/status to the user.
+    if db.exists(&pk_b64_url).await.map_err(server_err)? == false {
+        // Ignore the payment token, we haven't implemented that yet and won't
+        // for awhile. Premium is free for now.
+
+        if valid_token(&reg_req.token_id) == false {
+            use tide::StatusCode::PaymentRequired;
+            let resp = Response::builder(PaymentRequired)
+                .body("valid payment token required")
+                .build();
+            return Ok(resp)
+        }
+
+        // Take the pubkey and pass it along to the phonebook service which
+        // will provision an sms number for the given pubkey.
+
+        let pb_resp = surf::post("http://phonebook/numbers")
+            .body(format!("pubkey={}", &pk_b64_url))
+            .recv_json::<PhoneBookResp>()
+            .await
+            .map_err(server_err)?;
+
+        let reg = PremiumRegistration {
+            status: "active".into(),
+            sms: pb_resp.number,
+        };
+        let reg_bytes = serde_json::to_vec(&reg).map_err(server_err)?;
+        db.put(&pk_b64_url, &reg_bytes).await.map_err(server_err)?;
     }
+    // now it exists, return the info about the subscription status to the user
 
-    // Ignore the payment token, we haven't implemented that yet and won't for
-    // awhile. Premium is free for now.
-    // TODO: check if payment token is valid against <payment_api> (stripe)
+    let registration = db.get(&pk_b64_url).await.map_err(server_err)?;
 
-    // take the CID and pass it along to the phonebook service which will
-    // provision an sms number for the given CID.
-    let req = surf::post(Url::from("http://phonebook/"));
-
-    resp = surf::client(req).await.map_err(server_err)?;
-
-    // if 200 then
-
-    let subscription = db.get(pub_key).await.map_err(not_found)?;
-
-    Ok(Body::from_bytes(session))
+    Ok(Body::from_bytes(registration).into())
 }
 
-
+fn valid_token(token: &str) -> bool
+{
+    // TODO: check if payment token is valid against <payment_api> (stripe)
+    return token.len() > 0;
+}
 
 
 pub fn build_api<T>(
@@ -913,7 +953,7 @@ where
             .at("register")
             .with(add_auth_info)
             .with(signed_pow_auth)
-            .post(register_post);
+            .post(registration_post);
         api.at("premium").nest(premium);
     }
 
