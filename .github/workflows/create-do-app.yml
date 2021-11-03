@@ -79,19 +79,19 @@ jobs:
               - key: PLIVO_AUTH_ID
                 scope: RUN_TIME
                 type: SECRET
-                value: EV[1:ESNFt2IBgYC4eO1mY5RtT92FzYd9H4oF:Zdgt8OYRNuXaOjd3Z3qBYGC5yS8ZtftfgT9SaLyNtRm90PUE]
+                value: {{ secrets.PLIVO_AUTH_ID }}
               - key: PLIVO_AUTH_TOKEN
                 scope: RUN_TIME
                 type: SECRET
-                value: EV[1:cr5V49p451o/lrnea/+u+edHhGxnw91S:vFK2yU/oVzTCBS2Aisfvy5oowbnAqCCS51NP5X4+q1rhqtKTCeO0sQstQWerJT9RacjkeHpdlL0=]
+                value: {{ secrets.PLIVO_AUTH_TOKEN }}
               - key: AWS_ACCESS_KEY_ID
                 scope: RUN_TIME
                 type: SECRET
-                value: EV[1:rGk0dJRSasKT3R5OVnUcMPA9tFds/Kvn:4Nqr/itkcbRDuQrbYNDfkrkdLG79skb/i6BoWNxYi6KENPgM]
+                value: {{ secrets.DIGITAL_OCEAN_SPACES_KEY }}
               - key: AWS_SECRET_ACCESS_KEY
                 scope: RUN_TIME
                 type: SECRET
-                value: EV[1:XxsJdgUeUPMmUSWphtVQI+Pni9mPVX7P:pPvr0o1pmOUUPJfPh6cszr1bFIzEmqm+YWY+ZU2UUpyWtvdV5WZhg0jsk4Qh6xv/nItWfWGNykQsAyY=]
+                value: {{ secrets.DIGITAL_OCEAN_SPACES_SECRET }}
               - key: PHONEBOOK_BUCKET
                 scope: RUN_AND_BUILD_TIME
                 value: phonebook.u1o.dev
