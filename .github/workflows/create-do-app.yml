@@ -70,6 +70,49 @@ jobs:
                 - key: SPACES_BUCKET_PREFIX
                   value: "u1o.dev"
                   scope: RUN_TIME
+            - name: phonebook
+              dockerfile_path: Dockerfile
+              envs:
+              - key: PLIVO_APP_ID
+                scope: RUN_TIME
+                value: "31519918106914646"
+              - key: PLIVO_AUTH_ID
+                scope: RUN_TIME
+                type: SECRET
+                value: EV[1:ESNFt2IBgYC4eO1mY5RtT92FzYd9H4oF:Zdgt8OYRNuXaOjd3Z3qBYGC5yS8ZtftfgT9SaLyNtRm90PUE]
+              - key: PLIVO_AUTH_TOKEN
+                scope: RUN_TIME
+                type: SECRET
+                value: EV[1:cr5V49p451o/lrnea/+u+edHhGxnw91S:vFK2yU/oVzTCBS2Aisfvy5oowbnAqCCS51NP5X4+q1rhqtKTCeO0sQstQWerJT9RacjkeHpdlL0=]
+              - key: AWS_ACCESS_KEY_ID
+                scope: RUN_TIME
+                type: SECRET
+                value: EV[1:rGk0dJRSasKT3R5OVnUcMPA9tFds/Kvn:4Nqr/itkcbRDuQrbYNDfkrkdLG79skb/i6BoWNxYi6KENPgM]
+              - key: AWS_SECRET_ACCESS_KEY
+                scope: RUN_TIME
+                type: SECRET
+                value: EV[1:XxsJdgUeUPMmUSWphtVQI+Pni9mPVX7P:pPvr0o1pmOUUPJfPh6cszr1bFIzEmqm+YWY+ZU2UUpyWtvdV5WZhg0jsk4Qh6xv/nItWfWGNykQsAyY=]
+              - key: PHONEBOOK_BUCKET
+                scope: RUN_AND_BUILD_TIME
+                value: phonebook.u1o.dev
+              - key: MAILBOX_BUCKET
+                scope: RUN_AND_BUILD_TIME
+                value: mailboxes.u1o.dev
+              - key: AWS_S3_ENDPOINT
+                scope: RUN_AND_BUILD_TIME
+                value: nyc3.digitaloceanspaces.com
+              github:
+                branch: main
+                deploy_on_push: true
+                repo: withuno/phonebook
+              http_port: 8080
+              instance_count: 1
+              instance_size_slug: basic-xxs
+              internal_ports:
+              - 80
+              routes:
+              - path: /phonebook
+              source_dir: /
           EOF
 
       - name: Create New App
