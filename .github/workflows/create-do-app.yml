@@ -79,19 +79,19 @@ jobs:
               - key: PLIVO_AUTH_ID
                 scope: RUN_TIME
                 type: SECRET
-                value: {{ secrets.PLIVO_AUTH_ID }}
+                value: ${{ secrets.PLIVO_AUTH_ID }}
               - key: PLIVO_AUTH_TOKEN
                 scope: RUN_TIME
                 type: SECRET
-                value: {{ secrets.PLIVO_AUTH_TOKEN }}
+                value: ${{ secrets.PLIVO_AUTH_TOKEN }}
               - key: AWS_ACCESS_KEY_ID
                 scope: RUN_TIME
                 type: SECRET
-                value: {{ secrets.DIGITAL_OCEAN_SPACES_KEY }}
+                value: ${{ secrets.DIGITAL_OCEAN_SPACES_KEY }}
               - key: AWS_SECRET_ACCESS_KEY
                 scope: RUN_TIME
                 type: SECRET
-                value: {{ secrets.DIGITAL_OCEAN_SPACES_SECRET }}
+                value: ${{ secrets.DIGITAL_OCEAN_SPACES_SECRET }}
               - key: PHONEBOOK_BUCKET
                 scope: RUN_AND_BUILD_TIME
                 value: phonebook.u1o.dev
