@@ -78,11 +78,11 @@ jobs:
                 value: "31519918106914646"
               - key: PLIVO_AUTH_ID
                 scope: RUN_TIME
-                type: SECRET
+                # type: SECRET
                 value: ${{ secrets.PLIVO_AUTH_ID }}
               - key: PLIVO_AUTH_TOKEN
                 scope: RUN_TIME
-                type: SECRET
+                # type: SECRET
                 value: ${{ secrets.PLIVO_AUTH_TOKEN }}
               - key: AWS_ACCESS_KEY_ID
                 scope: RUN_TIME
