@@ -51,7 +51,7 @@ jobs:
                 deploy_on_push: true
               health_check:
                 http_path: /v1/health
-              instance_size_slug: basic-xs
+              instance_size_slug: basic-s
               envs:
                 - key: SPACES_ACCESS_KEY_ID
                   value: ${{ secrets.DIGITAL_OCEAN_SPACES_KEY }}
