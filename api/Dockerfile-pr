@@ -5,7 +5,7 @@ RUN cargo +nightly test --release
 RUN cargo +nightly install --path api --root . --features s3
 
 FROM debian:latest
-RUN apt update && apt install -y libcurl4
+RUN apt update && apt install -y libcurl4 dig ping netcat
 WORKDIR /root
 EXPOSE 8080
 COPY --from=builder /app/bin/ /usr/local/bin/
