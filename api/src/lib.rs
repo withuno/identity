@@ -978,7 +978,7 @@ where
         let mut premium =
             tide::with_state(State::new(premium_db, token_db.clone()));
         premium
-            .at("register")
+            .at("registration")
             .with(add_auth_info)
 //            .with(signed_pow_auth)
             .post(registration_post);
