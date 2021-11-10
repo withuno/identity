@@ -195,8 +195,7 @@ where
         Method::Get | Method::Options => "read",
         Method::Patch => "update",
         Method::Delete => "delete",
-        Method::Post => "update", // the server manages the resource...
-        Method::Put => {
+        Method::Put | Method::Post => {
             let id = req.param("id").map_err(|_| StatusCode::BadRequest)?;
             let rpath = format!("v2/{}", id);
             let exists = match req.state().db.exists(&rpath).await {
