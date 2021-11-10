@@ -44,7 +44,7 @@ jobs:
           region: nyc
           services:
             - name: api
-              dockerfile_path: api/Dockerfile
+              dockerfile_path: api/Dockerfile-pr
               github:
                 repo: ${{ github.repository }}
                 branch: $BRANCH_NAME
