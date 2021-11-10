@@ -980,7 +980,7 @@ where
         premium
             .at("register")
             .with(add_auth_info)
-            .with(signed_pow_auth)
+//            .with(signed_pow_auth)
             .post(registration_post);
         api.at("premium").nest(premium);
     }
