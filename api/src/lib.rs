@@ -266,6 +266,21 @@ where
         .build())
 }
 
+async fn fetch_sms<T>(req: Request<State<T>>) -> Result
+where
+    T: Database + 'static,
+{
+    let db = &req.state().db;
+    let id = &req.ext::<MailboxId>().unwrap().0;
+
+    let sms_inbox = mailbox::get_sms(db, id).await?;
+
+    Ok(Response::builder(StatusCode::Ok)
+        .header("content-type", "application/json")
+        .body(serde_json::to_string(&sms_inbox)?)
+        .build())
+}
+
 // Make sure the vault in the url matches the public key that generated the
 // signature on the request. Requires VaultId middleware. Returns status 403
 // forbidden if there is a mismatch.
@@ -933,7 +948,7 @@ where
 
     {
         let mut mailboxes =
-            tide::with_state(State::new(mailbox_db, token_db.clone()));
+            tide::with_state(State::new(mailbox_db.clone(), token_db.clone()));
         mailboxes
             .at(":id")
             .with(add_auth_info)
@@ -944,6 +959,19 @@ where
             .post(post_mailbox)
             .delete(delete_messages);
         api.at("mailboxes").nest(mailboxes);
+    }
+
+    {
+        let mut sms =
+            tide::with_state(State::new(mailbox_db, token_db.clone()));
+        sms
+            .at(":id")
+            .with(add_auth_info)
+            .with(signed_pow_auth)
+            .with(ensure_mailbox_id)
+            .with(check_mailbox_ownership)
+            .get(fetch_sms);
+        api.at("sms").nest(sms);
     }
 
     {

@@ -36,6 +36,20 @@ pub struct MessageStored {
     pub data: Payload,
 }
 
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
+pub struct SmsInbox {
+    pub sms: Vec<SmsStored>,
+}
+
+#[derive(Debug, Deserialize, Serialize, PartialEq)]
+pub struct SmsStored {
+    pub created_at: String,
+    pub from: String, // phone number
+    pub to: String, // phone number
+    pub message: String,
+    pub uuid: String,
+}
+
 pub fn delete_messages(
     store: &impl Database,
     owner: &str,
@@ -59,6 +73,7 @@ pub fn get_messages(
 ) -> anyhow::Result<Mailbox> {
     // LOCK
     let m = async_std::task::block_on(store.list(owner))?;
+    // TODO: skip sms
     let messages: Vec<MessageStored> = m
         .iter()
         .filter_map(|m| {
@@ -118,6 +133,22 @@ pub fn post_message(
     // UNLOCK
 
     Ok(m)
+}
+
+pub async fn get_sms<T>(store: &T, owner: &str) -> anyhow::Result<SmsInbox>
+where
+    T: Database
+{
+    use futures::stream::{self, StreamExt};
+
+    let ent = store.list(&format!("{}/sms", owner)).await?;
+    let sms = stream::iter(ent)
+        .filter_map(|f| async move { store.get(&f).await.ok() })
+        .filter_map(|b| async move { serde_json::from_slice(&b).ok() })
+        .collect::<Vec<SmsStored>>()
+        .await;
+
+    Ok(SmsInbox { sms })
 }
 
 #[cfg(test)]
