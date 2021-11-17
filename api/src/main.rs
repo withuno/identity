@@ -54,11 +54,10 @@ async fn main() -> anyhow::Result<()> {
     let tok2 = make_db("tokens")?;
     let vau2 = make_db("vaults")?;
     let srv2 = make_db("services")?;
-    let srl2 = make_db("service_list")?;
     let ses2 = make_db("sessions")?;
     let mbx2 = make_db("mailboxes")?;
 
-    let api_v2 = build_api_v2(tok2, vau2, srv2, srl2, ses2, mbx2)?;
+    let api_v2 = build_api_v2(tok2, vau2, srv2, ses2, mbx2)?;
 
     let mut srv = tide::new();
 

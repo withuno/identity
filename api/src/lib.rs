@@ -811,7 +811,6 @@ pub fn build_api_v2<T>(
     token_db: T,
     vault_db: T,
     service_db: T,
-    service_list_db: T,
     session_db: T,
     mailbox_db: T,
 ) -> anyhow::Result<tide::Server<()>>
@@ -838,7 +837,7 @@ where
 
     {
         let mut services =
-            tide::with_state(State::new(service_db, token_db.clone()));
+            tide::with_state(State::new(service_db.clone(), token_db.clone()));
         services
             .at(":name")
             .with(add_auth_info)
@@ -849,7 +848,7 @@ where
 
     {
         let mut service_list =
-            tide::with_state(State::new(service_list_db, token_db.clone()));
+            tide::with_state(State::new(service_db.clone(), token_db.clone()));
 
         // putting a '/' here does not work,
         // so this is kind of a hack because we'll only have one file for now.

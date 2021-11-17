@@ -44,7 +44,6 @@ mod requests {
         tokens: T,
         vaults: T,
         services: T,
-        service_list: T,
         sessions: T,
         mailboxes: T,
         objects: T,
@@ -63,8 +62,6 @@ mod requests {
             tokens: FileStore::new(dir.path().as_os_str()).unwrap(),
             vaults: FileStore::new(dir.path().as_os_str()).unwrap(),
             services: FileStore::new(dir.path().as_os_str()).unwrap(),
-            // not strictly needed here because we have no v1 service_list
-            service_list: FileStore::new(dir.path().as_os_str()).unwrap(),
             sessions: FileStore::new(dir.path().as_os_str()).unwrap(),
             mailboxes: FileStore::new(dir.path().as_os_str()).unwrap(),
         };
@@ -91,7 +88,6 @@ mod requests {
             tokens: FileStore::new(dir.path().as_os_str()).unwrap(),
             vaults: FileStore::new(dir.path().as_os_str()).unwrap(),
             services: FileStore::new(dir.path().as_os_str()).unwrap(),
-            service_list: FileStore::new(dir.path().as_os_str()).unwrap(),
             sessions: FileStore::new(dir.path().as_os_str()).unwrap(),
             mailboxes: FileStore::new(dir.path().as_os_str()).unwrap(),
         };
@@ -101,7 +97,6 @@ mod requests {
             dbs.tokens.clone(),
             dbs.vaults.clone(),
             dbs.services.clone(),
-            dbs.service_list.clone(),
             dbs.sessions.clone(),
             dbs.mailboxes.clone(),
         )?;
@@ -165,13 +160,6 @@ mod requests {
                 "minioadmin",
                 &tmpname(32),
             )?,
-            service_list: S3Store::new(
-                "http://localhost:9000",
-                "minio",
-                "minioadmin",
-                "minioadmin",
-                &tmpname(32),
-            )?,
             sessions: S3Store::new(
                 "http://localhost:9000",
                 "minio",
@@ -192,7 +180,6 @@ mod requests {
         task::block_on(dbs.tokens.create_bucket_if_not_exists())?;
         task::block_on(dbs.vaults.create_bucket_if_not_exists())?;
         task::block_on(dbs.services.create_bucket_if_not_exists())?;
-        task::block_on(dbs.service_list.create_bucket_if_not_exists())?;
         task::block_on(dbs.sessions.create_bucket_if_not_exists())?;
         task::block_on(dbs.mailboxes.create_bucket_if_not_exists())?;
 
@@ -200,7 +187,6 @@ mod requests {
         task::block_on(dbs.tokens.empty_bucket())?;
         task::block_on(dbs.vaults.empty_bucket())?;
         task::block_on(dbs.services.empty_bucket())?;
-        task::block_on(dbs.service_list.empty_bucket())?;
         task::block_on(dbs.sessions.empty_bucket())?;
         task::block_on(dbs.mailboxes.empty_bucket())?;
 
@@ -229,7 +215,6 @@ mod requests {
             dbs.tokens.clone(),
             dbs.vaults.clone(),
             dbs.services.clone(),
-            dbs.service_list.clone(),
             dbs.sessions.clone(),
             dbs.mailboxes.clone(),
         )?;
@@ -1648,7 +1633,7 @@ mod requests {
 
         // add the file so the next request will succeed
         let tdata = r#"{"test": "data"}"#;
-        let foof = dbs.service_list.put("services.json", &tdata.as_bytes());
+        let foof = dbs.services.put("services.json", &tdata.as_bytes());
         let _ = task::block_on(foof)?;
 
         // gen a new salt and redo the request
