@@ -13,9 +13,7 @@ pub use store::Database;
 
 pub mod mailbox;
 // most of this is only used in tests, can you export there?
-pub use crate::mailbox::{
-    MessageRequest, MessageToDelete
-};
+pub use crate::mailbox::{MessageRequest, MessageToDelete};
 
 use anyhow::bail;
 
@@ -29,8 +27,8 @@ use std::pin::Pin;
 
 use json_patch::merge;
 
-use serde_derive::Serialize;
 use serde_derive::Deserialize;
+use serde_derive::Serialize;
 use serde_json::Value;
 
 use http_types::Method;
@@ -389,18 +387,17 @@ where
             let vb_old = db.get(id).await.map_err(not_found)?;
             let vault = Vault {
                 data: vb_old,
-                vclock: VClock::<String>::default()
+                vclock: VClock::<String>::default(),
             };
-            let vb_new = serde_json::to_vec(&vault)
-               .map_err(server_err)?;
+            let vb_new = serde_json::to_vec(&vault).map_err(server_err)?;
             db.put(&vpath, &vb_new).await.map_err(server_err)?;
 
             db.get(&vpath).await.map_err(not_found)?
-        },
+        }
     };
 
-    let vault = serde_json::from_slice::<Vault>(&vault_bytes)
-        .map_err(server_err)?;
+    let vault =
+        serde_json::from_slice::<Vault>(&vault_bytes).map_err(server_err)?;
 
     let resp = Response::builder(StatusCode::Ok)
         .header("vclock", write_vclock(&vault.vclock).map_err(server_err)?)
@@ -443,11 +440,10 @@ where
                 .body("missing vclock")
                 .build();
             return Ok(resp);
-        },
+        }
     };
 
-    let vclock_new = parse_vclock(vclock_new_str)
-        .map_err(bad_request)?;
+    let vclock_new = parse_vclock(vclock_new_str).map_err(bad_request)?;
 
     // Now read the vault. If it exists, parse the vclock. If not, use an empty
     // vclock.
@@ -458,7 +454,9 @@ where
     };
 
     if db.exists(&vpath).await.map_err(server_err)? {
-        v_sto = db.get(&vpath).await
+        v_sto = db
+            .get(&vpath)
+            .await
             .and_then(|b| serde_json::from_slice(&b).map_err(|e| e.into()))
             .map_err(server_err)?;
     }
@@ -468,13 +466,13 @@ where
     // reject the request.
     use std::cmp::Ordering;
     if vclock_new.partial_cmp(&vclock_cur) != Some(Ordering::Greater) {
-        let data = serde_json::to_string(&v_sto.data)
-            .map_err(server_err)?;
+        let data = serde_json::to_string(&v_sto.data).map_err(server_err)?;
         let resp = Response::builder(StatusCode::Conflict)
             .header("vclock", write_vclock(&vclock_cur).map_err(server_err)?)
             .body(format!(
-                r#"{{"error": "causality violation", "vault": {}}}"#, data)
-             )
+                r#"{{"error": "causality violation", "vault": {}}}"#,
+                data
+            ))
             .build();
         return Ok(resp);
     }
@@ -483,15 +481,14 @@ where
         data: body.to_vec(),
         vclock: vclock_new,
     };
-    let vault_bytes = serde_json::to_vec(&vault)
-        .map_err(server_err)?;
+    let vault_bytes = serde_json::to_vec(&vault).map_err(server_err)?;
 
     db.put(&vpath, &vault_bytes).await.map_err(server_err)?;
 
     // Read our own write...
     let read_bytes = db.get(&vpath).await.map_err(not_found)?;
-    let v_read = serde_json::from_slice::<Vault>(&read_bytes)
-        .map_err(server_err)?;
+    let v_read =
+        serde_json::from_slice::<Vault>(&read_bytes).map_err(server_err)?;
 
     let resp = Response::builder(StatusCode::Ok)
         .header("vclock", write_vclock(&v_read.vclock).map_err(server_err)?)
@@ -506,9 +503,9 @@ where
 ///
 ///   client-id1=count,client-id2=count,client-id3=count
 ///
-pub fn parse_vclock(vc_str: &str)
--> std::result::Result<VClock<String>, anyhow::Error>
-{
+pub fn parse_vclock(
+    vc_str: &str,
+) -> std::result::Result<VClock<String>, anyhow::Error> {
     // TODO: write a serde_rfc8941 crate. For now, manually parse.
     //
     let items = vc_str.trim().split(",");
@@ -526,8 +523,9 @@ pub fn parse_vclock(vc_str: &str)
     Ok(VClock::from(map))
 }
 
-pub fn write_vclock<K>(vc: &VClock<K>)
--> std::result::Result<String, anyhow::Error>
+pub fn write_vclock<K>(
+    vc: &VClock<K>,
+) -> std::result::Result<String, anyhow::Error>
 where
     K: std::cmp::Eq,
     K: std::hash::Hash,
@@ -559,6 +557,15 @@ where
 #[derive(Debug, PartialEq, Deserialize)]
 struct ServiceQuery {
     branch: String,
+}
+
+async fn fetch_service_list<T>(req: Request<State<T>>) -> Result<Body>
+where
+    T: Database + 'static,
+{
+    let db = &req.state().db;
+    let list = db.get("services.json").await.map_err(not_found)?;
+    Ok(list.into())
 }
 
 async fn fetch_service<T>(req: Request<State<T>>) -> Result<Body>
@@ -804,6 +811,7 @@ pub fn build_api_v2<T>(
     token_db: T,
     vault_db: T,
     service_db: T,
+    service_list_db: T,
     session_db: T,
     mailbox_db: T,
 ) -> anyhow::Result<tide::Server<()>>
@@ -837,6 +845,21 @@ where
             .with(signed_pow_auth)
             .get(fetch_service);
         api.at("services").nest(services);
+    }
+
+    {
+        let mut service_list =
+            tide::with_state(State::new(service_list_db, token_db.clone()));
+
+        // putting a '/' here does not work,
+        // so this is kind of a hack because we'll only have one file for now.
+        service_list
+            .at("services.json")
+            .with(add_auth_info)
+            .with(signed_pow_auth)
+            .get(fetch_service_list);
+
+        api.at("service_list").nest(service_list);
     }
 
     {

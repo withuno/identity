@@ -44,6 +44,7 @@ mod requests {
         tokens: T,
         vaults: T,
         services: T,
+        service_list: T,
         sessions: T,
         mailboxes: T,
         objects: T,
@@ -62,6 +63,8 @@ mod requests {
             tokens: FileStore::new(dir.path().as_os_str()).unwrap(),
             vaults: FileStore::new(dir.path().as_os_str()).unwrap(),
             services: FileStore::new(dir.path().as_os_str()).unwrap(),
+            // not strictly needed here because we have no v1 service_list
+            service_list: FileStore::new(dir.path().as_os_str()).unwrap(),
             sessions: FileStore::new(dir.path().as_os_str()).unwrap(),
             mailboxes: FileStore::new(dir.path().as_os_str()).unwrap(),
         };
@@ -88,6 +91,7 @@ mod requests {
             tokens: FileStore::new(dir.path().as_os_str()).unwrap(),
             vaults: FileStore::new(dir.path().as_os_str()).unwrap(),
             services: FileStore::new(dir.path().as_os_str()).unwrap(),
+            service_list: FileStore::new(dir.path().as_os_str()).unwrap(),
             sessions: FileStore::new(dir.path().as_os_str()).unwrap(),
             mailboxes: FileStore::new(dir.path().as_os_str()).unwrap(),
         };
@@ -97,6 +101,7 @@ mod requests {
             dbs.tokens.clone(),
             dbs.vaults.clone(),
             dbs.services.clone(),
+            dbs.service_list.clone(),
             dbs.sessions.clone(),
             dbs.mailboxes.clone(),
         )?;
@@ -160,6 +165,13 @@ mod requests {
                 "minioadmin",
                 &tmpname(32),
             )?,
+            service_list: S3Store::new(
+                "http://localhost:9000",
+                "minio",
+                "minioadmin",
+                "minioadmin",
+                &tmpname(32),
+            )?,
             sessions: S3Store::new(
                 "http://localhost:9000",
                 "minio",
@@ -180,6 +192,7 @@ mod requests {
         task::block_on(dbs.tokens.create_bucket_if_not_exists())?;
         task::block_on(dbs.vaults.create_bucket_if_not_exists())?;
         task::block_on(dbs.services.create_bucket_if_not_exists())?;
+        task::block_on(dbs.service_list.create_bucket_if_not_exists())?;
         task::block_on(dbs.sessions.create_bucket_if_not_exists())?;
         task::block_on(dbs.mailboxes.create_bucket_if_not_exists())?;
 
@@ -187,6 +200,7 @@ mod requests {
         task::block_on(dbs.tokens.empty_bucket())?;
         task::block_on(dbs.vaults.empty_bucket())?;
         task::block_on(dbs.services.empty_bucket())?;
+        task::block_on(dbs.service_list.empty_bucket())?;
         task::block_on(dbs.sessions.empty_bucket())?;
         task::block_on(dbs.mailboxes.empty_bucket())?;
 
@@ -215,6 +229,7 @@ mod requests {
             dbs.tokens.clone(),
             dbs.vaults.clone(),
             dbs.services.clone(),
+            dbs.service_list.clone(),
             dbs.sessions.clone(),
             dbs.mailboxes.clone(),
         )?;
@@ -1602,6 +1617,60 @@ mod requests {
 
         Ok(())
     }
+
+    #[test]
+    fn v2_service_list_get() -> anyhow::Result<()> {
+        let (api, dbs) = setup_tmp_api_v2().unwrap();
+
+        let id = Id([0u8; ID_LENGTH]); // use the zero id
+        let n64_1 = init_nonce(&dbs.tokens, &["read"])?;
+
+        let resource = "http://example.com/service_list/services.json";
+        let url = Url::parse(resource)?;
+        let mut req1: Request = surf::get(url.to_string()).into();
+
+        let salt1 = SALT;
+        sign_req(&mut req1, &n64_1, TUNE, salt1, &id)?;
+        let mut req2 = req1.clone(); // for the next request
+        let fut1 = api.respond(req1);
+        let res1: Response =
+            task::block_on(fut1).map_err(|_| anyhow!("request failed"))?;
+
+        // expect a 404 since the file does not exist yet
+        assert_eq!(StatusCode::NotFound, res1.status());
+
+        // get the next nonce so we can redo the request
+        let aih1 = res1
+            .header("authentication-info")
+            .ok_or(anyhow!("expected auth-info"))?;
+        let auth_info1 = parse_auth_info(aih1.last().as_str())?;
+        let n64_2 = &auth_info1.params["nextnonce"];
+
+        // add the file so the next request will succeed
+        let tdata = r#"{"test": "data"}"#;
+        let foof = dbs.service_list.put("services.json", &tdata.as_bytes());
+        let _ = task::block_on(foof)?;
+
+        // gen a new salt and redo the request
+        let mut salt2 = [0u8; 8];
+        rand::thread_rng().fill_bytes(&mut salt2);
+        let salt64_2 = base64::encode_config(&salt2, STANDARD_NO_PAD);
+        let alg2 = &auth_info1.params["argon"];
+        sign_req(&mut req2, &n64_2, alg2, &salt64_2, &id)?;
+
+        let fut2 = api.respond(req2);
+        let mut res2: Response =
+            task::block_on(fut2).map_err(|_| anyhow!("request2 failed"))?;
+
+        assert_eq!(StatusCode::Ok, res2.status());
+        let expected_body2 = r#"{"test": "data"}"#;
+        let actual_body2 = task::block_on(res2.take_body().into_bytes())
+            .map_err(|_| anyhow!("body read failed"))?;
+        assert_eq!(&expected_body2.as_bytes(), &actual_body2);
+
+        Ok(())
+    }
+
 
     #[allow(dead_code)]
     fn print_body(res: &mut Response) -> anyhow::Result<()> {
