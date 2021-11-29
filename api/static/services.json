@@ -7,6 +7,15 @@
     "brand_color": "#FF9900"
   },
   {
+    "vault_name": "box",
+    "display_name": "Box",
+    "matching_hosts": ["account.box.com", "box.com"],
+    "login_urls": ["/login"],
+    "image_url_string": "https://www.google.com/s2/favicons?sz=20&domain=box.com",
+    "image_needs_inset": true,
+    "brand_color": "#2760CD"
+  },
+  {
     "vault_name": "chase",
     "display_name": "Chase",
     "matching_hosts": ["www.chase.com"],
