@@ -7,6 +7,15 @@
     "brand_color": "#FF9900"
   },
   {
+    "vault_name": "box",
+    "display_name": "Box",
+    "matching_hosts": ["account.box.com", "box.com"],
+    "login_urls": ["/login"],
+    "image_url_string": "https://www.google.com/s2/favicons?sz=20&domain=box.com",
+    "image_needs_inset": true,
+    "brand_color": "#2760CD"
+  },
+  {
     "vault_name": "chase",
     "display_name": "Chase",
     "matching_hosts": ["www.chase.com"],
@@ -21,14 +30,14 @@
     "display_name": "Discord",
     "matching_hosts": ["discord.com"],
     "login_urls": ["/login"],
-    "brand_color": "#7289DA"
+    "brand_color": "#5865F2"
   },
   {
     "vault_name": "dropbox",
     "display_name": "Dropbox",
     "matching_hosts": ["www.dropbox.com"],
     "login_urls": ["/login"],
-    "brand_color": "#007EE5",
+    "brand_color": "#0061FF",
     "needs_visible_web_view": true
   },
   {
@@ -36,7 +45,7 @@
     "display_name": "Facebook",
     "matching_hosts": ["mbasic.facebook.com", "www.facebook.com"],
     "login_urls": ["/login"],
-    "brand_color": "#4267B2"
+    "brand_color": "#1877F2"
   },
   {
     "vault_name": "github",
