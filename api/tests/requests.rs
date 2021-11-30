@@ -1616,7 +1616,6 @@ mod requests {
 
         let salt1 = SALT;
         sign_req(&mut req1, &n64_1, TUNE, salt1, &id)?;
-        let mut req2 = req1.clone(); // for the next request
         let fut1 = api.respond(req1);
         let res1: Response =
             task::block_on(fut1).map_err(|_| anyhow!("request failed"))?;
@@ -1624,24 +1623,13 @@ mod requests {
         // expect a 404 since the file does not exist yet
         assert_eq!(StatusCode::NotFound, res1.status());
 
-        // get the next nonce so we can redo the request
-        let aih1 = res1
-            .header("authentication-info")
-            .ok_or(anyhow!("expected auth-info"))?;
-        let auth_info1 = parse_auth_info(aih1.last().as_str())?;
-        let n64_2 = &auth_info1.params["nextnonce"];
-
         // add the file so the next request will succeed
         let tdata = r#"{"test": "data"}"#;
         let foof = dbs.services.put("services.json", &tdata.as_bytes());
         let _ = task::block_on(foof)?;
 
-        // gen a new salt and redo the request
-        let mut salt2 = [0u8; 8];
-        rand::thread_rng().fill_bytes(&mut salt2);
-        let salt64_2 = base64::encode_config(&salt2, STANDARD_NO_PAD);
-        let alg2 = &auth_info1.params["argon"];
-        sign_req(&mut req2, &n64_2, alg2, &salt64_2, &id)?;
+        let mut req2: Request = surf::get(url.to_string()).into();
+        sign_req_using_res_with_id(&res1, &mut req2, &id)?;
 
         let fut2 = api.respond(req2);
         let mut res2: Response =
