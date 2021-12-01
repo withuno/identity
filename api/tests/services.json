@@ -1,0 +1,98 @@
+[
+  {
+    "vault_name": "amazon",
+    "display_name": "Amazon",
+    "matching_hosts": ["www.amazon.com"],
+    "login_urls": ["/ap/signin"],
+    "brand_color": "#FF9900"
+  },
+  {
+    "vault_name": "box",
+    "display_name": "Box",
+    "matching_hosts": ["account.box.com", "box.com"],
+    "login_urls": ["/login"],
+    "image_url_string": "https://www.google.com/s2/favicons?sz=20&domain=box.com",
+    "image_needs_inset": true,
+    "brand_color": "#2760CD"
+  },
+  {
+    "vault_name": "chase",
+    "display_name": "Chase",
+    "matching_hosts": ["www.chase.com"],
+    "login_urls": ["/login"],
+    "image_url_string": "https://www.google.com/s2/favicons?sz=20&domain=chase.com",
+    "image_needs_inset": true,
+    "brand_color": "#117ACA",
+    "uses_premium_sms": true
+  },
+  {
+    "vault_name": "discord",
+    "display_name": "Discord",
+    "matching_hosts": ["discord.com"],
+    "login_urls": ["/login"],
+    "brand_color": "#5865F2"
+  },
+  {
+    "vault_name": "dropbox",
+    "display_name": "Dropbox",
+    "matching_hosts": ["www.dropbox.com"],
+    "login_urls": ["/login"],
+    "brand_color": "#0061FF",
+    "needs_visible_web_view": true
+  },
+  {
+    "vault_name": "facebook",
+    "display_name": "Facebook",
+    "matching_hosts": ["mbasic.facebook.com", "www.facebook.com"],
+    "login_urls": ["/login"],
+    "brand_color": "#1877F2"
+  },
+  {
+    "vault_name": "github",
+    "display_name": "GitHub",
+    "matching_hosts": ["github.com"],
+    "login_urls": ["/login"],
+    "text_color": "black",
+    "restricted_urls": ["https://github.com/settings/two_factor_authentication/setup/recovery_download"]
+  },
+  {
+    "vault_name": "google",
+    "display_name": "Google",
+    "matching_hosts": ["accounts.google.com"],
+    "text_color": "black",
+    "login_query_params": "?hl=en",
+    "needs_visible_web_view": true
+  },
+  {
+    "vault_name": "reddit",
+    "display_name": "Reddit",
+    "matching_hosts": ["www.reddit.com"],
+    "login_urls": ["/login"],
+    "brand_color": "#FF4500"
+  },
+  {
+    "vault_name": "robinhood",
+    "display_name": "Robinhood",
+    "matching_hosts": ["robinhood.com"],
+    "login_urls": ["/login"],
+    "image_needs_inset": true,
+    "brand_color": "#5BC53B"
+  },
+  {
+    "vault_name": "shopify",
+    "display_name": "Shopify",
+    "matching_hosts": ["accounts.shopify.com"],
+    "login_urls": ["/lookup"],
+    "image_needs_inset": true,
+    "brand_color": "#96BF48"
+  },
+  {
+    "vault_name": "twitter",
+    "display_name": "Twitter",
+    "matching_hosts": ["mobile.twitter.com", "twitter.com"],
+    "login_urls": ["/login", "/i/flow/login"],
+    "change_password_url": "/.well-known/change-password",
+    "enroll_mfa_url": "/settings/account/login_verification/enrollment",
+    "brand_color": "#1DA1F2"
+  }
+]

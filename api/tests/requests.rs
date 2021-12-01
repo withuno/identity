@@ -1603,6 +1603,48 @@ mod requests {
         Ok(())
     }
 
+    #[test]
+    fn v2_service_list_get() -> anyhow::Result<()> {
+        let (api, dbs) = setup_tmp_api_v2().unwrap();
+
+        let id = Id([0u8; ID_LENGTH]); // use the zero id
+        let n64_1 = init_nonce(&dbs.tokens, &["read"])?;
+
+        let resource = "http://example.com/service_list/services.json";
+        let url = Url::parse(resource)?;
+        let mut req1: Request = surf::get(url.to_string()).into();
+
+        let salt1 = SALT;
+        sign_req(&mut req1, &n64_1, TUNE, salt1, &id)?;
+        let fut1 = api.respond(req1);
+        let res1: Response =
+            task::block_on(fut1).map_err(|_| anyhow!("request failed"))?;
+
+        // expect a 404 since the file does not exist yet
+        assert_eq!(StatusCode::NotFound, res1.status());
+
+        // add the file so the next request will succeed
+        let tdata = r#"{"test": "data"}"#;
+        let foof = dbs.services.put("services.json", &tdata.as_bytes());
+        let _ = task::block_on(foof)?;
+
+        let mut req2: Request = surf::get(url.to_string()).into();
+        sign_req_using_res_with_id(&res1, &mut req2, &id)?;
+
+        let fut2 = api.respond(req2);
+        let mut res2: Response =
+            task::block_on(fut2).map_err(|_| anyhow!("request2 failed"))?;
+
+        assert_eq!(StatusCode::Ok, res2.status());
+        let expected_body2 = r#"{"test": "data"}"#;
+        let actual_body2 = task::block_on(res2.take_body().into_bytes())
+            .map_err(|_| anyhow!("body read failed"))?;
+        assert_eq!(&expected_body2.as_bytes(), &actual_body2);
+
+        Ok(())
+    }
+
+
     #[allow(dead_code)]
     fn print_body(res: &mut Response) -> anyhow::Result<()> {
         let body_bytes = task::block_on(res.take_body().into_bytes())
