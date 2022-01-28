@@ -7,7 +7,7 @@ fn test_decrypt_share() {
     let session_seed = String::from("lxAi2uKDOqW7zg");
 
     let share = String::from(
-        r"cGpbsstHz8Gm15DSBtAliDOQpCn0qCY0Ycw8R/2SwwdkxLdxEBpgIeSWOs64nAopMoP5vfElKz5xg3eF7GT30IvMt/zDwO3upEekvUYJLHEfpxYlGVskDBKhR5VPgxwIHKKAC9NhxWGjr4V/CynaWmxXnnmNzG0C8OYGw2zehyzM0P1yyTQFgw0NRcxwSs6r3wjCiiN++k8l5YEXodmt/r/vZpFUecHEFmZc8dv/t8rS+gDhIn7lA8x0SvIfRDTdscoKBI5O4bJVDMrAKGLJjRcHQhaxpFU6o4KqNX4Zh+15sEE3TtKQ4/CrzEZKkHwqkFHuO9GZlHYUO4asbjF8aF25onCNf8VO"
+        r"cGpbsstHz8Gm15DSBtAliDOQpCn0qCY0Ycw8R/2SwwdkxLdxEBpgIeSWOs64nAopMoP5vfElKz5xg3eF7GT30IvMt/zDwO3upEekvUYJLHEfpxYlGVskDBKhR5VPgxwIHKKAC9NhxWGjr4V/CynaWmxXnnmNzG0C8OYGw2zehyzM0P1yyTQFgw0NRcxwSs6r3wjCiiN++k8l5YEXodmt/r/vZpFUecHEFmZc8dv/t8rS+gDhIn7lA8x0SvIfRDTdscoKBI5O4bJVDMrAKGLJjRcHQhaxpFU6o4KqNX4Zh+15sEE3TtKQ4/CrzEZKkHwqkFHuO9GZlHYUO4asbjF8aF25onCNf8VO",
     );
 
     let expected_seed = base64::encode(vec![
@@ -23,7 +23,7 @@ fn test_decrypt_share() {
 }
 
 #[wasm_bindgen_test]
-fn test_decrypt_vault() {
+fn test_decrypt_encrypt_vault() {
     let vault = base64::decode(String::from(
         r"Vz9uXUsamtXfyr89RQMqU19Oas99joJ6BBoRramvYXnPVuVZ5gPTMLFOy+qhAk7RH17AulM0TpP2bvGu40HiOLxYkqFMnHTW0+OsRZ63zhgiiFlYenyojvdjTNi2Noizd9CUZ78R7mGbeH7JAtmyh+tNspZVp3CzUEoc2O7FohsEkLwCFNKWY4dWZKoryb8mmddUZROQs3oehtOs+NVBasvRxHRKgW+J2Mp1CcXIn67J1MimFtwRcQ5Uv6oVKwWDoe3xt82gfF+4vPvQWXYxKU3naZzDVvVpD0o/YS5JotIbanpaYaBruhy2KZ7gZU2/x9T3+Np29BesgptSzNHRAsoW+8ThtGNTtxP86EOPKFOly6+idD01lbx02Pn1tcdO5GWfuNFs01My96pWzN3bxRKz5S/oXt8BDSBmgv6KW9W/eXi5ch00UvpNzkNftwOF7B4kv8TMCdLj7ERyfhyHh6qRj15gH16g6Z4OcLbuK0IaPjk0ebt0yCC3OCX5MdVIIOvPVnz5ESwAyeZ5gYP+BXdaz4wd2UWa9E1QF/C2Ieaw+2yHHILZeVIXAO3y4tMeHRAUrqJZakjJPG0wj3UYjKDER+tXAdeGPldxv4oE6BMTTOkGbR69RS8tuIoJJ+ft78AKWjedyHs4V6P+ttkBrosRAMdkVLy8n/Lyy728t+UoubKmSHzBxN0VTV89ngqEXRAbnFbtSwjcU49vqgISoYVY4gMCDZjygZoKF2Cwg2Deu1UvxD0/Oa4N/Hxr8MwyP/epniBeHz4rj2Hm2W9a",
     )).unwrap();
@@ -37,11 +37,16 @@ fn test_decrypt_vault() {
         151, 18, 101, 187, 123, 90, 83, 228, 37, 202, 54, 46, 236, 245, 152,
         160, 159,
     ]);
+    let seed2 = seed.clone();
 
-    assert_eq!(
-        base64::encode(wasm_decrypt_vault(&vault, seed).unwrap()),
-        expected
-    );
+    let d = wasm_decrypt_vault(&vault, seed).unwrap();
+    let d2 = d.clone();
+
+    assert_eq!(base64::encode(d), expected);
+
+    let e = wasm_encrypt_vault(d2, seed2).unwrap();
+
+    assert_eq!(base64::decode(e).unwrap(), vault);
 }
 
 #[wasm_bindgen_test]
