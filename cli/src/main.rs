@@ -72,8 +72,6 @@ struct Decrypt
     /// 8 byte Mu seed.
     #[clap(long, value_name = "b64", conflicts_with = "seed")]
     mu: Option<String>,
-    /// The message to decrypt, base64 encoded.
-    ciphertext: String,
     /// Bind context in which the decrypted data should be used.
     /// Options: "vault", "split", "combine", "transfer"
     #[clap(long, value_name = "option")]
@@ -98,7 +96,12 @@ fn do_decrypt(c: Decrypt) -> Result<String>
         bail!("--seed or --mu required");
     }
 
-    let blob = base64::decode(c.ciphertext)
+    let mut ciphertext = String::new();
+    use std::io::stdin;
+    use std::io::Read;
+    let _ = stdin().read_to_string(&mut ciphertext)?;
+
+    let blob = base64::decode(ciphertext)
         .context("ciphertext must be base64 encoded")?;
 
     let mut ctx = Binding::None;
@@ -126,8 +129,6 @@ struct Encrypt
     /// 8 byte Mu seed.
     #[clap(long, value_name = "b64", conflicts_with = "seed")]
     mu: Option<String>,
-    /// The message to encrypt, base64 encoded.
-    plaintext: String,
     /// Bind context in which the encrypted data should be used.
     /// Options: "vault", "split", "combine", "transfer"
     #[clap(long, value_name = "option")]
@@ -136,6 +137,8 @@ struct Encrypt
     /// also provided. Bindings are uno domain specific contexts for the aead.
     #[clap(long, value_name = "text", conflicts_with = "bind")]
     data: Option<String>,
+    #[clap(long)]
+    raw: bool
 }
 
 fn do_encrypt(c: Encrypt) -> Result<String>
@@ -160,10 +163,20 @@ fn do_encrypt(c: Encrypt) -> Result<String>
         ctx = Binding::Custom(o);
     }
 
-    let blob = uno::encrypt(ctx, key, &c.plaintext.as_bytes())
+    let mut plaintext = String::new();
+    use std::io::stdin;
+    use std::io::Read;
+    let _ = stdin().read_to_string(&mut plaintext)?;
+
+    let blob = uno::encrypt(ctx, key, &plaintext.as_bytes())
         .context("encryption failed")?;
 
-    Ok(base64::encode(&blob[..]))
+    let out = match c.raw {
+        true => "raw not supported".into(),
+        false => base64::encode(&blob[..]),
+    };
+
+    Ok(out)
 }
 
 /// Sign a message using an Uno ID.
