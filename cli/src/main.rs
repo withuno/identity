@@ -186,8 +186,6 @@ struct Sign
     /// Identity seed to use.
     #[clap(long)]
     seed: String,
-    /// Data to sign.
-    message: String,
 }
 
 fn do_sign(c: Sign) -> Result<String>
@@ -195,7 +193,13 @@ fn do_sign(c: Sign) -> Result<String>
     use uno::Signer;
     let id = id_from_b64(c.seed)?;
     let key = uno::KeyPair::from(id);
-    let sig = key.sign(&c.message.as_bytes());
+
+    let mut message = String::new();
+    use std::io::stdin;
+    use std::io::Read;
+    let _ = stdin().read_to_string(&mut message)?;
+
+    let sig = key.sign(&message.as_bytes());
     Ok(base64::encode(&sig.to_bytes()))
 }
 
@@ -206,8 +210,6 @@ struct Verify
     /// EdDSA public key.
     #[clap(long, value_name = "b64")]
     pubkey: String,
-    /// The message to decrypt.
-    message: String,
     /// Signature to verify.
     #[clap(long, value_name = "b64")]
     signature: String
@@ -225,10 +227,16 @@ fn do_verify(c: Verify) -> Result<String>
         .context("signature must be base64 encoded")?;
 
     let sig = uno::Signature::from_bytes(&bytes)?;
-    pubkey.verify(&c.message.as_bytes(), &sig)
+
+    let mut message = String::new();
+    use std::io::stdin;
+    use std::io::Read;
+    let _ = stdin().read_to_string(&mut message)?;
+
+    pubkey.verify(&message.as_bytes(), &sig)
         .context("signature failed to verify")?;
 
-    Ok("success".into())
+    Ok("The signature is valid.".into())
 }
 
 /// Operate on a vault.
