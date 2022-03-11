@@ -210,12 +210,8 @@ fn do_verify(c: Verify) -> Result<String>
         .context("invalid public key")?;
     let bytes = base64::decode(c.signature)
         .context("signature must be base64 encoded")?;
-    let array = <[u8; uno::SIGNATURE_LENGTH]>::try_from(bytes)
-        // Can't use .context here because the error is Vec<u8>. See:
-        // https://doc.rust-lang.org/src/alloc/vec/mod.rs.html#2595
-        .map_err(|_| anyhow!("signature must be exactly 64 bytes long"))?;
 
-    let sig = uno::Signature::new(array);
+    let sig = uno::Signature::from_bytes(&bytes)?;
     pubkey.verify(&c.message.as_bytes(), &sig)
         .context("signature failed to verify")?;
 
