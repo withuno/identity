@@ -11,12 +11,13 @@ The `uno` CLI program supports performing basic crypto operations with an uno id
 
 # Examples
 
-The cli is pretty self-explanatory. Just run with no arguments to get going:
+The cli is pretty self-explanatory.
+Run `uno [help]` (or use `cargo run` in this directory) to get going:
 
 ```
 $ uno help
 cli 0.1
-David C. <david@withuno.com>
+David C. <david@uno.app>
 
 USAGE:
     uno <SUBCOMMAND>
@@ -44,12 +45,13 @@ SUBCOMMANDS:
     verify     Verify a signature on a message
 ```
 
-To dive in, jsut add a subcommand:
+To dive in, add a subcommand:
 
 ```
 $ uno help seed
 uno-seed 
-Generate an uno identity
+Generate an uno identity. An identity seed is 32 bytes of entropy. The base64
+encoding of the entropy is written to standard out.
 
 USAGE:
     uno seed
@@ -58,4 +60,5 @@ OPTIONS:
     -h, --help    Print help information
 ```
 
+If the CLI does not provide enough information from there on out, please file an issue.
 

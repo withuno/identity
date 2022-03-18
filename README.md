@@ -1,32 +1,54 @@
-# identity
-The Uno identity platform.
+Uno Identity Manager
+===
 
-There are two binaries, `uno` and `api`.
+The Uno identity platform is a modern <strike>password</strike> identity manager.
+We have full featured clients on [iOS/macOS][1] with an accompanying [browser extension][2] for Safari and the Chrome family of browsers.
+This is our Rust reference implementation with a CLI and associated API server.
+You can read more about our project and design on [our blog][3].
 
-* `uno` is the cli for interacting with libuno and with the api.
-* `api` is the server hosting vault and shmirs split/combine endpoints.
+[1]:
+[2]:
+[3]:
 
-Supporting crates include: `adi`, `djb`, and `lib`.
+Note: the CLI is not currently designed to be used as a fully functional Uno client in the way our mobile, desktop, and browser applications are.
+If you're intersted in a full-featured open source rust CLI password manager like we are, please, help us build it out (:
 
-* `adi` contains our reference implementation of SSS, guided by HashiCorp's go implementation.
-* `djb` contains Curve25519 crypto, both symmetric cand asymmetric (chacha20-poly1305 AEAD and ed25519 public key signing).
-* `lib` is libuno, which incorporates `adi` and `djb` as well as providing types for creating and working with uno identities (32 bytes of entropy plus some kdf).
+# Overview
 
-TODO: link the subdirs.
+There are two binaries:
+
+* [`uno`](cli) is the cli for interacting with libuno and with the API.
+* [`api`](api) is the server used for storage, messaging, and ephemeral sessions.
+
+Supporting crates include:
+
+* [`adi`](adi) contains our reference implementation of [SSS][sss], guided by HashiCorp's [go implementation][hashi-sss].
+* [`djb`](djb) contains Curve25519 crypto, both symmetric cand asymmetric (chacha20-poly1305 AEAD and ed25519 public key signing).
+* [`ffi`](ffi) contains the C bindings for libuno.
+* [`lib`](lib) is libuno, which incorporates `s39` and `djb` as well as providing types for creating and working with uno identities (32 bytes of entropy plus some kdf).
+* [`s39`](s39) exposes  SLIP-39 functionality using Uno library types.
+* [`wsm`](wsm) [wasm][wasm] [bindings][wbindgen] for libuno, used in our browser extensions.
+* [`xcf`](xcf) packages the `ffi` as an XCFramework use with [UnoSwift][] in our iOS and macOS apps.
+
+[sss]: https://en.wikipedia.org/wiki/Shamir's_Secret_Sharing
+[hashi-sss]: https://github.com/hashicorp/vault/tree/main/shamir
+[unoswift]: http://gihub.com/withuno/unoswift
+[wasm]: https://webassembly.org
+[wbindgen]: https://rustwasm.github.io/docs/wasm-bindgen/
 
 # Usage
 
-Run the uno cli like:
+Run the uno CLI like:
 ```
 cargo run --bin uno
 ```
 
-Same goes for the server:
+Or the API server:
 ```
 cargo run --bin api
 ```
 
-You can test everything using:
+Test everything using:
 ```
 cargo test
 ```
@@ -36,12 +58,15 @@ If you just want to run the tests in a single "package", use:
 cargo test -p <pkg>
 ```
 
-For example, `cargo test -p adi` or `cargo test -p uno`.
+For example, `cargo test -p lib` or `cargo test -p uno`.
+
+When possible it's nice to use the `--release` flag.
+Argon2 runs noticably faster with optimizations.
 
 
 # Legal things
 
-Inspired by Signal's README:
+Inspired by Signal's README (but not copied verbatim because we are EAR99):
 
 ## Cryptography Notice
 
