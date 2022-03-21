@@ -14,7 +14,7 @@ use std::convert::TryFrom;
 use std::convert::TryInto;
 
 #[derive(Parser)]
-#[clap(version = "0.1", author = "David C. <david@withuno.com>")]
+#[clap(version = "0.1", author = "David C. <david@uno.app>")]
 struct Opts {
    #[clap(subcommand)]
    subcmd: SubCommand, 
@@ -22,6 +22,7 @@ struct Opts {
 
 #[derive(Parser)]
 enum SubCommand {
+    Init(Init),
     Seed(Seed),
     Encrypt(Encrypt),
     Decrypt(Decrypt),
@@ -35,17 +36,69 @@ enum SubCommand {
     S39(S39Cmd),
 }
 
-/// Generate an uno identity.
-#[derive(Parser)]
-struct Seed;
 
-fn do_seed(_: Seed) -> Result<String>
+
+/// Initialize Uno in your home environment. Data and config is stored under
+/// `~/.uno`. . 
+#[derive(Parser)]
+struct Init;
+
+fn do_init(_: Init) -> Result<String>
 {
-    let id = uno::Id::new();
+    // Check for existing config. If it exists, bail.
+    match load_conf() {
+        Ok(_) => bail!("uno already initialized"),
+        _ => {},
+    };
+
+    let conf_file = config_path()?;
+    let uno_dir = match conf_file.parent() {
+        Some(p) => p,
+        None => bail!("file `{}` has no parent", conf_file.to_string_lossy()),
+    };
+    std::fs::create_dir_all(&uno_dir)?;
+    cli::gen_config(&conf_file)?;
+
+    Ok(format!("wrote: {}", conf_file.to_string_lossy()))
+}
+
+fn config_path() -> Result<std::path::PathBuf>
+{
+    let mut path = dirs_next::home_dir()
+        .ok_or(anyhow!("can't find home dir"))?;
+    path.push(".uno");
+    path.push("config");
+
+    Ok(path)
+}
+
+fn load_conf() -> Result<cli::Config>
+{
+    let conf_file = config_path()?;
+    cli::load_config(&conf_file)
+}
+
+/// Generate an uno identity. An identity seed is 32 bytes of entropy.
+/// The base64 encoding of the entropy is written to standard out. .
+#[derive(Parser)]
+struct Seed
+{
+    #[clap(long)]
+    ephemeral: bool
+}
+
+fn do_seed(s: Seed) -> Result<String>
+{
+    let id = match s.ephemeral {
+        true => uno::Id::new(),
+        false => cli::load_seed(&load_conf()?)?,
+    };
+
     Ok(base64::encode_config(id.0, base64::STANDARD_NO_PAD))
 }
 
-/// Print the public key corresponding to the signing keypair.
+/// Print the public key corresponding to the signing keypair associated with
+/// the provided identity seed. .
 #[derive(Parser)]
 struct Pubkey
 {
@@ -180,6 +233,8 @@ fn do_encrypt(c: Encrypt) -> Result<String>
 }
 
 /// Sign a message using an Uno ID.
+///
+/// The message is read from stdin.
 #[derive(Parser)]
 struct Sign
 {
@@ -204,6 +259,8 @@ fn do_sign(c: Sign) -> Result<String>
 }
 
 /// Verify a signature on a message.
+///
+/// The message is read from stdin.
 #[derive(Parser)]
 struct Verify
 {
@@ -501,6 +558,7 @@ fn do_s39_view(c: S39View) -> Result<String>
 fn main() -> Result<()>
 {
     let out = match Opts::parse().subcmd {
+        SubCommand::Init(c) => do_init(c),
         SubCommand::Seed(c) => do_seed(c),
         SubCommand::Pubkey(c) => do_pubkey(c),
         SubCommand::Decrypt(c) => do_decrypt(c),

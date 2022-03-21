@@ -6,6 +6,7 @@
 // The client library contains high-level helper routines used primarily by the
 // cli.
 
+use anyhow::Context;
 use anyhow::Result;
 use anyhow::{anyhow, bail,};
 
@@ -20,6 +21,75 @@ use uno::Signer;
 
 use std::convert::From;
 use std::convert::TryFrom;
+use std::ffi::OsString;
+
+use serde::{Serialize, Deserialize,};
+
+#[derive(Serialize, Deserialize)]
+pub struct Config
+{
+    pub seed_file: OsString,
+}
+
+impl Default for Config
+{
+    fn default() -> Config
+    {
+        let mut path = dirs_next::home_dir().unwrap();
+        path.push(".uno");
+        path.push("identity");
+
+        Config { seed_file: path.into_os_string(), }
+    }
+}
+
+pub fn load_config(path: &std::path::Path) -> Result<Config>
+{
+    let file = std::fs::File::open(path)
+        .context("Error loading config. Please run `uno init` first.")?;
+    let config: Config = ron::de::from_reader(file)
+        .context("Error parsing config.")?;
+
+    Ok(config)
+}
+
+pub fn gen_config(path: &std::path::Path) -> Result<Config>
+{
+    let config = Config::default();
+
+    // if the seed loads fine, we don't have to generate and write a new one
+    match load_seed(&config) {
+        Ok(_) => {}, 
+        Err(_) => { gen_seed(&config)?; },
+    };
+
+    let data = ron::ser::to_string(&config)?;
+    std::fs::write(path, data)?;
+
+    Ok(load_config(path)?)
+}
+
+pub fn load_seed(config: &Config) -> Result<uno::Id>
+{
+    let path = std::path::Path::new(&config.seed_file);
+    let bytes = std::fs::read(path)
+        .with_context(|| {
+            let s = config.seed_file.to_string_lossy();
+            format!("error reading seed_file: {}", s)
+        })?;
+
+    Ok(uno::Id::try_from(&bytes[..])?)
+}
+
+fn gen_seed(config: &Config) -> Result<uno::Id>
+{
+    let seed = uno::Id::new();
+    let path = std::path::Path::new(&config.seed_file);
+
+    std::fs::write(path, seed.0)?;
+
+    Ok(load_seed(config)?)
+}
 
 pub fn get_vault(host: String, id: uno::Id) -> Result<String>
 {
