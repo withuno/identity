@@ -63,6 +63,17 @@ For example, `cargo test -p lib` or `cargo test -p uno`.
 When possible it's nice to use the `--release` flag.
 Argon2 runs noticably faster with optimizations.
 
+# Style
+
+Code should read like a book.
+The singular style goal is to structure code such that it grows vertically instead of horizontally.
+To that end, we have an arbitrary column limit of 80 chars.
+If your lines are under the limit, you're probably doing it right.
+
+The README is sentence lines.
+Since we're writing prose that gets formatted by whatever is rendering it, we don't care about manually formatting the README.
+It's easier to move sentences around when they're on individual lines, so that's what we do.
+
 
 # Legal things
 
