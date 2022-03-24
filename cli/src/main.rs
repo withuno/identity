@@ -106,23 +106,27 @@ fn do_seed(ctx: Context, s: Seed) -> Result<String>
         false => cli::load_seed(&load_conf(&ctx)?)?,
     };
 
-    Ok(base64::encode_config(id.0, base64::STANDARD_NO_PAD))
+    Ok(base64::encode(id.0))
 }
 
 /// Print the public key corresponding to the signing keypair associated with
-/// the provided identity seed. .
+/// the configured identity seed. .
 #[derive(Parser)]
 struct Pubkey
 {
-    /// identity seed
-    #[clap(long)]
-    seed: String,
+    /// Override the configured identity seed
+    #[clap(long, value_name = "b64")]
+    seed: Option<String>,
 }
 
 fn do_pubkey(ctx: Context, c: Pubkey) -> Result<String>
 {
-    let id = id_from_b64(c.seed)?;
+    let id = match c.seed {
+        Some(s) => id_from_b64(s)?,
+        None => cli::load_seed(&load_conf(&ctx)?)?,
+    };
     let key = uno::KeyPair::from(id);
+
     Ok(base64::encode(&key.public.as_bytes()))
 }
 
@@ -248,21 +252,23 @@ fn do_encrypt(ctx: Context, c: Encrypt) -> Result<String>
     Ok(out)
 }
 
-/// Sign a message using an Uno ID.
+/// Sign a message using the configured Uno ID.
 ///
 /// The message is read from stdin.
 #[derive(Parser)]
 struct Sign
 {
-    /// Identity seed to use.
-    #[clap(long)]
-    seed: String,
+    /// Override the configured identity
+    #[clap(long, value_name = "b64")]
+    seed: Option<String>,
 }
 
 fn do_sign(ctx: Context, c: Sign) -> Result<String>
 {
-    use uno::Signer;
-    let id = id_from_b64(c.seed)?;
+    let id = match c.seed {
+        Some(s) => id_from_b64(s)?,
+        None => cli::load_seed(&load_conf(&ctx)?)?,
+    };
     let key = uno::KeyPair::from(id);
 
     let mut message = String::new();
@@ -270,6 +276,7 @@ fn do_sign(ctx: Context, c: Sign) -> Result<String>
     use std::io::Read;
     let _ = stdin().read_to_string(&mut message)?;
 
+    use uno::Signer;
     let sig = key.sign(&message.as_bytes());
     Ok(base64::encode(&sig.to_bytes()))
 }
@@ -462,7 +469,7 @@ struct S39Cmd
     subcmd: S39,
 }
 
-/// Split an uno identity seed into a number of shares
+/// Split the configured uno identity seed into a number of shares. .
 #[derive(Parser)]
 struct S39Split
 {
@@ -473,8 +480,8 @@ struct S39Split
     #[clap(long, value_name = "num", default_value = "3")]
     total: u8,
     // TODO support groups
-    /// The identity to split
-    seed: String,
+    /// Override the configured identity.
+    seed: Option<String>,
 }
 
 fn do_s39(ctx: Context, s: S39Cmd) -> Result<String>
@@ -488,7 +495,11 @@ fn do_s39(ctx: Context, s: S39Cmd) -> Result<String>
 
 fn do_s39_split(ctx: Context, c: S39Split) -> Result<String>
 {
-    let id = id_from_b64(c.seed)?;
+    let id = match c.seed {
+        Some(s) => id_from_b64(s)?,
+        None => cli::load_seed(&load_conf(&ctx)?)?,
+    };
+
     let groups = uno::split(id, &[(c.minimum,c.total)])
         .context("failed to split shares")?;
     let group = &groups[0];
