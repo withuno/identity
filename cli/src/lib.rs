@@ -86,7 +86,18 @@ fn gen_seed(config: &Config) -> Result<uno::Id>
     let seed = uno::Id::new();
     let path = std::path::Path::new(&config.seed_file);
 
-    std::fs::write(path, seed.0)?;
+    // the private key should not be world readable
+    const MODE: u32 = 0o600;
+    use std::fs::OpenOptions;
+    use std::os::unix::fs::OpenOptionsExt;
+    let mut file = OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .mode(MODE)
+        .open(path)?;
+
+    use std::io::Write;
+    file.write_all(&seed.0)?;
 
     Ok(load_seed(config)?)
 }
