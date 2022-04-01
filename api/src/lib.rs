@@ -3,7 +3,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 //
 
-use std::convert::TryInto;
 use std::error;
 use std::fmt;
 use std::fmt::{Debug, Display};
@@ -33,6 +32,27 @@ use serde_json::Value;
 
 use http_types::Method;
 use tide::{Body, Error, Next, Request, Response, Result, StatusCode};
+
+/// Enforce a global size limit on the body of requests
+///
+pub fn body_size_limit<'a, T>(
+    mut req: Request<State<T>>,
+    next: Next<'a, State<T>>,
+) -> Pin<Box<dyn Future<Output = Result> + Send + 'a>>
+where
+    T: Database + 'static,
+{
+    Box::pin(async {
+        let bytes = req.body_bytes().await?;
+        const ONE_MB: usize = 1024 * 1024;
+        if bytes.len() > ONE_MB {
+            Err(bad_request("body size limit 1 MB exceeded"))
+        } else {
+            req.set_body(bytes);
+            Ok(next.run(req).await)
+        }
+    })
+}
 
 /// Short circuit the middleware chain if the request is not authorized.
 ///
@@ -168,14 +188,9 @@ pub fn signature_from_b64(
     bytes: &str,
 ) -> anyhow::Result<uno::Signature, ApiError> {
     let decoded_sig = base64::decode(bytes)?;
-    let sig_array = decoded_sig.try_into();
-    if sig_array.is_err() {
-        return Err(ApiError::BadRequest(
-            "signature wrong length".to_string(),
-        ));
-    }
 
-    Ok(uno::Signature::new(sig_array.unwrap()))
+    uno::Signature::from_bytes(&decoded_sig)
+        .map_err(|_| ApiError::BadRequest("bad signature".to_string()))
 }
 
 async fn health(_req: Request<()>) -> Result<Response> {
@@ -755,6 +770,7 @@ where
             tide::with_state(State::new(vault_db, token_db.clone()));
         vaults
             .at(":id")
+            .with(body_size_limit)
             .with(add_auth_info)
             .with(signed_pow_auth)
             .with(ensure_vault_id)
@@ -770,6 +786,7 @@ where
             tide::with_state(State::new(service_db, token_db.clone()));
         services
             .at(":name")
+            .with(body_size_limit)
             .with(add_auth_info)
             .with(signed_pow_auth)
             .get(fetch_service);
@@ -781,6 +798,7 @@ where
         let mut ssss =
             tide::with_state(State::new(session_db, token_db.clone()));
         ssss.at(":id")
+            .with(body_size_limit)
             .with(session_id)
             .get(ssss_get)
             .put(ssss_put)
@@ -794,6 +812,7 @@ where
             tide::with_state(State::new(mailbox_db, token_db.clone()));
         mailboxes
             .at(":id")
+            .with(body_size_limit)
             .with(add_auth_info)
             .with(signed_pow_auth)
             .with(ensure_mailbox_id)
@@ -825,6 +844,7 @@ where
             tide::with_state(State::new(vault_db, token_db.clone()));
         vaults
             .at(":id")
+            .with(body_size_limit)
             .with(add_auth_info)
             .with(signed_pow_auth2)
             .with(ensure_vault_id)
@@ -840,6 +860,7 @@ where
             tide::with_state(State::new(service_db.clone(), token_db.clone()));
         services
             .at(":name")
+            .with(body_size_limit)
             .with(add_auth_info)
             .with(signed_pow_auth)
             .get(fetch_service);
@@ -854,6 +875,7 @@ where
         // so this is kind of a hack because we'll only have one file for now.
         service_list
             .at("services.json")
+            .with(body_size_limit)
             .with(add_auth_info)
             .with(signed_pow_auth)
             .get(fetch_service_list);
@@ -866,6 +888,7 @@ where
         let mut ssss =
             tide::with_state(State::new(session_db, token_db.clone()));
         ssss.at(":id")
+            .with(body_size_limit)
             .with(session_id)
             .get(ssss_get)
             .put(ssss_put)
@@ -879,6 +902,7 @@ where
             tide::with_state(State::new(mailbox_db, token_db.clone()));
         mailboxes
             .at(":id")
+            .with(body_size_limit)
             .with(add_auth_info)
             .with(signed_pow_auth)
             .with(ensure_mailbox_id)

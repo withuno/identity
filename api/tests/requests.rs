@@ -383,6 +383,45 @@ mod requests {
     }
 
     #[test]
+    fn v1_body_size_limit() -> anyhow::Result<()> {
+        let (_, dbs) = setup_tmp_api().unwrap();
+
+        let state = State::new(dbs.objects.clone(), dbs.tokens.clone());
+        let mut foo = tide::with_state(state);
+        foo.at(":id")
+            .with(api::body_size_limit)
+            .put(|_| async { Ok(Response::new(StatusCode::NoContent)) });
+
+        let mut api = tide::new();
+        api.at("/foo").nest(foo);
+
+        let url = Url::parse("http://example.com/foo/bar")?;
+
+        // A body of size 1 MB should succeed
+        const ONE_MB: usize = 1024 * 1024;
+
+        let mut req0: Request = surf::put(url.to_string()).into();
+        let bytes0 = vec![0xF0; ONE_MB];
+        req0.set_body(bytes0);
+
+        let res0: Response = task::block_on(api.respond(req0))
+            .map_err(|_| anyhow!("request0 failed"))?;
+
+        assert_eq!(StatusCode::NoContent, res0.status());
+
+        let mut req1: Request = surf::put(url.to_string()).into();
+        let bytes1 = vec![0xF0; ONE_MB + 1];
+        req1.set_body(bytes1);
+
+        let res1: Response = task::block_on(api.respond(req1))
+            .map_err(|_| anyhow!("request1 failed"))?;
+
+        assert_eq!(StatusCode::BadRequest, res1.status());
+
+        Ok(())
+    }
+
+    #[test]
     fn v1_authentication() -> anyhow::Result<()> {
         // test www-authenticate
         // test auth-info
