@@ -138,7 +138,7 @@ fn do_pubkey(ctx: Context, c: Pubkey) -> Result<String>
 struct Decrypt
 {
     /// Identity seed.
-    #[clap(long, value_name = "b64", required_unless_present = "mu")]
+    #[clap(long, value_name = "b64", conflicts_with = "mu")]
     seed: Option<String>,
     /// 8 byte Mu seed.
     #[clap(long, value_name = "b64", conflicts_with = "seed")]
@@ -155,17 +155,12 @@ struct Decrypt
 
 fn do_decrypt(ctx: Context, c: Decrypt) -> Result<String>
 {
-    let key: uno::SymmetricKey;
-    if let Some(r) = c.seed {
-        let id = id_from_b64(r)?;
-        key = id.into();
-    } else
-    if let Some(r) = c.mu {
-        let mu = mu_from_b64(r)?;
-        key = mu.try_into()?;
-    } else {
-        bail!("--seed or --mu required");
-    }
+    let key: uno::SymmetricKey = match (c.seed, c.mu) {
+        (None, None) => cli::load_seed(&load_conf(&ctx)?)?.into(),
+        (Some(s), _) => id_from_b64(s)?.into(),
+        (None, Some(m)) => mu_from_b64(m)?.try_into()?,
+        // (Some(_), Some(_)) handled by clap via `conflicts_with`
+    };
 
     let mut ciphertext = String::new();
     use std::io::stdin;
@@ -189,7 +184,7 @@ fn do_decrypt(ctx: Context, c: Decrypt) -> Result<String>
     Ok(String::from_utf8(data)?)
 }
 
-/// AEAD/Box seal.
+/// AEAD/Sealed-box seal.
 ///
 /// The encrypt operation works with both 32 byte identity seeds and the 8 byte
 /// Mu. The actual symmetric key is derived appropriate in each case.
@@ -197,7 +192,7 @@ fn do_decrypt(ctx: Context, c: Decrypt) -> Result<String>
 struct Encrypt
 {
     /// 32 byte identity seed.
-    #[clap(long, value_name = "b64", required_unless_present = "mu")]
+    #[clap(long, value_name = "b64", conflicts_with = "mu")]
     seed: Option<String>,
     /// 8 byte Mu seed.
     #[clap(long, value_name = "b64", conflicts_with = "seed")]
@@ -216,17 +211,12 @@ struct Encrypt
 
 fn do_encrypt(ctx: Context, c: Encrypt) -> Result<String>
 {
-    let key: uno::SymmetricKey;
-    if let Some(r) = c.seed {
-        let id = id_from_b64(r)?;
-        key = id.into();
-    } else
-    if let Some(r) = c.mu {
-        let mu = mu_from_b64(r)?;
-        key = mu.try_into()?;
-    } else {
-        bail!("--seed or --mu required");
-    }
+    let key: uno::SymmetricKey = match (c.seed, c.mu) {
+        (None, None) => cli::load_seed(&load_conf(&ctx)?)?.into(),
+        (Some(s), _) => id_from_b64(s)?.into(),
+        (None, Some(m)) => mu_from_b64(m)?.try_into()?,
+        // (Some(_), Some(_)) handled by clap via `conflicts_with`
+    };
 
     let mut ctx = Binding::None;
     if let Some(o) = c.bind {
