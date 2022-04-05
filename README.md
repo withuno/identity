@@ -32,7 +32,7 @@ Supporting crates include:
 
 [sss]: https://en.wikipedia.org/wiki/Shamir's_Secret_Sharing
 [hashi-sss]: https://github.com/hashicorp/vault/tree/main/shamir
-[unoswift]: http://gihub.com/withuno/unoswift
+[unoswift]: http://github.com/withuno/unoswift
 [wasm]: https://webassembly.org
 [wbindgen]: https://rustwasm.github.io/docs/wasm-bindgen/
 
