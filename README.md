@@ -1,14 +1,15 @@
 Uno Identity Manager
 ===
 
-The Uno identity platform is a modern <strike>password</strike> identity manager.
-We have full featured clients on [iOS/macOS][1] with an accompanying [browser extension][2] for Safari and the Chrome family of browsers.
+The [Uno][uno] identity platform is a modern <strike>password</strike> identity manager.
+We have full featured clients on iOS/macOS ([join the waitlist][waitlist]) with an accompanying [browser extension][chrome-ext] for Safari and the Chrome family of browsers.
 This is our Rust reference implementation with a CLI and associated API server.
-You can read more about our project and design on [our blog][3].
+You can read more about our project and design on [our blog][blog].
 
-[1]:
-[2]:
-[3]:
+[uno]: https://www.uno.app
+[waitlist]: https://www.uno.app/join-waitlist.html
+[chrome-ext]: https://chrome.google.com/webstore/detail/uno-password-manager/aedmcpfnnmbdobnjpglgjkhdpljdcfmh
+[blog]: https://www.uno.app/blog
 
 Note: the CLI is not currently designed to be used as a fully functional Uno client in the way our mobile, desktop, and browser applications are.
 If you're intersted in a full-featured open source rust CLI password manager like we are, please, help us build it out (:

@@ -20,7 +20,7 @@ It is so that concerned users can audit, verify, and critique our implementation
 Of couse, you're welcome to run your own server, but (other than the CLI) our apps have no way to specify a custom API endpoint.
 Supporting such use cases is not currently on our roadmap and, even if it was, we'd need a federated protocol so that independent nodes could route messages across an application layer "uno network".
 We're not building a P2P network (at least we don't think we are, yet?).
-The API server simply allows a given user's uno clients to store and synchronize encrypted vault data.
+The API server simply allows a given user's uno clients to store and synchronize encrypted vault data as well as coordinate recovery share distribution.
 
 # Usage
 
@@ -37,7 +37,7 @@ tide::server Server listening on http://[::]:8080
 Note, adding `--release` to turn on optimizations will speed things up significantly.
 However, you'll trade the nice colored logs for production friendly structured JSON data instead.
 
-By default, the server uses the filesystem as it's backing store.
+By default, the server uses the filesystem as its backing store.
 Upon startup, the server will create some data directories for storing vautls, sessions, mailboxes, nonces, etc.
 If you'd prefer, you can point the server at anything that speaks S3.
 
