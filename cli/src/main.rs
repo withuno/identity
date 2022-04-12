@@ -324,7 +324,7 @@ struct Vault
     url: String,
     /// Identity seed to use.
     #[clap(long)]
-    seed: String,
+    seed: Option<String>,
     /// When uploading, the vault data json.
     data: Option<String>,
 }
@@ -335,20 +335,26 @@ fn do_vault(ctx: Context, c: Vault) -> Result<String>
     use http_types::Method;
     use std::str::FromStr;
 
-    let id = id_from_b64(c.seed)?;
+    let cfg = load_conf(&ctx)?;
+
+    let id = match c.seed {
+        Some(s) => id_from_b64(s)?,
+        None => cli::load_seed(&cfg)?,
+    };
+
     let method = Method::from_str(&c.method)
         .map_err(http_types::Error::into_inner)?;
 
     match method {
         Method::Get => {
-            let v = cli::get_vault(c.url, id)
+            let v = cli::get_vault(&cfg, c.url, id)
                 .context("cannot download vault")?;
             Ok(v)
         },
         Method::Put => {
             let data = c.data
                 .context("data is required")?;
-            let v = cli::put_vault(c.url, id, data.as_bytes())
+            let v = cli::put_vault(&cfg, c.url, id, data.as_bytes())
                 .context("cannot upload vault")?;
             Ok(v)
         },

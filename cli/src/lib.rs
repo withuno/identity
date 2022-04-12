@@ -25,21 +25,34 @@ use std::ffi::OsString;
 
 use serde::{Serialize, Deserialize,};
 
+use uuid::Uuid;
+
 #[derive(Serialize, Deserialize)]
 pub struct Config
 {
+    pub uuid: Uuid,
     pub seed_file: OsString,
+    pub vclock_file: OsString,
 }
 
 impl Default for Config
 {
     fn default() -> Config
     {
-        let mut path = dirs_next::home_dir().unwrap();
-        path.push(".uno");
-        path.push("identity");
+        let home = dirs_next::home_dir().unwrap();
+        let mut uno = home.clone();
+        uno.push(".uno");
 
-        Config { seed_file: path.into_os_string(), }
+        let mut seed = uno.clone();
+        seed.push("identity");
+        let mut vclock = uno.clone();
+        vclock.push("vclock");
+
+        Config {
+            uuid: Uuid::new_v4(),
+            seed_file: seed.into_os_string(),
+            vclock_file: vclock.into_os_string(),
+        }
     }
 }
 
@@ -53,16 +66,30 @@ pub fn load_config(path: &std::path::Path) -> Result<Config>
     Ok(config)
 }
 
+///
+/// Generate a new config including new client UUID and vclock. If an existing
+/// seed is found, it will be reused. Any existing vclock will be clobbered.
+///
 pub fn gen_config(path: &std::path::Path) -> Result<Config>
 {
-    let config = Config::default();
+    let mut config = Config::default();
 
     // if the seed loads fine, we don't have to generate and write a new one
     match load_seed(&config) {
-        Ok(_) => {}, 
+        Ok(_) => match load_config(path) {
+            // If we are reusing the seed and there is a client UUID, reuse it
+            // as well so we don't build up a bunch of stale ones in the user's
+            // vclock.
+            Ok(old) => config.uuid = old.uuid,
+            Err(_) => {},
+        },
         Err(_) => { gen_seed(&config)?; },
     };
 
+    // clobber the vclock. we'll get a new one from the server when we need it
+    gen_vclock(&config)?;
+
+    // write the actual config
     let data = ron::ser::to_string(&config)?;
     std::fs::write(path, data)?;
 
@@ -102,7 +129,48 @@ fn gen_seed(config: &Config) -> Result<uno::Id>
     Ok(load_seed(config)?)
 }
 
-pub fn get_vault(host: String, id: uno::Id) -> Result<String>
+use vclock::VClock;
+
+fn gen_vclock(config: &Config) -> Result<()>
+{
+    let client = config.uuid.to_hyphenated().to_string();
+    let vclock = VClock::new(client);
+
+    Ok(write_vclock(config, vclock)?)
+}
+
+fn write_vclock(config: &Config, c: VClock<String>) -> Result<()>
+{
+    let data = ron::ser::to_string(&c)?;
+    std::fs::write(&config.vclock_file, data)?;
+
+    Ok(())
+}
+
+fn merge_and_save_vclock(config: &Config, theirs: VClock<String>)
+-> Result<VClock<String>>
+{
+    let ours = load_vclock(config)?;
+    let new = ours.merge(&theirs);
+
+    write_vclock(config, new)?;
+
+    Ok(load_vclock(config)?)
+}
+
+pub fn load_vclock(config: &Config) -> Result<VClock<String>>
+{
+    let path = std::path::Path::new(&config.vclock_file);
+    let bytes = std::fs::read(path)
+        .with_context(|| {
+            let s = config.seed_file.to_string_lossy();
+            format!("error reading seed_file: {}", s)
+        })?;
+
+    ron::de::from_bytes(&bytes).map_err(|e| anyhow!(e))
+}
+
+pub fn get_vault(cfg: &Config, host: String, id: uno::Id) -> Result<String>
 {
     let key = uno::KeyPair::from(&id);
     let sym = uno::SymmetricKey::from(&id);
@@ -111,14 +179,26 @@ pub fn get_vault(host: String, id: uno::Id) -> Result<String>
     let req = surf::get(url.as_str())
         .build();
 
-    let blob = async_std::task::block_on(do_http_signed(req, &id))
+    let mut res = async_std::task::block_on(do_http_signed_vc(req, &id))
+        .map_err(|e| anyhow!("{}", e))?;
+
+    let vclock = match &res.header("vclock") {
+        Some(s) => api::parse_vclock(s.last().as_str())?,
+        None => bail!("missing vclock"),
+    };
+
+    let blob = async_std::task::block_on(res.body_bytes())
         .map_err(|e| anyhow!("{}", e))?;
 
     let vault = uno::decrypt(Binding::Vault, sym, &blob)?;
+
+    merge_and_save_vclock(cfg, vclock)?;
+
     Ok(String::from_utf8(vault)?)
 }
 
-pub fn put_vault(host: String, id: uno::Id, data: &[u8]) -> Result<String>
+pub fn put_vault(cfg: &Config, host: String, id: uno::Id, data: &[u8])
+-> Result<String>
 {
     let key = uno::KeyPair::from(&id);
     let sym = uno::SymmetricKey::from(&id);
@@ -126,11 +206,27 @@ pub fn put_vault(host: String, id: uno::Id, data: &[u8]) -> Result<String>
     let body = uno::encrypt(Binding::Vault, sym, data)?;
 
     let url = vault_url_from_key(&host, &key)?;
+
+    // get the known vclock and increment this client's version
+    let mut vclock = load_vclock(cfg)?;
+    vclock.incr(cfg.uuid.to_hyphenated().to_string());
+    let vclock_header = api::write_vclock(&vclock)?;
+
     let req = surf::put(url.as_str())
+        .header("vclock", vclock_header)
         .body(body)
         .build();
 
-    let blob = async_std::task::block_on(do_http_signed(req, &id))
+    let mut res = async_std::task::block_on(do_http_signed_vc(req, &id))
+        .map_err(|e| anyhow!("{}", e))?;
+
+    if res.status() == surf::StatusCode::Conflict {
+        let msg = "vault out-of-date! \nPull the latest vault using `get` and \
+                   reapply any modifications on top of the fresh copy.";
+        bail!(msg);
+    }
+
+    let blob = async_std::task::block_on(res.body_bytes())
         .map_err(|e| anyhow!("{}", e))?;
 
     let vault = uno::decrypt(Binding::Vault, sym, &blob)?;
@@ -140,7 +236,7 @@ pub fn put_vault(host: String, id: uno::Id, data: &[u8]) -> Result<String>
 fn vault_url_from_key(endpoint: &str, key: &uno::KeyPair) -> Result<Url>
 {
     let host = Url::parse(&endpoint)?;
-    let base = host.join("v1/vaults/")?;
+    let base = host.join("v2/vaults/")?;
     let cfg = base64::URL_SAFE_NO_PAD;
     let vid = base64::encode_config(key.public.as_bytes(), cfg);
     Ok(base.join(&vid)?)
@@ -332,6 +428,7 @@ async fn do_http_simple(req: surf::Request) -> Result<Vec<u8>>
     Ok(body)
 }
 
+#[allow(dead_code)]
 async fn do_http_signed(req: surf::Request, id: &uno::Id) -> Result<Vec<u8>>
 {
     let client = surf::client()
@@ -352,6 +449,27 @@ async fn do_http_signed(req: surf::Request, id: &uno::Id) -> Result<Vec<u8>>
         .map_err(|e| anyhow!("{}", e))?;
 
     Ok(body)
+}
+
+async fn do_http_signed_vc(req: surf::Request, id: &uno::Id)
+-> Result<Response>
+{
+    let client = surf::client()
+        .with(AuthClient{ id: uno::Id(id.0) })
+        .with(surf::middleware::Logger::new());
+
+    let mut res = client.send(req).await
+        .map_err(|e| anyhow!("{}", e))?;
+
+    let status = res.status();
+
+    if status != 200 && status != 409 {
+        let msg = res.body_string().await
+            .map_err(|e| anyhow!("{}", e))?;
+        bail!("server returned: {}\n{}", status, msg);
+    }
+
+    Ok(res)
 }
 
 struct AuthClient {
@@ -511,7 +629,7 @@ mod unit
         let pair = KeyPair::from(&id);
         let endpoint = "https://example.com";
         let actual = vault_url_from_key(endpoint, &pair)?;
-        let expected = "https://example.com/v1/vaults/BOfVSES5eXi3HbbB0GIcmK35V57JyngUeDrnK_LJn5k";
+        let expected = "https://example.com/v2/vaults/BOfVSES5eXi3HbbB0GIcmK35V57JyngUeDrnK_LJn5k";
         assert_eq!(expected, actual.to_string());
 
         Ok(())
