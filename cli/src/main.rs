@@ -309,9 +309,28 @@ fn do_verify(_: Context, c: Verify) -> Result<String>
     Ok("The signature is valid.".into())
 }
 
+///
 /// Operate on a vault.
+///
 #[derive(Parser)]
 struct Vault
+{
+    #[clap(subcommand)]
+    subcmd: VaultCmd
+}
+
+#[derive(Parser)]
+enum VaultCmd
+{
+    Get(VaultGet),
+    Put(VaultPut),
+}
+
+///
+/// Get the latest saved copy of your vault.
+///
+#[derive(Parser)]
+struct VaultGet
 {
     /// HTTP method (GET or PUT). Download or Upload?
     #[clap(long, short = 'X', value_name = "method", default_value = "get")]
@@ -329,8 +348,71 @@ struct Vault
     data: Option<String>,
 }
 
-// TODO make subcommand on method/action
-fn do_vault(ctx: Context, c: Vault) -> Result<String>
+///
+/// Update your vault.
+///
+#[derive(Parser)]
+struct VaultPut
+{
+    /// HTTP method (GET or PUT). Download or Upload?
+    #[clap(long, short = 'X', value_name = "method", default_value = "get")]
+    method: String,
+    /// Vault store endpoint.
+    #[clap(long,
+        value_name = "endpoint",
+        default_value = "https://api.u1o.dev"
+    )]
+    url: String,
+    /// Identity seed to use.
+    #[clap(long)]
+    seed: Option<String>,
+    /// When uploading, the vault data json.
+    data: Option<String>,
+}
+
+
+
+fn do_vault(ctx: Context, v: Vault) -> Result<String>
+{
+    match v.subcmd {
+        VaultCmd::Get(c) => do_vault_get(ctx, c),
+        VaultCmd::Put(c) => do_vault_put(ctx, c),
+    }
+}
+
+fn do_vault_get(ctx: Context, c: VaultGet) -> Result<String>
+{
+    use http_types::Method;
+    use std::str::FromStr;
+
+    let cfg = load_conf(&ctx)?;
+
+    let id = match c.seed {
+        Some(s) => id_from_b64(s)?,
+        None => cli::load_seed(&cfg)?,
+    };
+
+    let method = Method::from_str(&c.method)
+        .map_err(http_types::Error::into_inner)?;
+
+    match method {
+        Method::Get => {
+            let v = cli::get_vault(&cfg, c.url, id)
+                .context("cannot download vault")?;
+            Ok(v)
+        },
+        Method::Put => {
+            let data = c.data
+                .context("data is required")?;
+            let v = cli::put_vault(&cfg, c.url, id, data.as_bytes())
+                .context("cannot upload vault")?;
+            Ok(v)
+        },
+        _ => Err(anyhow!("bad method")),
+    }
+}
+
+fn do_vault_put(ctx: Context, c: VaultPut) -> Result<String>
 {
     use http_types::Method;
     use std::str::FromStr;
