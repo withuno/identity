@@ -493,13 +493,13 @@ fn do_mu(_: Context, _: Mu) -> Result<String>
 struct Session
 {
     /// Identity seed
-    #[clap(long, value_name = "mu", display_order = 1)]
-    seed: String,
+    #[clap(long, value_name = "b64", display_order = 1)]
+    mu: String,
 }
 
 fn do_session(_: Context, c: Session) -> Result<String>
 {
-    let mu = mu_from_b64(c.seed)?;
+    let mu = mu_from_b64(c.mu)?;
     let sid = uno::Session::try_from(mu)?;
     Ok(base64::encode_config(&sid.0, base64::URL_SAFE_NO_PAD))
 }
