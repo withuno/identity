@@ -10,9 +10,11 @@ use clap::{Args, Parser,};
 use anyhow::{anyhow, bail, Context as AnyContext, Result,};
 use uno::Binding;
 
-use std::path::PathBuf;
 use std::convert::TryFrom;
 use std::convert::TryInto;
+use std::io::Read;
+use std::io::stdin;
+use std::path::PathBuf;
 
 #[derive(Parser)]
 #[clap(version = "0.1", author = "David C. <david@uno.app>")]
@@ -32,22 +34,48 @@ struct Context {
 
 #[derive(Parser)]
 enum SubCommand {
+    #[clap(display_order = 10)]
     Init(Init),
+
+    #[clap(display_order = 70)]
     Seed(Seed),
+
+    #[clap(display_order = 40)]
     Encrypt(Encrypt),
+
+    #[clap(display_order = 40)]
     Decrypt(Decrypt),
+
+    #[clap(display_order = 30)]
     Sign(Sign),
+
+    #[clap(display_order = 30)]
     Verify(Verify),
+
+    #[clap(display_order = 30)]
     Pubkey(Pubkey),
+
+    #[clap(display_order = 20)]
     Vault(Vault),
+
+    #[clap(display_order = 71)]
     Mu(Mu),
+
+    #[clap(display_order = 80)]
     Session(Session),
+
+    #[clap(display_order = 80)]
     Ssss(Ssss),
+
+    #[clap(display_order = 50)]
     S39(S39Cmd),
 }
 
-/// Initialize Uno in your home environment. Data and config is stored under
-/// `~/.uno`. . 
+///
+/// Initialize Uno in your home environment.
+///
+/// Data and config is stored under `~/.uno`. .
+///
 #[derive(Parser)]
 struct Init;
 
@@ -90,12 +118,16 @@ fn load_conf(ctx: &Context) -> Result<cli::Config>
     cli::load_config(&conf_file)
 }
 
-/// Generate an uno identity. An identity seed is 32 bytes of entropy.
-/// The base64 encoding of the entropy is written to standard out. .
+///
+/// Generate an uno identity.
+///
+/// An identity seed is 32 bytes of entropy. The base64 encoding of the entropy
+/// is written to standard out. .
+///
 #[derive(Parser)]
 struct Seed
 {
-    #[clap(long)]
+    #[clap(long, display_order = 1)]
     ephemeral: bool
 }
 
@@ -109,13 +141,16 @@ fn do_seed(ctx: Context, s: Seed) -> Result<String>
     Ok(base64::encode(id.0))
 }
 
+///
+/// Show your public signing key.
+///
 /// Print the public key corresponding to the signing keypair associated with
 /// the configured identity seed. .
 #[derive(Parser)]
 struct Pubkey
 {
     /// Override the configured identity seed
-    #[clap(long, value_name = "b64")]
+    #[clap(long, value_name = "b64", display_order = 1)]
     seed: Option<String>,
 }
 
@@ -130,26 +165,46 @@ fn do_pubkey(ctx: Context, c: Pubkey) -> Result<String>
     Ok(base64::encode(&key.public.as_bytes()))
 }
 
+///
 /// AEAD/Sealed-box open.
 ///
 /// The decrypt operation works with both 32 byte identity seeds and the 8 byte
 /// Mu. The actual symmetric key is derived appropriate in each case.
+///
 #[derive(Parser)]
 struct Decrypt
 {
     /// Identity seed.
-    #[clap(long, value_name = "b64", conflicts_with = "mu")]
+    #[clap(
+        long,
+        value_name = "b64",
+        conflicts_with = "mu",
+        display_order = 1,
+    )]
     seed: Option<String>,
+
     /// 8 byte Mu seed.
-    #[clap(long, value_name = "b64", conflicts_with = "seed")]
+    #[clap(
+        long,
+        value_name = "b64",
+        conflicts_with = "seed",
+        display_order = 1,
+    )]
     mu: Option<String>,
+
     /// Bind context in which the decrypted data should be used.
     /// Options: "vault", "split", "combine", "transfer"
-    #[clap(long, value_name = "option")]
+    #[clap(long, value_name = "option", display_order = 1,)]
     bind: Option<String>,
+
     /// Custom additional data context. Cannot be specified when a --bind is
     /// also provided. Bindings are uno domain specific contexts for the aead.
-    #[clap(long, value_name = "text", conflicts_with = "bind")]
+    #[clap(
+        long,
+        value_name = "text",
+        conflicts_with = "bind",
+        display_order = 1,
+    )]
     data: Option<String>,
 }
 
@@ -163,8 +218,6 @@ fn do_decrypt(ctx: Context, c: Decrypt) -> Result<String>
     };
 
     let mut ciphertext = String::new();
-    use std::io::stdin;
-    use std::io::Read;
     let _ = stdin().read_to_string(&mut ciphertext)?;
 
     let blob = base64::decode(ciphertext)
@@ -184,28 +237,50 @@ fn do_decrypt(ctx: Context, c: Decrypt) -> Result<String>
     Ok(String::from_utf8(data)?)
 }
 
+///
 /// AEAD/Sealed-box seal.
 ///
 /// The encrypt operation works with both 32 byte identity seeds and the 8 byte
 /// Mu. The actual symmetric key is derived appropriate in each case.
+///
 #[derive(Parser)]
 struct Encrypt
 {
     /// 32 byte identity seed.
-    #[clap(long, value_name = "b64", conflicts_with = "mu")]
+    #[clap(
+        long,
+        value_name = "b64",
+        conflicts_with = "mu",
+        display_order = 1,
+    )]
     seed: Option<String>,
+
     /// 8 byte Mu seed.
-    #[clap(long, value_name = "b64", conflicts_with = "seed")]
+    #[clap(
+        long,
+        value_name = "b64",
+        conflicts_with = "seed",
+        display_order = 1,
+    )]
     mu: Option<String>,
+
     /// Bind context in which the encrypted data should be used.
     /// Options: "vault", "split", "combine", "transfer"
-    #[clap(long, value_name = "option")]
+    #[clap(long, value_name = "option", display_order = 1)]
     bind: Option<String>,
+
     /// Custom additional data context. Cannot be specified when a --bind is
     /// also provided. Bindings are uno domain specific contexts for the aead.
-    #[clap(long, value_name = "text", conflicts_with = "bind")]
+    #[clap(
+        long,
+        value_name = "text",
+        conflicts_with = "bind",
+        display_order = 1,
+    )]
     data: Option<String>,
-    #[clap(long)]
+
+    /// Output raw bytes instead of base64 encoded data.
+    #[clap(long, display_order = 1)]
     raw: bool
 }
 
@@ -227,8 +302,6 @@ fn do_encrypt(ctx: Context, c: Encrypt) -> Result<String>
     }
 
     let mut plaintext = String::new();
-    use std::io::stdin;
-    use std::io::Read;
     let _ = stdin().read_to_string(&mut plaintext)?;
 
     let blob = uno::encrypt(ctx, key, &plaintext.as_bytes())
@@ -242,14 +315,16 @@ fn do_encrypt(ctx: Context, c: Encrypt) -> Result<String>
     Ok(out)
 }
 
+///
 /// Sign a message using the configured Uno ID.
 ///
 /// The message is read from stdin.
+///
 #[derive(Parser)]
 struct Sign
 {
     /// Override the configured identity
-    #[clap(long, value_name = "b64")]
+    #[clap(long, value_name = "b64", display_order = 1)]
     seed: Option<String>,
 }
 
@@ -262,8 +337,6 @@ fn do_sign(ctx: Context, c: Sign) -> Result<String>
     let key = uno::KeyPair::from(id);
 
     let mut message = String::new();
-    use std::io::stdin;
-    use std::io::Read;
     let _ = stdin().read_to_string(&mut message)?;
 
     use uno::Signer;
@@ -271,17 +344,20 @@ fn do_sign(ctx: Context, c: Sign) -> Result<String>
     Ok(base64::encode(&sig.to_bytes()))
 }
 
+///
 /// Verify a signature on a message.
 ///
 /// The message is read from stdin.
+///
 #[derive(Parser)]
 struct Verify
 {
     /// EdDSA public key.
-    #[clap(long, value_name = "b64")]
+    #[clap(long, value_name = "b64", display_order = 1)]
     pubkey: String,
+
     /// Signature to verify.
-    #[clap(long, value_name = "b64")]
+    #[clap(long, value_name = "b64", display_order = 1)]
     signature: String
 }
 
@@ -299,8 +375,6 @@ fn do_verify(_: Context, c: Verify) -> Result<String>
     let sig = uno::Signature::from_bytes(&bytes)?;
 
     let mut message = String::new();
-    use std::io::stdin;
-    use std::io::Read;
     let _ = stdin().read_to_string(&mut message)?;
 
     pubkey.verify(&message.as_bytes(), &sig)
@@ -316,135 +390,93 @@ fn do_verify(_: Context, c: Verify) -> Result<String>
 struct Vault
 {
     #[clap(subcommand)]
-    subcmd: VaultCmd
+    subcmd: VaultCmd,
+    #[clap(flatten)]
+    opts: VaultOpts,
+}
+
+#[derive(Parser)]
+struct VaultOpts
+{
+    /// Vault store endpoint.
+    #[clap(long,
+        value_name = "endpoint",
+        default_value = "https://api.u1o.dev",
+        display_order = 1,
+    )]
+    url: String,
+
+    /// Identity seed to use.
+    #[clap(long, value_name = "b64", display_order = 1)]
+    seed: Option<String>,
 }
 
 #[derive(Parser)]
 enum VaultCmd
 {
+    #[clap(display_order = 1)]
     Get(VaultGet),
+
+    #[clap(display_order = 1)]
     Put(VaultPut),
 }
 
 ///
-/// Get the latest saved copy of your vault.
+/// Get the latest saved copy of a vault.
 ///
 #[derive(Parser)]
-struct VaultGet
-{
-    /// HTTP method (GET or PUT). Download or Upload?
-    #[clap(long, short = 'X', value_name = "method", default_value = "get")]
-    method: String,
-    /// Vault store endpoint.
-    #[clap(long,
-        value_name = "endpoint",
-        default_value = "https://api.u1o.dev"
-    )]
-    url: String,
-    /// Identity seed to use.
-    #[clap(long)]
-    seed: Option<String>,
-    /// When uploading, the vault data json.
-    data: Option<String>,
-}
+struct VaultGet;
 
 ///
-/// Update your vault.
+/// Update a vault.
 ///
 #[derive(Parser)]
-struct VaultPut
-{
-    /// HTTP method (GET or PUT). Download or Upload?
-    #[clap(long, short = 'X', value_name = "method", default_value = "get")]
-    method: String,
-    /// Vault store endpoint.
-    #[clap(long,
-        value_name = "endpoint",
-        default_value = "https://api.u1o.dev"
-    )]
-    url: String,
-    /// Identity seed to use.
-    #[clap(long)]
-    seed: Option<String>,
-    /// When uploading, the vault data json.
-    data: Option<String>,
-}
-
-
+struct VaultPut;
 
 fn do_vault(ctx: Context, v: Vault) -> Result<String>
 {
     match v.subcmd {
-        VaultCmd::Get(c) => do_vault_get(ctx, c),
-        VaultCmd::Put(c) => do_vault_put(ctx, c),
+        VaultCmd::Get(c) => do_vault_get(ctx, v.opts, c),
+        VaultCmd::Put(c) => do_vault_put(ctx, v.opts, c),
     }
 }
 
-fn do_vault_get(ctx: Context, c: VaultGet) -> Result<String>
+fn do_vault_get(ctx: Context, opts: VaultOpts, _: VaultGet) -> Result<String>
 {
-    use http_types::Method;
-    use std::str::FromStr;
-
     let cfg = load_conf(&ctx)?;
 
-    let id = match c.seed {
+    let id = match opts.seed {
         Some(s) => id_from_b64(s)?,
         None => cli::load_seed(&cfg)?,
     };
 
-    let method = Method::from_str(&c.method)
-        .map_err(http_types::Error::into_inner)?;
+    let v = cli::get_vault(&cfg, opts.url, id)
+        .context("cannot download vault")?;
 
-    match method {
-        Method::Get => {
-            let v = cli::get_vault(&cfg, c.url, id)
-                .context("cannot download vault")?;
-            Ok(v)
-        },
-        Method::Put => {
-            let data = c.data
-                .context("data is required")?;
-            let v = cli::put_vault(&cfg, c.url, id, data.as_bytes())
-                .context("cannot upload vault")?;
-            Ok(v)
-        },
-        _ => Err(anyhow!("bad method")),
-    }
+    Ok(v)
 }
 
-fn do_vault_put(ctx: Context, c: VaultPut) -> Result<String>
+fn do_vault_put(ctx: Context, opts: VaultOpts, _: VaultPut) -> Result<String>
 {
-    use http_types::Method;
-    use std::str::FromStr;
-
     let cfg = load_conf(&ctx)?;
 
-    let id = match c.seed {
+    let id = match opts.seed {
         Some(s) => id_from_b64(s)?,
         None => cli::load_seed(&cfg)?,
     };
 
-    let method = Method::from_str(&c.method)
-        .map_err(http_types::Error::into_inner)?;
+    let mut data = String::new();
+    let _ = stdin().read_to_string(&mut data)?;
 
-    match method {
-        Method::Get => {
-            let v = cli::get_vault(&cfg, c.url, id)
-                .context("cannot download vault")?;
-            Ok(v)
-        },
-        Method::Put => {
-            let data = c.data
-                .context("data is required")?;
-            let v = cli::put_vault(&cfg, c.url, id, data.as_bytes())
-                .context("cannot upload vault")?;
-            Ok(v)
-        },
-        _ => Err(anyhow!("bad method")),
-    }
+    let v = cli::put_vault(&cfg, opts.url, id, data.as_bytes())
+        .context("cannot upload vault")?;
+
+    Ok(v)
 }
 
+///
 /// Generate an uno shamir's secert sharing session entropy seed.
+///
 #[derive(Parser)]
 struct Mu;
 
@@ -454,12 +486,14 @@ fn do_mu(_: Context, _: Mu) -> Result<String>
     Ok(base64::encode(id.0))
 }
 
+///
 /// Print the session id derived from Mu entropy.
+///
 #[derive(Parser)]
 struct Session
 {
-    /// identity seed
-    #[clap(long, value_name = "mu")]
+    /// Identity seed
+    #[clap(long, value_name = "mu", display_order = 1)]
     seed: String,
 }
 
@@ -470,26 +504,31 @@ fn do_session(_: Context, c: Session) -> Result<String>
     Ok(base64::encode_config(&sid.0, base64::URL_SAFE_NO_PAD))
 }
 
+///
 /// Shamir's secret sharing session operations.
 ///
 /// When operating on the session endpoint, data in the "share" field will be
 /// encrypted prior to uploading and decrypted when downloading.
+///
 #[derive(Parser)]
 struct Ssss
 {
     /// HTTP method (GET or PUT or PATCH). Download or Upload/Update?
     #[clap(long, short = 'X', value_name = "method", default_value = "get")]
     method: String,
+
     /// Vault store endpoint.
     #[clap(long,
         value_name = "endpoint",
         default_value = "https://api.u1o.dev"
     )]
     url: String,
+
     /// 80 bit (10 byte) session entropy to use. Not the same as the identity
     /// seed entropy. You can generate entropy with `uno mu`.
     #[clap(long, value_name = "mu")]
     seed: String,
+
     /// When uploading, the session data json.
     data: Option<String>,
 }
@@ -527,18 +566,24 @@ fn do_ssss(ctx: Context, c: Ssss) -> Result<String>
         m => Err(anyhow!("method {} not supported for ssss", m)),
     }
 }
-
-/// SLIP-0039 operations.
+///
+/// SLIP-0039 recovery shares operations
 ///
 #[derive(Parser)]
 enum S39
 {
+    #[clap(display_order = 1)]
     Split(S39Split),
+
+    #[clap(display_order = 2)]
     Combine(S39Combine),
+
+    #[clap(display_order = 3)]
     View(S39View),
 }
-
-/// SLIP-0039 Options
+///
+/// SLIP-0039 recovery shares options
+///
 #[derive(Parser)]
 struct S39Cmd
 {
@@ -546,17 +591,20 @@ struct S39Cmd
     #[clap(subcommand)]
     subcmd: S39,
 }
-
+///
 /// Split the configured uno identity seed into a number of shares. .
+///
 #[derive(Parser)]
 struct S39Split
 {
     /// minimum shares needed to reconstitute the seed
-    #[clap(long, value_name = "num", default_value = "2")]
+    #[clap(long, value_name = "num", default_value = "2", display_order = 1)]
     minimum: u8,
+
     /// total shares generated
-    #[clap(long, value_name = "num", default_value = "3")]
+    #[clap(long, value_name = "num", default_value = "3", display_order = 1)]
     total: u8,
+
     // TODO support groups
     /// Override the configured identity.
     seed: Option<String>,
@@ -607,7 +655,9 @@ fn do_s39_split(ctx: Context, c: S39Split) -> Result<String>
     Ok(view)
 }
 
+///
 /// Combine shares of a split seed back into the whole identity seed.
+///
 #[derive(Parser)]
 struct S39Combine
 {
@@ -632,7 +682,9 @@ fn do_s39_combine(c: S39Combine) -> Result<String>
     Ok(base64::encode_config(&id.0, base64::STANDARD_NO_PAD))
 }
 
+///
 /// View metadata about a mnemonic share.
+///
 #[derive(Parser)]
 struct S39View
 {
