@@ -403,7 +403,7 @@ fn decrypt_share(usage: Binding, key: uno::SymmetricKey, data: &[u8])
 fn ssss_url_from_session(endpoint: &str, session: &uno::Session) -> Result<Url>
 {
     let host = Url::parse(&endpoint)?;
-    let base = host.join("v1/ssss/")?;
+    let base = host.join("v2/ssss/")?;
     let cfg = base64::URL_SAFE_NO_PAD;
     let sid = base64::encode_config(session.0, cfg);
 
