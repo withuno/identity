@@ -400,7 +400,7 @@ struct Vault
 #[derive(Parser)]
 struct VaultOpts
 {
-    /// Vault store endpoint.
+    /// Vault service API endpoint.
     #[clap(long,
         value_name = "endpoint",
         default_value = API_HOST,
@@ -525,7 +525,7 @@ struct Ssss
 #[derive(Parser)]
 struct SsssOpts
 {
-    /// Vault store endpoint.
+    /// Ephemeral session API endpoint.
     #[clap(long,
         value_name = "endpoint",
         default_value = API_HOST,
