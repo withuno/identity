@@ -43,7 +43,7 @@ enum SubCommand {
     #[clap(display_order = 40)]
     Encrypt(Encrypt),
 
-    #[clap(display_order = 40)]
+    #[clap(display_order = 41)]
     Decrypt(Decrypt),
 
     #[clap(display_order = 30)]
@@ -504,6 +504,7 @@ fn do_session(_: Context, c: Session) -> Result<String>
     Ok(base64::encode_config(&sid.0, base64::URL_SAFE_NO_PAD))
 }
 
+
 ///
 /// Shamir's secret sharing session operations.
 ///
@@ -513,59 +514,113 @@ fn do_session(_: Context, c: Session) -> Result<String>
 #[derive(Parser)]
 struct Ssss
 {
-    /// HTTP method (GET or PUT or PATCH). Download or Upload/Update?
-    #[clap(long, short = 'X', value_name = "method", default_value = "get")]
-    method: String,
+    #[clap(subcommand)]
+    subcmd: SsssCmd,
+    #[clap(flatten)]
+    opts: SsssOpts,
+}
 
+#[derive(Parser)]
+struct SsssOpts
+{
     /// Vault store endpoint.
     #[clap(long,
         value_name = "endpoint",
-        default_value = "https://api.u1o.dev"
+        default_value = "https://api.u1o.dev",
+        display_order = 1,
     )]
     url: String,
 
     /// 80 bit (10 byte) session entropy to use. Not the same as the identity
     /// seed entropy. You can generate entropy with `uno mu`.
-    #[clap(long, value_name = "mu")]
-    seed: String,
-
-    /// When uploading, the session data json.
-    data: Option<String>,
+    #[clap(long, value_name = "b64", display_order = 1,)]
+    mu: String,
 }
 
-// TODO make subcommand keyed on method
+#[derive(Parser)]
+enum SsssCmd
+{
+    #[clap(display_order = 1)]
+    Get(SsssGet),
+
+    #[clap(display_order = 2)]
+    Put(SsssPut),
+
+    #[clap(display_order = 3)]
+    Patch(SsssPatch),
+}
+
 fn do_ssss(ctx: Context, c: Ssss) -> Result<String>
 {
-    use http_types::Method;
-    use std::str::FromStr;
-
-    let mu = mu_from_b64(c.seed)?;
-    let method = Method::from_str(&c.method)
-        .map_err(http_types::Error::into_inner)?;
-
-    match method {
-        Method::Get => {
-            let s = cli::get_ssss(c.url, mu)
-                .context("cannot download session")?;
-            Ok(s)
-        },
-        Method::Put => {
-            let data = c.data
-                .context("data is required")?;
-            let s = cli::put_ssss(c.url, mu, data.as_bytes())
-                .context("cannot upload session")?;
-            Ok(s)
-        },
-        Method::Patch => {
-            let data = c.data
-                .context("data is required")?;
-            let s = cli::patch_ssss(c.url, mu, data.as_bytes())
-                .context("cannot update session")?;
-            Ok(s)
-        }
-        m => Err(anyhow!("method {} not supported for ssss", m)),
+    match c.subcmd {
+        SsssCmd::Get(s) => do_ssss_get(ctx, c.opts, s),
+        SsssCmd::Put(s) => do_ssss_put(ctx, c.opts, s),
+        SsssCmd::Patch(s) => do_ssss_patch(ctx, c.opts, s),
     }
 }
+
+///
+/// Get a session using the session-id derived from the provided `mu` entropy.
+///
+/// The data in the "share" field is decrypted for you during this operation.
+///
+#[derive(Parser)]
+struct SsssGet;
+
+fn do_ssss_get(_: Context, opt: SsssOpts, _: SsssGet) -> Result<String>
+{
+    let mu = mu_from_b64(opt.mu)?;
+
+    let s = cli::get_ssss(opt.url, mu)
+        .context("cannot download session")?;
+    Ok(s)
+}
+
+///
+/// Put a share and associated data at the session-id endpoint derived from the
+/// provided `mu` entropy.
+///
+/// The data in the "share" field is encrypted for you during this operation.
+/// This command expects the JSON data to be uploaded on STDIN.
+///
+#[derive(Parser)]
+struct SsssPut;
+
+fn do_ssss_put(_: Context, opt: SsssOpts, _: SsssPut) -> Result<String>
+{
+    let mu = mu_from_b64(opt.mu)?;
+
+    let mut data = String::new();
+    let _ = stdin().read_to_string(&mut data)?;
+
+    let s = cli::put_ssss(opt.url, mu, data.as_bytes())
+        .context("cannot upload session")?;
+
+    Ok(s)
+}
+
+///
+/// Update individual fields in an existing share session.
+///
+/// This command expects the JSON data to be uploaded on STDIN.
+///
+#[derive(Parser)]
+struct SsssPatch;
+
+fn do_ssss_patch(_: Context, opt: SsssOpts, _: SsssPatch) -> Result<String>
+{
+    let mu = mu_from_b64(opt.mu)?;
+
+    let mut data = String::new();
+    let _ = stdin().read_to_string(&mut data)?;
+
+    let s = cli::patch_ssss(opt.url, mu, data.as_bytes())
+        .context("cannot update session")?;
+
+    Ok(s)
+}
+
+
 ///
 /// SLIP-0039 recovery shares operations
 ///
