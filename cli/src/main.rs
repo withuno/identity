@@ -383,6 +383,8 @@ fn do_verify(_: Context, c: Verify) -> Result<String>
     Ok("The signature is valid.".into())
 }
 
+const API_HOST: &'static str = "https://api.uno.app";
+
 ///
 /// Operate on a vault.
 ///
@@ -401,7 +403,7 @@ struct VaultOpts
     /// Vault store endpoint.
     #[clap(long,
         value_name = "endpoint",
-        default_value = "https://api.u1o.dev",
+        default_value = API_HOST,
         display_order = 1,
     )]
     url: String,
@@ -526,7 +528,7 @@ struct SsssOpts
     /// Vault store endpoint.
     #[clap(long,
         value_name = "endpoint",
-        default_value = "https://api.u1o.dev",
+        default_value = API_HOST,
         display_order = 1,
     )]
     url: String,
