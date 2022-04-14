@@ -643,7 +643,7 @@ mod unit
         let session = Session::try_from(mu)?;
         let endpoint = "https://example.com";
         let actual = ssss_url_from_session(endpoint, &session)?;
-        let expected = "https://example.com/v1/ssss/DMq6OqXqkDQWBVXkOXAL39A1xy-KYoxl0_Q7VnyEpjw";
+        let expected = "https://example.com/v2/ssss/DMq6OqXqkDQWBVXkOXAL39A1xy-KYoxl0_Q7VnyEpjw";
         dbg!(&actual);
         assert_eq!(expected, actual.to_string());
 
