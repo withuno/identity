@@ -284,11 +284,13 @@ pub fn put_ssss(host: &String, mu: uno::Mu, data: &[u8]) -> Result<String>
 {
     let session = uno::Session::try_from(&mu)?;
     let sym = uno::SymmetricKey::from(&mu);
+
     let usage = match infer_binding(data)? {
         Inference::Exact(b) => b,
         Inference::Unknown => Binding::None,
     };
-    let body = encrypt_share(usage, sym, data)?;
+    let body = encrypt_share(usage, sym, data)
+        .context("cannot encrypt share")?;
     let url = ssss_url_from_session(&host, &session)?;
     let req = surf::put(url.as_str())
         .body(body)
@@ -305,12 +307,14 @@ pub fn patch_ssss(host: &String, mu: uno::Mu, data: &[u8]) -> Result<String>
 {
     let session = uno::Session::try_from(&mu)?;
     let sym = uno::SymmetricKey::from(&mu);
+
     let usage = match infer_binding(data)? {
         Inference::Exact(b) => b,
         // While this can happen on PUT, it shouldn't on PATCH.
         Inference::Unknown => Binding::None,
     };
-    let body = encrypt_share(usage, sym, data)?;
+    let body = encrypt_share(usage, sym, data)
+        .context("cannot encrypt share")?;
     let url = ssss_url_from_session(&host, &session)?;
     let req = surf::patch(url.as_str())
         .body(body)
@@ -339,7 +343,8 @@ use serde_json::Value;
 // https://www.notion.so/withuno/Shamir-Secret-Sharing-Session-de9d541155764826b9c9519a486a36d1
 fn infer_binding(data: &[u8]) -> Result<Inference>
 {
-    let json: Value = serde_json::from_slice(data)?;
+    let json: Value = serde_json::from_slice(data)
+        .context("invalid json")?;
     let map = match json {
         Value::Object(m) => m,
         _ => bail!("not a valid session"),
@@ -381,8 +386,8 @@ fn encrypt_share(usage: Binding, key: uno::SymmetricKey, data: &[u8])
         .ok_or(anyhow!("data is not a valid json object"))?;
 
     if let Some(Value::String(s)) = obj.get(SHARE) {
-        use base64::STANDARD_NO_PAD;
-        let raw = base64::decode_config(&s, STANDARD_NO_PAD)?;
+        let raw = base64::decode(&s)
+            .context("\"share\" field is not base64 encoded")?;
         let txt = uno::encrypt(usage, key, &*raw)?;
         let val = Value::String(base64::encode(&txt));
         let _ = obj.insert(SHARE.into(), val);
@@ -401,8 +406,7 @@ fn decrypt_share(usage: Binding, key: uno::SymmetricKey, data: &[u8])
     if let Some(Value::String(s)) = obj.get(SHARE) {
         let raw = base64::decode(&s)?;
         let txt = uno::decrypt(usage, key, &*raw)?;
-        use base64::STANDARD_NO_PAD;
-        let b64 = base64::encode_config(&txt, STANDARD_NO_PAD);
+        let b64 = base64::encode(&txt);
         let val = Value::String(b64);
         let _ = obj.insert(SHARE.into(), val);
     }
