@@ -77,9 +77,19 @@ enum SubCommand {
 /// Data and config is stored under `~/.uno`. .
 ///
 #[derive(Parser)]
-struct Init;
+struct Init
+{
+    /// Override the default API service endpoint. This option is used for testing and development and should not be used normally.
+    #[clap(
+        long,
+        default_value = cli::API_HOST,
+        display_order = 1,
+        value_name = "url",
+    )]
+    host: String,
+}
 
-fn do_init(ctx: Context, _: Init) -> Result<String>
+fn do_init(ctx: Context, cmd: Init) -> Result<String>
 {
     // Check for existing config. If it exists, bail.
     match load_conf(&ctx) {
@@ -93,7 +103,7 @@ fn do_init(ctx: Context, _: Init) -> Result<String>
         None => bail!("file `{}` has no parent", conf_file.to_string_lossy()),
     };
     std::fs::create_dir_all(&uno_dir)?;
-    cli::gen_config(&conf_file)?;
+    cli::gen_config(&conf_file, cmd.host)?;
 
     Ok(format!("wrote: {}", conf_file.to_string_lossy()))
 }
@@ -383,7 +393,6 @@ fn do_verify(_: Context, c: Verify) -> Result<String>
     Ok("The signature is valid.".into())
 }
 
-const API_HOST: &'static str = "https://api.uno.app";
 
 ///
 /// Operate on a vault.
@@ -400,15 +409,15 @@ struct Vault
 #[derive(Parser)]
 struct VaultOpts
 {
-    /// Vault service API endpoint.
+    /// Vault service API endpoint. If specified, supersedes the configured the
+    /// configured value.
     #[clap(long,
         value_name = "endpoint",
-        default_value = API_HOST,
         display_order = 1,
     )]
-    url: String,
+    url: Option<String>,
 
-    /// Identity seed to use.
+    /// Identity seed to use. If specified, supersedes the configured value.
     #[clap(long, value_name = "b64", display_order = 1)]
     seed: Option<String>,
 }
@@ -443,34 +452,38 @@ fn do_vault(ctx: Context, v: Vault) -> Result<String>
     }
 }
 
-fn do_vault_get(ctx: Context, opts: VaultOpts, _: VaultGet) -> Result<String>
+fn do_vault_get(ctx: Context, opt: VaultOpts, _: VaultGet) -> Result<String>
 {
     let cfg = load_conf(&ctx)?;
 
-    let id = match opts.seed {
+    let id = match opt.seed {
         Some(s) => id_from_b64(s)?,
         None => cli::load_seed(&cfg)?,
     };
 
-    let v = cli::get_vault(&cfg, opts.url, id)
+    let url = opt.url.as_ref().unwrap_or(&cfg.api_host);
+
+    let v = cli::get_vault(&cfg, url, id)
         .context("cannot download vault")?;
 
     Ok(v)
 }
 
-fn do_vault_put(ctx: Context, opts: VaultOpts, _: VaultPut) -> Result<String>
+fn do_vault_put(ctx: Context, opt: VaultOpts, _: VaultPut) -> Result<String>
 {
     let cfg = load_conf(&ctx)?;
 
-    let id = match opts.seed {
+    let id = match opt.seed {
         Some(s) => id_from_b64(s)?,
         None => cli::load_seed(&cfg)?,
     };
 
+    let url = opt.url.as_ref().unwrap_or(&cfg.api_host);
+
     let mut data = String::new();
     let _ = stdin().read_to_string(&mut data)?;
 
-    let v = cli::put_vault(&cfg, opts.url, id, data.as_bytes())
+    let v = cli::put_vault(&cfg, url, id, data.as_bytes())
         .context("cannot upload vault")?;
 
     Ok(v)
@@ -525,13 +538,13 @@ struct Ssss
 #[derive(Parser)]
 struct SsssOpts
 {
-    /// Ephemeral session API endpoint.
+    /// Ephemeral session API endpoint. If specified, supersedes the configured
+    /// value.
     #[clap(long,
         value_name = "endpoint",
-        default_value = API_HOST,
         display_order = 1,
     )]
-    url: String,
+    url: Option<String>,
 
     /// 80 bit (10 byte) session entropy to use. Not the same as the identity
     /// seed entropy. You can generate entropy with `uno mu`.
@@ -569,11 +582,14 @@ fn do_ssss(ctx: Context, c: Ssss) -> Result<String>
 #[derive(Parser)]
 struct SsssGet;
 
-fn do_ssss_get(_: Context, opt: SsssOpts, _: SsssGet) -> Result<String>
+fn do_ssss_get(ctx: Context, opt: SsssOpts, _: SsssGet) -> Result<String>
 {
+    let cfg = load_conf(&ctx)?;
+    let url = opt.url.as_ref().unwrap_or(&cfg.api_host);
+
     let mu = mu_from_b64(opt.mu)?;
 
-    let s = cli::get_ssss(opt.url, mu)
+    let s = cli::get_ssss(url, mu)
         .context("cannot download session")?;
     Ok(s)
 }
@@ -588,14 +604,17 @@ fn do_ssss_get(_: Context, opt: SsssOpts, _: SsssGet) -> Result<String>
 #[derive(Parser)]
 struct SsssPut;
 
-fn do_ssss_put(_: Context, opt: SsssOpts, _: SsssPut) -> Result<String>
+fn do_ssss_put(ctx: Context, opt: SsssOpts, _: SsssPut) -> Result<String>
 {
+    let cfg = load_conf(&ctx)?;
+    let url = opt.url.as_ref().unwrap_or(&cfg.api_host);
+
     let mu = mu_from_b64(opt.mu)?;
 
     let mut data = String::new();
     let _ = stdin().read_to_string(&mut data)?;
 
-    let s = cli::put_ssss(opt.url, mu, data.as_bytes())
+    let s = cli::put_ssss(url, mu, data.as_bytes())
         .context("cannot upload session")?;
 
     Ok(s)
@@ -609,14 +628,17 @@ fn do_ssss_put(_: Context, opt: SsssOpts, _: SsssPut) -> Result<String>
 #[derive(Parser)]
 struct SsssPatch;
 
-fn do_ssss_patch(_: Context, opt: SsssOpts, _: SsssPatch) -> Result<String>
+fn do_ssss_patch(ctx: Context, opt: SsssOpts, _: SsssPatch) -> Result<String>
 {
+    let cfg = load_conf(&ctx)?;
+    let url = opt.url.as_ref().unwrap_or(&cfg.api_host);
+
     let mu = mu_from_b64(opt.mu)?;
 
     let mut data = String::new();
     let _ = stdin().read_to_string(&mut data)?;
 
-    let s = cli::patch_ssss(opt.url, mu, data.as_bytes())
+    let s = cli::patch_ssss(url, mu, data.as_bytes())
         .context("cannot update session")?;
 
     Ok(s)

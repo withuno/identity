@@ -22,15 +22,20 @@ use uno::Signer;
 use std::convert::From;
 use std::convert::TryFrom;
 use std::ffi::OsString;
+use std::path::Path;
 
 use serde::{Serialize, Deserialize,};
 
 use uuid::Uuid;
 
+
+pub const API_HOST: &'static str = "https://api.uno.app";
+
 #[derive(Serialize, Deserialize)]
 pub struct Config
 {
     pub uuid: Uuid,
+    pub api_host: String,
     pub seed_file: OsString,
     pub vclock_file: OsString,
 }
@@ -52,11 +57,12 @@ impl Default for Config
             uuid: Uuid::new_v4(),
             seed_file: seed.into_os_string(),
             vclock_file: vclock.into_os_string(),
+            api_host: String::from(API_HOST),
         }
     }
 }
 
-pub fn load_config(path: &std::path::Path) -> Result<Config>
+pub fn load_config(path: &Path) -> Result<Config>
 {
     let file = std::fs::File::open(path)
         .context("Error loading config. Please run `uno init` first.")?;
@@ -66,13 +72,16 @@ pub fn load_config(path: &std::path::Path) -> Result<Config>
     Ok(config)
 }
 
+
 ///
 /// Generate a new config including new client UUID and vclock. If an existing
 /// seed is found, it will be reused. Any existing vclock will be clobbered.
 ///
-pub fn gen_config(path: &std::path::Path) -> Result<Config>
+pub fn gen_config(path: &Path, api: String) -> Result<Config>
 {
     let mut config = Config::default();
+
+    config.api_host = api;
 
     // if the seed loads fine, we don't have to generate and write a new one
     match load_seed(&config) {
@@ -90,7 +99,8 @@ pub fn gen_config(path: &std::path::Path) -> Result<Config>
     gen_vclock(&config)?;
 
     // write the actual config
-    let data = ron::ser::to_string(&config)?;
+    use ron::ser::PrettyConfig;
+    let data = ron::ser::to_string_pretty(&config, PrettyConfig::default())?;
     std::fs::write(path, data)?;
 
     Ok(load_config(path)?)
@@ -170,7 +180,7 @@ pub fn load_vclock(config: &Config) -> Result<VClock<String>>
     ron::de::from_bytes(&bytes).map_err(|e| anyhow!(e))
 }
 
-pub fn get_vault(cfg: &Config, host: String, id: uno::Id) -> Result<String>
+pub fn get_vault(cfg: &Config, host: &String, id: uno::Id) -> Result<String>
 {
     let key = uno::KeyPair::from(&id);
     let sym = uno::SymmetricKey::from(&id);
@@ -197,7 +207,7 @@ pub fn get_vault(cfg: &Config, host: String, id: uno::Id) -> Result<String>
     Ok(String::from_utf8(vault)?)
 }
 
-pub fn put_vault(cfg: &Config, host: String, id: uno::Id, data: &[u8])
+pub fn put_vault(cfg: &Config, host: &String, id: uno::Id, data: &[u8])
 -> Result<String>
 {
     let key = uno::KeyPair::from(&id);
@@ -242,7 +252,7 @@ fn vault_url_from_key(endpoint: &str, key: &uno::KeyPair) -> Result<Url>
     Ok(base.join(&vid)?)
 }
 
-pub fn get_ssss(host: String, mu: uno::Mu) -> Result<String>
+pub fn get_ssss(host: &String, mu: uno::Mu) -> Result<String>
 {
     let session = uno::Session::try_from(&mu)?;
     let sym = uno::SymmetricKey::from(&mu);
@@ -270,7 +280,7 @@ pub fn get_ssss(host: String, mu: uno::Mu) -> Result<String>
     Ok(String::from_utf8(out)?)
 }
 
-pub fn put_ssss(host: String, mu: uno::Mu, data: &[u8]) -> Result<String>
+pub fn put_ssss(host: &String, mu: uno::Mu, data: &[u8]) -> Result<String>
 {
     let session = uno::Session::try_from(&mu)?;
     let sym = uno::SymmetricKey::from(&mu);
@@ -291,7 +301,7 @@ pub fn put_ssss(host: String, mu: uno::Mu, data: &[u8]) -> Result<String>
     Ok(String::from_utf8(out)?)
 }
 
-pub fn patch_ssss(host: String, mu: uno::Mu, data: &[u8]) -> Result<String>
+pub fn patch_ssss(host: &String, mu: uno::Mu, data: &[u8]) -> Result<String>
 {
     let session = uno::Session::try_from(&mu)?;
     let sym = uno::SymmetricKey::from(&mu);
