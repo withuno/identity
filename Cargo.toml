@@ -9,6 +9,16 @@
 [workspace]
 members = ["adi", "api", "cli", "djb", "ffi", "s39", "lib", "xcf", "wsm"]
 
+# We make use of expensive slow hashes and the DX benefits greatly from
+# optimizations.
+[profile.dev]
+opt-level = 2
+
+[profile.unoptimized]
+inherits = "dev"
+opt-level = 0
+
+
 # While cargo supports specifying both a path and version dependency, doing so
 # in any one of the sibling projects here would impose a file-system structure
 # upon anybody working independently in an isolated project. Patching the deps
