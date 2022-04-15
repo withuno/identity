@@ -197,7 +197,8 @@ where
         Method::Delete => "delete",
         Method::Put | Method::Post => {
             let id = req.param("id").map_err(|_| StatusCode::BadRequest)?;
-            let exists = match req.state().db.exists(id).await {
+            let rpath = format!("v2/{}", id);
+            let exists = match req.state().db.exists(&rpath).await {
                 Ok(e) => e,
                 Err(e) => {
                     println!("db error: {:?}", e);
@@ -333,18 +334,12 @@ where
 
     // Add useful parameters to the request for fusture middlewares & handlers.
     req.set_ext(UserId(pubkey));
-    req.set_ext(BodyBytes(body));
 
     Ok(Ok(()))
 }
 
 /// The public key that signed the request.
 pub struct UserId(pub uno::PublicKey);
-
-/// The authenticated body of the request (the hash of these bytes is included
-/// when generating the challenge response). The response is signed by the user
-/// which means these bytes are genuinely sent by the user with this request.
-pub struct BodyBytes(pub Vec<u8>);
 
 /// Create an unauthorized response including the appropriate WWW-Authenticate
 /// header for the provided request.

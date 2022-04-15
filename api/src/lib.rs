@@ -17,9 +17,7 @@ pub use crate::mailbox::{MessageRequest, MessageToDelete};
 use anyhow::bail;
 
 pub mod auth;
-use auth::{BodyBytes, UserId};
-
-pub mod auth2;
+use auth::UserId;
 
 use std::future::Future;
 use std::pin::Pin;
@@ -54,6 +52,7 @@ where
     })
 }
 
+
 /// Short circuit the middleware chain if the request is not authorized.
 ///
 pub fn signed_pow_auth<'a, T>(
@@ -65,25 +64,6 @@ where
 {
     Box::pin(async {
         let resp = match auth::check(&mut req).await {
-            Ok(()) => next.run(req).await,
-            Err(reason) => reason,
-        };
-
-        Ok(resp)
-    })
-}
-
-/// Short circuit the middleware chain if the request is not authorized.
-///
-pub fn signed_pow_auth2<'a, T>(
-    mut req: Request<State<T>>,
-    next: Next<'a, State<T>>,
-) -> Pin<Box<dyn Future<Output = Result> + Send + 'a>>
-where
-    T: Database + 'static,
-{
-    Box::pin(async {
-        let resp = match auth2::check(&mut req).await {
             Ok(()) => next.run(req).await,
             Err(reason) => reason,
         };
@@ -279,27 +259,6 @@ where
         .build())
 }
 
-// Make sure the vault in the url matches the public key that generated the
-// signature on the request. Requires VaultId middleware. Returns status 403
-// forbidden if there is a mismatch.
-//
-fn check_vault_ownership<'a, T>(
-    req: Request<State<T>>,
-    next: Next<'a, State<T>>,
-) -> Pin<Box<dyn Future<Output = Result> + Send + 'a>>
-where
-    T: Database + 'static,
-{
-    Box::pin(async {
-        let id = req.ext::<VaultId>().unwrap();
-        let target = pubkey_from_url_b64(&id.0).map_err(bad_request)?;
-        let user = req.ext::<UserId>().unwrap().0;
-        if target != user {
-            return Err(forbidden("pubkey mismatch"));
-        }
-        Ok(next.run(req).await)
-    })
-}
 
 // Make sure the vault in the url matches the public key that generated the
 // signature on the request. Requires VaultId middleware. Returns status 403
@@ -315,7 +274,7 @@ where
     Box::pin(async {
         let id = req.ext::<VaultId>().unwrap();
         let target = pubkey_from_url_b64(&id.0).map_err(bad_request)?;
-        let user = req.ext::<auth2::UserId>().unwrap().0;
+        let user = req.ext::<UserId>().unwrap().0;
         if target != user {
             return Err(forbidden("pubkey mismatch"));
         }
@@ -337,41 +296,6 @@ where
         .build();
 
     Ok(response)
-}
-
-async fn fetch_vault<T>(req: Request<State<T>>) -> Result
-where
-    T: Database + 'static,
-{
-    let db = &req.state().db;
-    let id = &req.ext::<VaultId>().unwrap().0;
-
-    let vault = db.get(id).await.map_err(not_found)?;
-
-    let response = Response::builder(StatusCode::Ok)
-        .body(Body::from_bytes(vault))
-        .header("Access-Control-Allow-Origin", "*")
-        .header(
-            "Access-Control-Allow-Headers",
-            "WWW-Authenticate, Authentication-Info",
-        )
-        .build();
-
-    Ok(response)
-}
-
-async fn store_vault<T>(req: Request<State<T>>) -> Result<Body>
-where
-    T: Database + 'static,
-{
-    let db = &req.state().db;
-    let id = &req.ext::<VaultId>().unwrap().0;
-    let body = &req.ext::<BodyBytes>().unwrap().0;
-
-    db.put(id, &body).await.map_err(server_err)?;
-    let vault = db.get(id).await.map_err(not_found)?;
-
-    Ok(Body::from_bytes(vault))
 }
 
 use vclock::VClock;
@@ -752,80 +676,6 @@ where
     })
 }
 
-pub fn build_api<T>(
-    token_db: T,
-    vault_db: T,
-    service_db: T,
-    session_db: T,
-    mailbox_db: T,
-) -> anyhow::Result<tide::Server<()>>
-where
-    T: Database + 'static,
-{
-    let mut api = tide::new();
-    api.at("health").get(health);
-
-    {
-        let mut vaults =
-            tide::with_state(State::new(vault_db, token_db.clone()));
-        vaults
-            .at(":id")
-            .with(body_size_limit)
-            .with(add_auth_info)
-            .with(signed_pow_auth)
-            .with(ensure_vault_id)
-            .with(check_vault_ownership)
-            .options(option_vault)
-            .get(fetch_vault)
-            .put(store_vault);
-        api.at("vaults").nest(vaults);
-    }
-
-    {
-        let mut services =
-            tide::with_state(State::new(service_db, token_db.clone()));
-        services
-            .at(":name")
-            .with(body_size_limit)
-            .with(add_auth_info)
-            .with(signed_pow_auth)
-            .get(fetch_service);
-        api.at("services").nest(services);
-    }
-
-    {
-        // Shamir's Secret Sharing Session
-        let mut ssss =
-            tide::with_state(State::new(session_db, token_db.clone()));
-        ssss.at(":id")
-            .with(body_size_limit)
-            .with(session_id)
-            .get(ssss_get)
-            .put(ssss_put)
-            .patch(ssss_patch)
-            .delete(ssss_delete);
-        api.at("ssss").nest(ssss);
-    }
-
-    {
-        let mut mailboxes =
-            tide::with_state(State::new(mailbox_db, token_db.clone()));
-        mailboxes
-            .at(":id")
-            .with(body_size_limit)
-            .with(add_auth_info)
-            .with(signed_pow_auth)
-            .with(ensure_mailbox_id)
-            .with(check_mailbox_ownership)
-            .get(fetch_mailbox)
-            .post(post_mailbox)
-            .delete(delete_messages);
-        api.at("mailboxes").nest(mailboxes);
-    }
-
-    Ok(api)
-}
-
 pub fn build_api_v2<T>(
     token_db: T,
     vault_db: T,
@@ -846,7 +696,7 @@ where
             .at(":id")
             .with(body_size_limit)
             .with(add_auth_info)
-            .with(signed_pow_auth2)
+            .with(signed_pow_auth)
             .with(ensure_vault_id)
             .with(check_vault_ownership2)
             .options(option_vault)
