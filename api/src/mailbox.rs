@@ -131,7 +131,6 @@ mod tests {
     async fn new_store() -> Result<S3Store> {
         use rand::distributions::Alphanumeric;
         use rand::Rng;
-        //use std::str;
 
         fn tmpname(rand_len: usize) -> String {
             let mut buf = String::with_capacity(rand_len);
@@ -144,7 +143,7 @@ mod tests {
                     .sample_iter(&Alphanumeric)
                     .take(rand_len)
                     .for_each(|b| {
-                        buf.push_str(str::from_utf8_unchecked(&[b as u8]))
+                        buf.push_str(std::str::from_utf8_unchecked(&[b as u8]))
                     })
             }
             buf.to_lowercase()
@@ -159,7 +158,7 @@ mod tests {
             "v0",
         ).await?;
 
-        let _ = store.create_bucket_if_not_exists()?;
+        let _ = store.create_bucket_if_not_exists().await?;
 
         Ok(store)
     }

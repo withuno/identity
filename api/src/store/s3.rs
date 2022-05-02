@@ -313,48 +313,48 @@ mod tests {
             "minioadmin",
             "somebucket",
             "v0",
-        )?;
+        ).await?;
 
-        let _ = s.create_bucket_if_not_exists()?;
+        let _ = s.create_bucket_if_not_exists().await?;
 
-        let err = s.get("anyfile");
+        let err = s.get("anyfile").await;
         assert!(err.is_err());
 
-        let yes = s.put("anyfile", b"some content");
+        let yes = s.put("anyfile", b"some content").await;
         assert!(yes.is_ok());
 
-        let yes = s.get("anyfile");
+        let yes = s.get("anyfile").await;
         assert!(yes.is_ok());
 
-        let yes = s.del("anyfile");
+        let yes = s.del("anyfile").await;
         assert!(yes.is_ok());
 
-        let err = s.get("anyfile");
+        let err = s.get("anyfile").await;
         assert!(err.is_err());
 
-        let resutl = s.put("some/sub/directory", b"subcontent");
+        let result = s.put("some/sub/directory", b"subcontent").await;
         assert!(result.is_ok());
 
-        let result = s.get("some/sub/directory");
+        let result = s.get("some/sub/directory").await;
         assert!(result.is_ok());
 
-        let err = s.get("some/sub/missing");
+        let err = s.get("some/sub/missing").await;
         assert!(err.is_err());
 
-        let err = s.get("some/sub");
+        let err = s.get("some/sub").await;
         assert!(err.is_err());
 
-        let r1 = s.put("multi/key1/file1", b"AA");
-        let r2 = s.put("multi/key1/file2", b"AA");
-        let r3 = s.put("multi/key2/file1", b"BB");
-        let r4 = s.put("multiother/file1", b"CC");
+        let r1 = s.put("multi/key1/file1", b"AA").await;
+        let r2 = s.put("multi/key1/file2", b"AA").await;
+        let r3 = s.put("multi/key2/file1", b"BB").await;
+        let r4 = s.put("multiother/file1", b"CC").await;
 
         assert!(r1.is_ok());
         assert!(r2.is_ok());
         assert!(r3.is_ok());
         assert!(r4.is_ok());
 
-        let resut = s.list("multi/");
+        let result = s.list("multi/").await;
         assert!(result.is_ok());
 
         assert_eq!(
@@ -377,7 +377,8 @@ mod tests {
 <ListBucketResult xmlns="http://s3.amazonaws.com/doc/2006-03-01/"><Name>somebucket</Name><Prefix>multi</Prefix><KeyCount>4</KeyCount><MaxKeys>4500</MaxKeys><Delimiter></Delimiter><IsTruncated>false</IsTruncated><Contents><Key>multi/key1/file1</Key><LastModified>2021-06-24T14:14:00.068Z</LastModified><ETag>&#34;3b98e2dffc6cb06a89dcb0d5c60a0206&#34;</ETag><Size>2</Size><Owner><ID>02d6176db174dc93cb1b899f7c6078f08654445fe8cf1b6ce98d8855f66bdbf4</ID><DisplayName>minio</DisplayName></Owner><StorageClass>STANDARD</StorageClass></Contents><Contents><Key>multi/key1/file2</Key><LastModified>2021-06-24T14:14:00.074Z</LastModified><ETag>&#34;3b98e2dffc6cb06a89dcb0d5c60a0206&#34;</ETag><Size>2</Size><Owner><ID>02d6176db174dc93cb1b899f7c6078f08654445fe8cf1b6ce98d8855f66bdbf4</ID><DisplayName>minio</DisplayName></Owner><StorageClass>STANDARD</StorageClass></Contents><Contents><Key>multi/key2/file1</Key><LastModified>2021-06-24T14:14:00.080Z</LastModified><ETag>&#34;9d3d9048db16a7eee539e93e3618cbe7&#34;</ETag><Size>2</Size><Owner><ID>02d6176db174dc93cb1b899f7c6078f08654445fe8cf1b6ce98d8855f66bdbf4</ID><DisplayName>minio</DisplayName></Owner><StorageClass>STANDARD</StorageClass></Contents><Contents><Key>multiother/file1</Key><LastModified>2021-06-24T14:14:00.086Z</LastModified><ETag>&#34;aa53ca0b650dfd85c4f59fa156f7a2cc&#34;</ETag><Size>2</Size><Owner><ID>02d6176db174dc93cb1b899f7c6078f08654445fe8cf1b6ce98d8855f66bdbf4</ID><DisplayName>minio</DisplayName></Owner><StorageClass>STANDARD</StorageClass></Contents><EncodingType>url</EncodingType></ListBucketResult>
 "#;
 
-        let response = ListBucketResult::from_xml(r.as_bytes())?;
+        let response = ListBucketResult::from_xml(r.as_bytes())
+            .map_err(|e| anyhow!(e))?;
 
         assert_eq!(
             response,
@@ -402,5 +403,7 @@ mod tests {
                 ),
             }
         );
+
+        Ok(())
     }
 }

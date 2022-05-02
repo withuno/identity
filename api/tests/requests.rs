@@ -111,42 +111,48 @@ mod requests {
                 "minioadmin",
                 "minioadmin",
                 &tmpname(32),
-            )?,
+                "v0",
+            ).await?,
             tokens: S3Store::new(
                 "http://localhost:9000",
                 "minio",
                 "minioadmin",
                 "minioadmin",
                 &tmpname(32),
-            )?,
+                "v0",
+            ).await?,
             vaults: S3Store::new(
                 "http://localhost:9000",
                 "minio",
                 "minioadmin",
                 "minioadmin",
                 &tmpname(32),
-            )?,
+                "v0",
+            ).await?,
             services: S3Store::new(
                 "http://localhost:9000",
                 "minio",
                 "minioadmin",
                 "minioadmin",
                 &tmpname(32),
-            )?,
+                "v0",
+            ).await?,
             sessions: S3Store::new(
                 "http://localhost:9000",
                 "minio",
                 "minioadmin",
                 "minioadmin",
                 &tmpname(32),
-            )?,
+                "v0",
+            ).await?,
             mailboxes: S3Store::new(
                 "http://localhost:9000",
                 "minio",
                 "minioadmin",
                 "minioadmin",
                 &tmpname(32),
-            )?,
+                "v0",
+            ).await?,
         };
 
         dbs.objects.create_bucket_if_not_exists().await?;
@@ -170,7 +176,7 @@ mod requests {
     async fn setup_tmp_api() -> Result<(tide::Server<()>, Dbs<S3Store>)> {
         // we don't include objects db here because its only used in tests
         let dbs = setup_dbs().await?;
-        let api = build_api(
+        let api = build_routes(
             dbs.tokens.clone(),
             dbs.vaults.clone(),
             dbs.services.clone(),
