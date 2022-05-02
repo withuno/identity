@@ -1,6 +1,6 @@
 #[cfg(test)]
 mod requests {
-    use api::{add_auth_info, build_api, build_api_v2, signed_pow_auth};
+    use api::{add_auth_info, build_routes, signed_pow_auth};
     use api::mailbox::{
         Mailbox, MessageRequest, MessageStored, MessageToDelete, Payload,
     };
@@ -10,6 +10,7 @@ mod requests {
 
     use anyhow::anyhow;
     use anyhow::bail;
+    use anyhow::Result;
     use async_std::task;
 
     use base64::STANDARD_NO_PAD;
@@ -53,47 +54,19 @@ mod requests {
     pub use api::store::FileStore;
 
     #[cfg(not(feature = "s3"))]
-    fn setup_tmp_api() -> anyhow::Result<(tide::Server<()>, Dbs<FileStore>)> {
-        use tempfile::TempDir;
-        let dir = TempDir::new().unwrap();
-
+    async fn setup_tmp_api() -> Result<(tide::Server<()>, Dbs<FileStore>)> {
+        let dir = tempfile::TempDir::new()?;
         let dbs = Dbs {
-            objects: FileStore::new(dir.path().as_os_str()).unwrap(),
-            tokens: FileStore::new(dir.path().as_os_str()).unwrap(),
-            vaults: FileStore::new(dir.path().as_os_str()).unwrap(),
-            services: FileStore::new(dir.path().as_os_str()).unwrap(),
-            sessions: FileStore::new(dir.path().as_os_str()).unwrap(),
-            mailboxes: FileStore::new(dir.path().as_os_str()).unwrap(),
+            objects: FileStore::new(dir.path(), "objs", "v0").await?,
+            tokens: FileStore::new(dir.path(), "toks", "v0").await?,
+            vaults: FileStore::new(dir.path(), "vaults", "v0").await?,
+            services: FileStore::new(dir.path(), "serv", "v0").await?,
+            sessions: FileStore::new(dir.path(), "sess", "v0").await?,
+            mailboxes: FileStore::new(dir.path(), "mbxs", "v0").await?,
         };
-
         // we don't include objects db here because its only used in tests
-        let api = build_api(
-            dbs.tokens.clone(),
-            dbs.vaults.clone(),
-            dbs.services.clone(),
-            dbs.sessions.clone(),
-            dbs.mailboxes.clone(),
-        )?;
-        Ok((api, dbs))
-    }
-
-    #[cfg(not(feature = "s3"))]
-    fn setup_tmp_api_v2()
-    -> anyhow::Result<(tide::Server<()>, Dbs<FileStore>)> {
-        use tempfile::TempDir;
-        let dir = TempDir::new().unwrap();
-
-        let dbs = Dbs {
-            objects: FileStore::new(dir.path().as_os_str()).unwrap(),
-            tokens: FileStore::new(dir.path().as_os_str()).unwrap(),
-            vaults: FileStore::new(dir.path().as_os_str()).unwrap(),
-            services: FileStore::new(dir.path().as_os_str()).unwrap(),
-            sessions: FileStore::new(dir.path().as_os_str()).unwrap(),
-            mailboxes: FileStore::new(dir.path().as_os_str()).unwrap(),
-        };
-
-        // we don't include objects db here because its only used in tests
-        let api = build_api_v2(
+        // todo: I don't understand this comment ^
+        let api = build_routes(
             dbs.tokens.clone(),
             dbs.vaults.clone(),
             dbs.services.clone(),
@@ -107,7 +80,7 @@ mod requests {
     pub use api::store::S3Store;
 
     #[cfg(feature = "s3")]
-    fn setup_dbs() -> anyhow::Result<Dbs<S3Store>> {
+    async fn setup_dbs() -> Result<Dbs<S3Store>> {
         // modified from:
         // https://doc.servo.org/src/tempfile/util.rs.html#9
         use rand::distributions::Alphanumeric;
@@ -176,42 +149,28 @@ mod requests {
             )?,
         };
 
-        task::block_on(dbs.objects.create_bucket_if_not_exists())?;
-        task::block_on(dbs.tokens.create_bucket_if_not_exists())?;
-        task::block_on(dbs.vaults.create_bucket_if_not_exists())?;
-        task::block_on(dbs.services.create_bucket_if_not_exists())?;
-        task::block_on(dbs.sessions.create_bucket_if_not_exists())?;
-        task::block_on(dbs.mailboxes.create_bucket_if_not_exists())?;
+        dbs.objects.create_bucket_if_not_exists().await?;
+        dbs.tokens.create_bucket_if_not_exists().await?;
+        dbs.vaults.create_bucket_if_not_exists().await?;
+        dbs.services.create_bucket_if_not_exists().await?;
+        dbs.sessions.create_bucket_if_not_exists().await?;
+        dbs.mailboxes.create_bucket_if_not_exists().await?;
 
-        task::block_on(dbs.objects.empty_bucket())?;
-        task::block_on(dbs.tokens.empty_bucket())?;
-        task::block_on(dbs.vaults.empty_bucket())?;
-        task::block_on(dbs.services.empty_bucket())?;
-        task::block_on(dbs.sessions.empty_bucket())?;
-        task::block_on(dbs.mailboxes.empty_bucket())?;
+        dbs.objects.empty_bucket().await?;
+        dbs.tokens.empty_bucket().await?;
+        dbs.vaults.empty_bucket().await?;
+        dbs.services.empty_bucket().await?;
+        dbs.sessions.empty_bucket().await?;
+        dbs.mailboxes.empty_bucket().await?;
 
         Ok(dbs)
     }
 
     #[cfg(feature = "s3")]
-    fn setup_tmp_api() -> anyhow::Result<(tide::Server<()>, Dbs<S3Store>)> {
+    async fn setup_tmp_api() -> Result<(tide::Server<()>, Dbs<S3Store>)> {
         // we don't include objects db here because its only used in tests
-        let dbs = setup_dbs()?;
+        let dbs = setup_dbs().await?;
         let api = build_api(
-            dbs.tokens.clone(),
-            dbs.vaults.clone(),
-            dbs.services.clone(),
-            dbs.sessions.clone(),
-            dbs.mailboxes.clone(),
-        )?;
-        Ok((api, dbs))
-    }
-
-    #[cfg(feature = "s3")]
-    fn setup_tmp_api_v2() -> anyhow::Result<(tide::Server<()>, Dbs<S3Store>)> {
-        // we don't include objects db here because its only used in tests
-        let dbs = setup_dbs()?;
-        let api = build_api_v2(
             dbs.tokens.clone(),
             dbs.vaults.clone(),
             dbs.services.clone(),
@@ -228,7 +187,7 @@ mod requests {
         argon: &str,
         s64: &str,
         id: &Id,
-    ) -> anyhow::Result<()> {
+    ) -> Result<()> {
         let body = req.take_body();
         let bbytes: Vec<u8> = task::block_on(body.into_bytes())
             .map_err(|_| anyhow!("body bytes failed"))?;
@@ -287,7 +246,7 @@ mod requests {
         next: &mut Request,
         id: &Id,
     )
-    -> anyhow::Result<()>
+    -> Result<()>
     {
         let auth_info_str = prev
             .header("authentication-info")
@@ -315,7 +274,7 @@ mod requests {
         params: HashMap<String, String>,
     }
 
-    fn parse_www_auth(header: &str) -> anyhow::Result<WwwAuthTemp> {
+    fn parse_www_auth(header: &str) -> Result<WwwAuthTemp> {
         let items = match header.strip_prefix("tuned-digest-signature") {
             Some(s) => s.trim().split(';'),
             None => {
@@ -339,7 +298,7 @@ mod requests {
         }
     }
 
-    fn parse_auth_info(header: &str) -> anyhow::Result<AuthInfoTemp> {
+    fn parse_auth_info(header: &str) -> Result<AuthInfoTemp> {
         let items = header.trim().split(';');
         let mut map = HashMap::new();
         for i in items {
@@ -357,34 +316,34 @@ mod requests {
         }
     }
 
-    fn init_nonce(
+    async fn init_nonce(
         token_db: &impl Database,
         scopes: &[&'static str],
-    ) -> anyhow::Result<String> {
+    ) -> Result<String> {
         let n64 = "U4L+xVHzX4qzBSDPv5NJMhB2HJuhkksmFqJe7geX+xA";
         let n = base64::decode_config(&n64, STANDARD_NO_PAD)?;
         let n64url = base64::encode_config(&n, URL_SAFE_NO_PAD);
         let token = json!({"argon":TUNE,"allow":scopes});
         let tstr = token.to_string();
         let tok_bytes = tstr.as_bytes();
-        let _ = task::block_on(token_db.put(&n64url, tok_bytes))?;
+        let _ = token_db.put(&n64url, tok_bytes).await?;
         Ok(n64.into())
     }
 
-    #[test]
-    fn v1_health_get() -> anyhow::Result<()> {
-        let (api, _) = setup_tmp_api().unwrap();
+    #[async_std::test]
+    async fn health_get() -> Result<()> {
+        let (api, _) = setup_tmp_api().await?;
 
         let req: Request = surf::get("http://example.com/health").into();
-        let res: Response = task::block_on(api.respond(req))
+        let res: Response = api.respond(req).await
             .map_err(|_| anyhow!("request failed"))?;
         assert_eq!(StatusCode::NoContent, res.status());
         Ok(())
     }
 
-    #[test]
-    fn v1_body_size_limit() -> anyhow::Result<()> {
-        let (_, dbs) = setup_tmp_api().unwrap();
+    #[async_std::test]
+    async fn body_size_limit() -> Result<()> {
+        let (_, dbs) = setup_tmp_api().await?;
 
         let state = State::new(dbs.objects.clone(), dbs.tokens.clone());
         let mut foo = tide::with_state(state);
@@ -404,7 +363,7 @@ mod requests {
         let bytes0 = vec![0xF0; ONE_MB];
         req0.set_body(bytes0);
 
-        let res0: Response = task::block_on(api.respond(req0))
+        let res0: Response = api.respond(req0).await
             .map_err(|_| anyhow!("request0 failed"))?;
 
         assert_eq!(StatusCode::NoContent, res0.status());
@@ -413,7 +372,7 @@ mod requests {
         let bytes1 = vec![0xF0; ONE_MB + 1];
         req1.set_body(bytes1);
 
-        let res1: Response = task::block_on(api.respond(req1))
+        let res1: Response = api.respond(req1).await
             .map_err(|_| anyhow!("request1 failed"))?;
 
         assert_eq!(StatusCode::BadRequest, res1.status());
@@ -421,14 +380,14 @@ mod requests {
         Ok(())
     }
 
-    #[test]
-    fn v1_authentication() -> anyhow::Result<()> {
+    #[async_std::test]
+    async fn authentication() -> Result<()> {
         // test www-authenticate
         // test auth-info
         // test scopes
         // test nonce reuse
 
-        let (_, dbs) = setup_tmp_api().unwrap();
+        let (_, dbs) = setup_tmp_api().await?;
 
         let state = State::new(dbs.objects.clone(), dbs.tokens.clone());
         let mut foo = tide::with_state(state);
@@ -445,7 +404,7 @@ mod requests {
 
         // don't sign the initial request
         let req0: Request = surf::get(url.to_string()).into();
-        let res0: Response = task::block_on(api.respond(req0))
+        let res0: Response = api.respond(req0).await
             .map_err(|_| anyhow!("request0 failed"))?;
 
         // process the www-authenticate header
@@ -466,7 +425,7 @@ mod requests {
         let mut req1: Request = surf::get(url.to_string()).into();
         let alg1 = &www_auth1.params["algorithm"];
         sign_req(&mut req1, &n64_1, alg1, &salt64_1, &id)?;
-        let res1: Response = task::block_on(api.respond(req1))
+        let res1: Response = api.respond(req1).await
             .map_err(|_| anyhow!("request1 failed"))?;
 
         assert_eq!(StatusCode::NoContent, res1.status());
@@ -488,13 +447,13 @@ mod requests {
         let alg2 = &auth_info2.params["argon"];
         sign_req(&mut req2, &n64_2, alg2, &salt64_2, &id)?;
 
-        let mut res2: Response = task::block_on(api.respond(req2))
+        let mut res2: Response = api.respond(req2).await
             .map_err(|_| anyhow!("request2 failed"))?;
 
         assert_eq!(StatusCode::Unauthorized, res2.status());
 
         let exp_body2 = r#"{"reason":"scope mismatch","action":"create"}"#;
-        let actual_body2 = task::block_on(res2.take_body().into_bytes())
+        let actual_body2 = res2.take_body().into_bytes().await
             .map_err(|_| anyhow!("body read failed"))?;
         assert_eq!(exp_body2.as_bytes(), actual_body2);
 
@@ -514,9 +473,8 @@ mod requests {
         let alg3 = &www_auth3.params["algorithm"];
         sign_req(&mut req3, &n64_3, alg3, &salt64_3, &id)?;
 
-        let fut3 = api.respond(req3);
-        let res3: Response =
-            task::block_on(fut3).map_err(|_| anyhow!("request3 failed"))?;
+        let res3: Response = api.respond(req3).await
+            .map_err(|_| anyhow!("request3 failed"))?;
 
         assert_eq!(StatusCode::NoContent, res3.status());
 
@@ -532,7 +490,7 @@ mod requests {
         // todo: test for scope: create
 
         // add some data so it's an update instead of a create
-        let _ = task::block_on(dbs.objects.put("bar", "data".as_bytes()))?;
+        let _ = dbs.objects.put("bar", "data".as_bytes()).await?;
 
         let mut salt4 = [0u8; 8];
         rand::thread_rng().fill_bytes(&mut salt4);
@@ -543,9 +501,8 @@ mod requests {
         let alg4 = &auth_info4.params["argon"];
         sign_req(&mut req4, &n64_4, alg4, &salt64_4, &id)?;
 
-        let fut4 = api.respond(req4);
-        let res4: Response =
-            task::block_on(fut4).map_err(|_| anyhow!("request4 failed"))?;
+        let res4: Response = api.respond(req4).await
+            .map_err(|_| anyhow!("request4 failed"))?;
 
         assert_eq!(StatusCode::NoContent, res4.status());
 
@@ -558,154 +515,25 @@ mod requests {
 
         sign_req(&mut req5, &n64_4, alg4, &salt64_5, &id)?;
 
-        let fut5 = api.respond(req5);
-        let mut res5: Response =
-            task::block_on(fut5).map_err(|_| anyhow!("request5 failed"))?;
+        let mut res5: Response = api.respond(req5).await
+            .map_err(|_| anyhow!("request5 failed"))?;
 
         assert_eq!(StatusCode::Unauthorized, res5.status());
 
         let expected_body5 = r#"{"reason":"unknown nonce","action":"update"}"#;
-        let actual_body5 = task::block_on(res5.take_body().into_bytes())
+        let actual_body5 = res5.take_body().into_bytes().await
             .map_err(|_| anyhow!("body read failed"))?;
         assert_eq!(expected_body5.as_bytes(), actual_body5);
 
         Ok(())
     }
 
-    #[test]
-    fn v1_vault_get() -> anyhow::Result<()> {
-        let (api, dbs) = setup_tmp_api().unwrap();
-
-        let n64_1 = init_nonce(&dbs.tokens, &["read"])?;
-
-        let id = Id([0u8; ID_LENGTH]);
-        let keypair = KeyPair::from(&id);
-        let pubkey = keypair.public.as_bytes();
-        let vid = base64::encode_config(&pubkey, base64::URL_SAFE_NO_PAD);
-        let base = Url::parse("http://example.com/vaults/")?;
-        let url = base.join(&vid).unwrap();
-
-        let mut req1: Request = surf::get(url.to_string()).into();
-        sign_req(&mut req1, &n64_1, TUNE, SALT, &id)?;
-        let res1: Response = task::block_on(api.respond(req1))
-            .map_err(|_| anyhow!("request failed"))?;
-
-        assert_eq!(StatusCode::NotFound, res1.status());
-
-        let aih1 = res1
-            .header("authentication-info")
-            .ok_or(anyhow!("expected auth-info"))?;
-        let auth_info1 = parse_auth_info(aih1.last().as_str())?;
-        let n64_2 = &auth_info1.params["nextnonce"];
-
-        let tdata = "vault data is opaque";
-        let tdata_task = dbs.vaults.put(&vid, &tdata.as_bytes());
-        let _ = task::block_on(tdata_task)?;
-
-        let mut req2: Request = surf::get(url.to_string()).into();
-        let mut salt2 = [0u8; 8];
-        rand::thread_rng().fill_bytes(&mut salt2);
-        let salt64_2 = base64::encode_config(&salt2, STANDARD_NO_PAD);
-        let alg1 = &auth_info1.params["argon"];
-        sign_req(&mut req2, &n64_2, alg1, &salt64_2, &id)?;
-
-        let mut res2: Response = task::block_on(api.respond(req2))
-            .map_err(|_| anyhow!("request failed"))?;
-
-        assert_eq!(StatusCode::Ok, res2.status());
-
-        let expected_body = "vault data is opaque";
-        let actual_body = task::block_on(res2.take_body().into_bytes())
-            .map_err(|_| anyhow!("body read failed"))?;
-        assert_eq!(expected_body.as_bytes(), actual_body);
-
-        let aih2 = res2
-            .header("authentication-info")
-            .ok_or(anyhow!("expected auth-info"))?;
-        let auth_info2 = parse_auth_info(aih2.last().as_str())?;
-        let n64_3 = &auth_info2.params["nextnonce"];
-
-        // use the wrong identity
-        let bad_id_bytes = [0xFFu8; uno::ID_LENGTH];
-        let bad_id = uno::Id(bad_id_bytes);
-
-        let mut req3: Request = surf::get(url.to_string()).into();
-        let mut salt3 = [0u8; 8];
-        rand::thread_rng().fill_bytes(&mut salt3);
-        let salt64_3 = base64::encode_config(&salt3, STANDARD_NO_PAD);
-        let alg3 = &auth_info2.params["argon"];
-        sign_req(&mut req3, &n64_3, alg3, &salt64_3, &bad_id)?;
-
-        let res3: Response = task::block_on(api.respond(req3))
-            .map_err(|_| anyhow!("request failed"))?;
-
-        assert_eq!(StatusCode::Forbidden, res3.status());
-
-        Ok(())
-    }
-
-    #[test]
-    fn v1_vault_put() -> anyhow::Result<()> {
-        let (api, dbs) = setup_tmp_api().unwrap();
-
-        let n64 = init_nonce(&dbs.tokens, &["create", "update"])?;
-
-        let id = Id([0u8; ID_LENGTH]);
-        let keypair = KeyPair::from(&id);
-        let pubkey = keypair.public.as_bytes();
-        let vid = base64::encode_config(&pubkey, base64::URL_SAFE_NO_PAD);
-        let base = Url::parse("http://example.com/vaults/")?;
-        let url = base.join(&vid).unwrap();
-
-        let mut req: Request = surf::put(url.to_string())
-            .body("vault data is opaque")
-            .into();
-        sign_req(&mut req, &n64, TUNE, SALT, &id)?;
-
-        let mut res: Response = task::block_on(api.respond(req))
-            .map_err(|_| anyhow!("request failed"))?;
-
-        assert_eq!(StatusCode::Ok, res.status());
-
-        let expected_body = "vault data is opaque";
-        let actual_body = task::block_on(res.take_body().into_bytes())
-            .map_err(|_| anyhow!("body read failed"))?;
-        assert_eq!(expected_body.as_bytes(), actual_body);
-
-        let stored_data = task::block_on(dbs.vaults.get(&vid))?;
-        assert_eq!(expected_body.as_bytes(), stored_data);
-
-        let aih = res
-            .header("authentication-info")
-            .ok_or(anyhow!("expected auth-info"))?;
-        let auth_info = parse_auth_info(aih.last().as_str())?;
-        let n64_2 = &auth_info.params["nextnonce"];
-
-        // use the wrong identity
-        let bad_id_bytes = [0xFFu8; uno::ID_LENGTH];
-        let bad_id = uno::Id(bad_id_bytes);
-
-        let mut req2: Request = surf::get(url.to_string()).into();
-        let mut salt2 = [0u8; 8];
-        rand::thread_rng().fill_bytes(&mut salt2);
-        let salt64_2 = base64::encode_config(&salt2, STANDARD_NO_PAD);
-        let alg2 = &auth_info.params["argon"];
-        sign_req(&mut req2, &n64_2, alg2, &salt64_2, &bad_id)?;
-
-        let res2: Response = task::block_on(api.respond(req2))
-            .map_err(|_| anyhow!("request failed"))?;
-
-        assert_eq!(StatusCode::Forbidden, res2.status());
-
-        Ok(())
-    }
-
-    #[test]
-    fn v1_service_get() -> anyhow::Result<()> {
-        let (api, dbs) = setup_tmp_api().unwrap();
+    #[async_std::test]
+    async fn service_get() -> Result<()> {
+        let (api, dbs) = setup_tmp_api().await?;
 
         let id = Id([0u8; ID_LENGTH]); // use the zero id
-        let n64_1 = init_nonce(&dbs.tokens, &["read"])?;
+        let n64_1 = init_nonce(&dbs.tokens, &["read"]).await?;
 
         let resource = "http://example.com/services/foo.json";
         let url = Url::parse(resource)?;
@@ -714,9 +542,9 @@ mod requests {
         let salt1 = SALT;
         sign_req(&mut req1, &n64_1, TUNE, salt1, &id)?;
         let mut req2 = req1.clone(); // for the next request
-        let fut1 = api.respond(req1);
-        let res1: Response =
-            task::block_on(fut1).map_err(|_| anyhow!("request failed"))?;
+
+        let res1: Response = api.respond(req1).await
+            .map_err(|_| anyhow!("request failed"))?;
 
         // expect a 404 since the file does not exist yet
         assert_eq!(StatusCode::NotFound, res1.status());
@@ -730,8 +558,7 @@ mod requests {
 
         // add the file so the next request will succeed
         let tdata = r#"{"test": "data"}"#;
-        let foof = dbs.services.put("main/foo.json", &tdata.as_bytes());
-        let _ = task::block_on(foof)?;
+        let _ = dbs.services.put("main/foo.json", &tdata.as_bytes()).await?;
 
         // gen a new salt and redo the request
         let mut salt2 = [0u8; 8];
@@ -740,13 +567,12 @@ mod requests {
         let alg2 = &auth_info1.params["argon"];
         sign_req(&mut req2, &n64_2, alg2, &salt64_2, &id)?;
 
-        let fut2 = api.respond(req2);
-        let mut res2: Response =
-            task::block_on(fut2).map_err(|_| anyhow!("request2 failed"))?;
+        let mut res2: Response = api.respond(req2).await
+            .map_err(|_| anyhow!("request2 failed"))?;
 
         assert_eq!(StatusCode::Ok, res2.status());
         let expected_body2 = r#"{"test": "data"}"#;
-        let actual_body2 = task::block_on(res2.take_body().into_bytes())
+        let actual_body2 = res2.take_body().into_bytes().await
             .map_err(|_| anyhow!("body read failed"))?;
         assert_eq!(&expected_body2.as_bytes(), &actual_body2);
 
@@ -771,27 +597,25 @@ mod requests {
 
         // add the file pr-add/bar.json so the next request will succeed
         let tdata3 = r#"{"newservice": "bar"}"#;
-        let foof = dbs.services.put("pr-add/bar.json", &tdata3.as_bytes());
-        let _ = task::block_on(foof)?;
+        let _ = dbs.services.put("pr-add/bar.json", &tdata3.as_bytes()).await?;
 
-        let fut3 = api.respond(req3);
-        let mut res3: Response =
-            task::block_on(fut3).map_err(|_| anyhow!("request3 failed"))?;
+        let mut res3: Response = api.respond(req3).await
+            .map_err(|_| anyhow!("request3 failed"))?;
 
         assert_eq!(StatusCode::Ok, res3.status());
         let expected_body3 = r#"{"newservice": "bar"}"#;
-        let actual_body3 = task::block_on(res3.take_body().into_bytes())
+        let actual_body3 = res3.take_body().into_bytes().await
             .map_err(|_| anyhow!("body read failed"))?;
         assert_eq!(&expected_body3.as_bytes(), &actual_body3);
 
         Ok(())
     }
 
-    #[test]
-    fn v1_services_put() -> anyhow::Result<()> {
-        let (api, dbs) = setup_tmp_api().unwrap();
+    #[async_std::test]
+    async fn services_put() -> Result<()> {
+        let (api, dbs) = setup_tmp_api().await?;
 
-        let n64 = init_nonce(&dbs.tokens, &["create", "update"])?;
+        let n64 = init_nonce(&dbs.tokens, &["create", "update"]).await?;
 
         let resource = "http://example.com/services/foo.json";
         let url = Url::parse(resource)?;
@@ -801,19 +625,20 @@ mod requests {
 
         let id = Id([0u8; ID_LENGTH]);
         sign_req(&mut req, &n64, TUNE, SALT, &id)?;
-        let fut = api.respond(req);
-        let res: Response =
-            task::block_on(fut).map_err(|_| anyhow!("request failed"))?;
+
+        let res: Response = api.respond(req).await
+            .map_err(|_| anyhow!("request failed"))?;
 
         assert_eq!(StatusCode::MethodNotAllowed, res.status());
+
         Ok(())
     }
 
-    #[test]
-    fn v1_services_delete() -> anyhow::Result<()> {
-        let (api, dbs) = setup_tmp_api().unwrap();
+    #[async_std::test]
+    async fn services_delete() -> Result<()> {
+        let (api, dbs) = setup_tmp_api().await?;
 
-        let n64 = init_nonce(&dbs.tokens, &["delete"])?;
+        let n64 = init_nonce(&dbs.tokens, &["delete"]).await?;
 
         let resource = "http://example.com/services/foo.json";
         let url = Url::parse(resource)?;
@@ -821,24 +646,24 @@ mod requests {
 
         let id = Id([0u8; ID_LENGTH]);
         sign_req(&mut req, &n64, TUNE, SALT, &id)?;
-        let fut = api.respond(req);
-        let res: Response =
-            task::block_on(fut).map_err(|_| anyhow!("request failed"))?;
+        let res: Response = api.respond(req).await
+            .map_err(|_| anyhow!("request failed"))?;
 
         assert_eq!(StatusCode::MethodNotAllowed, res.status());
+
         Ok(())
     }
 
-    #[test]
-    fn v1_ssss_get() -> anyhow::Result<()> {
-        let (api, dbs) = setup_tmp_api().unwrap();
+    #[async_std::test]
+    async fn ssss_get() -> Result<()> {
+        let (api, dbs) = setup_tmp_api().await?;
 
         let mu = Mu([0u8; MU_LENGTH]);
         let session = Session::try_from(&mu)?;
         let cfg = base64::URL_SAFE_NO_PAD;
         let sid = base64::encode_config(session.0, cfg);
         let base = Url::parse("http://example.com/ssss/")?;
-        let url = base.join(&sid).unwrap();
+        let url = base.join(&sid)?;
 
         let req1: Request = surf::get(url.to_string()).into();
         let req2 = req1.clone(); // for the next request
@@ -851,443 +676,342 @@ mod requests {
 
         // add the file so the next request will succeed
         let tdata = r#"{"test":"data"}"#;
-        let foof = dbs.sessions.put(&sid, &tdata.as_bytes());
-        let _ = task::block_on(foof)?;
+        let _ = dbs.sessions.put(&sid, &tdata.as_bytes()).await?;
 
-        let fut2 = api.respond(req2);
-        let mut res2: Response =
-            task::block_on(fut2).map_err(|_| anyhow!("request2 failed"))?;
+        let mut res2: Response = api.respond(req2).await
+            .map_err(|_| anyhow!("request2 failed"))?;
 
         assert_eq!(StatusCode::Ok, res2.status());
         let expected_body2 = r#"{"test":"data"}"#;
-        let actual_body2 = task::block_on(res2.take_body().into_bytes())
+        let actual_body2 = res2.take_body().into_bytes().await
             .map_err(|_| anyhow!("body read failed"))?;
         assert_eq!(&expected_body2.as_bytes(), &actual_body2);
 
         Ok(())
     }
 
-    #[test]
-    fn v1_ssss_put() -> anyhow::Result<()> {
-        let (api, dbs) = setup_tmp_api().unwrap();
+    #[async_std::test]
+    async fn ssss_put() -> Result<()> {
+        let (api, dbs) = setup_tmp_api().await?;
 
         let mu = Mu([0u8; MU_LENGTH]);
         let session = Session::try_from(&mu)?;
         let cfg = base64::URL_SAFE_NO_PAD;
         let sid = base64::encode_config(session.0, cfg);
         let base = Url::parse("http://example.com/ssss/")?;
-        let url = base.join(&sid).unwrap();
+        let url = base.join(&sid)?;
 
         let req1: Request = surf::put(url.to_string())
             .body(json!({"test":"data"}))
             .into();
 
-        let fut1 = api.respond(req1);
-        let mut res1: Response =
-            task::block_on(fut1).map_err(|_| anyhow!("request failed"))?;
+        let mut res1: Response = api.respond(req1).await
+            .map_err(|_| anyhow!("request failed"))?;
 
         assert_eq!(StatusCode::Ok, res1.status());
         let expected_body1 = r#"{"test":"data"}"#;
-        let actual_body1 = task::block_on(res1.take_body().into_bytes())
+        let actual_body1 = res1.take_body().into_bytes().await
             .map_err(|_| anyhow!("body read failed"))?;
         assert_eq!(expected_body1.as_bytes(), actual_body1);
 
-        let stored_data = task::block_on(dbs.sessions.get(&sid))?;
+        let stored_data = dbs.sessions.get(&sid).await?;
         assert_eq!(expected_body1.as_bytes(), stored_data);
 
         Ok(())
     }
 
-    #[test]
-    fn v1_ssss_patch() -> anyhow::Result<()> {
-        let (api, dbs) = setup_tmp_api().unwrap();
+    #[async_std::test]
+    async fn ssss_patch() -> Result<()> {
+        let (api, dbs) = setup_tmp_api().await?;
 
         let mu = Mu([0u8; MU_LENGTH]);
         let session = Session::try_from(&mu)?;
         let cfg = base64::URL_SAFE_NO_PAD;
         let sid = base64::encode_config(session.0, cfg);
         let base = Url::parse("http://example.com/ssss/")?;
-        let url = base.join(&sid).unwrap();
+        let url = base.join(&sid)?;
 
         let req1: Request = surf::patch(url.to_string())
             .body(json!({"patch": "me in"}))
             .into();
 
-        let fut1 = api.respond(req1);
-        let res1: Response =
-            task::block_on(fut1).map_err(|_| anyhow!("request failed"))?;
+        let res1: Response = api.respond(req1).await
+            .map_err(|_| anyhow!("request failed"))?;
 
         assert_eq!(StatusCode::NotFound, res1.status());
 
         // add the file so the next request will succeed
         let tdata = r#"{"test":"session data"}"#;
-        let ses = dbs.sessions.put(&sid, &tdata.as_bytes());
-        let _ = task::block_on(ses)?;
+        let _ = dbs.sessions.put(&sid, &tdata.as_bytes()).await?;
 
         let req2: Request = surf::patch(url.to_string())
             .body(json!({"patch": "me in"}))
             .into();
 
-        let fut2 = api.respond(req2);
-        let mut res2: Response =
-            task::block_on(fut2).map_err(|_| anyhow!("request2 failed"))?;
+        let mut res2: Response = api.respond(req2).await
+            .map_err(|_| anyhow!("request2 failed"))?;
 
         assert_eq!(StatusCode::Ok, res2.status());
         let expected_body2 = r#"{"patch":"me in","test":"session data"}"#;
-        let actual_body2 = task::block_on(res2.take_body().into_bytes())
+        let actual_body2 = res2.take_body().into_bytes().await
             .map_err(|_| anyhow!("body read failed"))?;
         assert_eq!(&expected_body2.as_bytes(), &actual_body2);
 
         Ok(())
     }
 
-    #[test]
-    fn v1_ssss_delete() -> anyhow::Result<()> {
-        let (api, dbs) = setup_tmp_api().unwrap();
+    #[async_std::test]
+    async fn ssss_delete() -> Result<()> {
+        let (api, dbs) = setup_tmp_api().await?;
 
         let mu = Mu([0u8; MU_LENGTH]);
         let session = Session::try_from(&mu)?;
         let cfg = base64::URL_SAFE_NO_PAD;
         let sid = base64::encode_config(session.0, cfg);
         let base = Url::parse("http://example.com/ssss/")?;
-        let url = base.join(&sid).unwrap();
+        let url = base.join(&sid)?;
 
         // add the file so the request will succeed
         let tdata = r#"{"test":"data"}"#;
-        let foof = dbs.sessions.put(&sid, &tdata.as_bytes());
-        let _ = task::block_on(foof)?;
+        let _ = dbs.sessions.put(&sid, &tdata.as_bytes()).await?;
 
         let req1: Request = surf::delete(url.to_string()).into();
-        let req2 = req1.clone(); // for the next request
-        let fut1 = api.respond(req1);
-        let res1: Response =
-            task::block_on(fut1).map_err(|_| anyhow!("request failed"))?;
+        let res1: Response = api.respond(req1).await
+            .map_err(|_| anyhow!("request failed"))?;
 
         assert_eq!(StatusCode::NoContent, res1.status());
 
-        let fut2 = api.respond(req2);
-        let res2: Response =
-            task::block_on(fut2).map_err(|_| anyhow!("request2 failed"))?;
+        let req2: Request = surf::delete(url.to_string()).into();
+        let res2: Response = api.respond(req2).await
+            .map_err(|_| anyhow!("request2 failed"))?;
 
         assert_eq!(StatusCode::NoContent, res2.status());
 
         let req3: Request = surf::get(url.to_string()).into();
-        let fut1 = api.respond(req3);
-        let res3: Response =
-            task::block_on(fut1).map_err(|_| anyhow!("request failed"))?;
+        let res3: Response = api.respond(req3).await
+            .map_err(|_| anyhow!("request3 failed"))?;
 
         assert_eq!(StatusCode::NotFound, res3.status());
 
         Ok(())
     }
 
-    #[test]
-    fn v1_mailbox_auth() {
-        let (api, dbs) = setup_tmp_api().unwrap();
+    async fn mb_do_req(
+        api: &tide::Server<()>,
+        dbs: &Dbs<impl Database>,
+        signed_by: &Id,
+        mut req: Request
+    ) -> Result<Response> {
+        let nonce = init_nonce(&dbs.tokens, &["read", "create", "delete"])
+            .await?;
+        sign_req(&mut req, &nonce, TUNE, SALT, &signed_by)?;
+
+        let res = api.respond(req).await
+            .map_err(|e| anyhow!(e))?;
+
+        Ok(res)
+    }
+
+    #[async_std::test]
+    async fn mailbox_auth() -> Result<()> {
+        let (api, dbs) = setup_tmp_api().await?;
 
         let recipient_id = Id([0u8; ID_LENGTH]);
         let recipient_keypair = KeyPair::from(&recipient_id);
         let recipient_pk = recipient_keypair.public.as_bytes();
 
+        let urlenc_rec_pk = base64::encode_config(recipient_pk,
+            base64::URL_SAFE_NO_PAD
+        );
+        let url = format!("https://example.com/mailboxes/{}", urlenc_rec_pk);
+
         let sender_id = Id([1u8; ID_LENGTH]);
 
-        let request = |signed_by: &Id, mut req: Request| -> Response {
-            let nonce = init_nonce(&dbs.tokens, &["read", "create", "delete"])
-                .unwrap();
-            sign_req(&mut req, &nonce, TUNE, SALT, &signed_by).unwrap();
 
-            task::block_on(api.respond(req)).unwrap()
+        // 1. get your own mailbox
+        //
+        let req1 = surf::get(&url).build();
+        let res1 = mb_do_req(&api, &dbs, &recipient_id, req1).await?;
+        assert_eq!(res1.status(), StatusCode::Ok);
+
+
+        // 2. get someone else's mailbox
+        //
+        let req2 = surf::get(&url).build();
+        let res2 = mb_do_req(&api, &dbs, &sender_id, req2).await?;
+        assert_eq!(res2.status(), StatusCode::Forbidden);
+
+
+        // 3. post to someone's mailbox
+        //
+        let body = MessageRequest {
+            uuid: "1111".to_string(),
+            action: "packed".to_string(),
+            data: Payload {
+                signature: "signature".to_string(),
+                share: "share".to_string(),
+            },
         };
+        let req3 = surf::post(&url)
+            .body(serde_json::to_string(&body)?)
+            .build();
+        let res3 = mb_do_req(&api, &dbs, &sender_id, req3).await?;
+        assert_eq!(res3.status(), StatusCode::Created);
 
-        {
-            // get your own mailbox
-            assert_eq!(
-                request(
-                    &recipient_id,
-                    surf::get(format!(
-                        "https://example.com/mailboxes/{}",
-                        base64::encode_config(
-                            recipient_pk,
-                            base64::URL_SAFE_NO_PAD
-                        )
-                    ))
-                    .build()
-                )
-                .status(),
-                StatusCode::Ok
-            );
 
-            // get someone else's mailbox
-            assert_eq!(
-                request(
-                    &sender_id,
-                    surf::get(format!(
-                        "https://example.com/mailboxes/{}",
-                        base64::encode_config(
-                            recipient_pk,
-                            base64::URL_SAFE_NO_PAD
-                        )
-                    ))
-                    .build()
-                )
-                .status(),
-                StatusCode::Forbidden
-            );
+        // 4 delete someone else's message (even if you created it)
+        //
+        let req4 = surf::delete(&url).build();
+        let res4 = mb_do_req(&api, &dbs, &sender_id, req4).await?;
+        assert_eq!(res4.status(), StatusCode::Forbidden);
 
-            // post to someone's mailbox
-            assert_eq!(
-                request(
-                    &sender_id,
-                    surf::post(format!(
-                        "https://example.com/mailboxes/{}",
-                        base64::encode_config(
-                            recipient_pk,
-                            base64::URL_SAFE_NO_PAD
-                        )
-                    ))
-                    .body(
-                        serde_json::to_string(&MessageRequest {
-                            uuid: "1111".to_string(),
-                            action: "packed".to_string(),
-                            data: Payload {
-                                signature: "signature".to_string(),
-                                share: "share".to_string(),
-                            },
-                        })
-                        .unwrap()
-                    )
-                    .build()
-                )
-                .status(),
-                StatusCode::Created
-            );
 
-            // delete someone else's message
-            // (even if you created it)
-            assert_eq!(
-                request(
-                    &sender_id,
-                    surf::delete(format!(
-                        "https://example.com/mailboxes/{}",
-                        base64::encode_config(
-                            recipient_pk,
-                            base64::URL_SAFE_NO_PAD
-                        ),
-                    ))
-                    .build()
-                )
-                .status(),
-                StatusCode::Forbidden
-            );
-        }
+        Ok(())
     }
 
-    #[test]
-    fn v1_mailbox_actions() {
-        use serde_json::from_slice;
-
-        let (api, dbs) = setup_tmp_api().unwrap();
+    #[async_std::test]
+    async fn mailbox_actions() -> Result<()> {
+        let (api, dbs) = setup_tmp_api().await?;
 
         let recipient_id = Id([0u8; ID_LENGTH]);
         let recipient_pk = KeyPair::from(&recipient_id).public;
 
-        //let recipient2_id = Id([1u8; ID_LENGTH]);
-        //let recipient2_pk = KeyPair::from(&recipient2_id).public;
-
         let sender_id = Id([2u8; ID_LENGTH]);
         let sender_pk = KeyPair::from(&sender_id).public;
+        let sender_pk_b64 = base64::encode(sender_pk);
 
-        //let sender2_id = Id([3u8; ID_LENGTH]);
-        //let sender2_pk = KeyPair::from(&sender2_id).public;
-
-        let request = |signed_by: &Id, mut req: Request| -> Mailbox {
-            let nonce = init_nonce(&dbs.tokens, &["read", "create", "delete"])
-                .unwrap();
-            sign_req(&mut req, &nonce, TUNE, SALT, &signed_by).unwrap();
-
-            let mut r: Response = task::block_on(api.respond(req)).unwrap();
-
-            from_slice(&task::block_on(r.take_body().into_bytes()).unwrap())
-                .unwrap()
-        };
-
-        let delete_request = |signed_by: &Id, mut req: Request| -> Response {
-            let nonce = init_nonce(&dbs.tokens, &["read", "create", "delete"])
-                .unwrap();
-            sign_req(&mut req, &nonce, TUNE, SALT, &signed_by).unwrap();
-
-            task::block_on(api.respond(req)).unwrap()
-        };
-
-        let post_request = |signed_by: &Id,
-                            mut req: Request|
-         -> MessageStored {
-            let nonce = init_nonce(&dbs.tokens, &["read", "create", "delete"])
-                .unwrap();
-            sign_req(&mut req, &nonce, TUNE, SALT, &signed_by).unwrap();
-
-            let mut r: Response = task::block_on(api.respond(req)).unwrap();
-
-            from_slice(&task::block_on(r.take_body().into_bytes()).unwrap())
-                .unwrap()
-        };
-
-        assert_eq!(
-            request(
-                &recipient_id,
-                surf::get(format!(
-                    "https://example.com/mailboxes/{}",
-                    base64::encode_config(
-                        recipient_pk,
-                        base64::URL_SAFE_NO_PAD
-                    )
-                ))
-                .build(),
-            ),
-            Mailbox { messages: vec!() }
+        let urlenc_rec_pk = base64::encode_config(recipient_pk,
+            base64::URL_SAFE_NO_PAD
         );
+        let url = format!("https://example.com/mailboxes/{}", urlenc_rec_pk);
 
-        assert_eq!(
-            post_request(
-                &sender_id,
-                surf::post(format!(
-                    "https://example.com/mailboxes/{}",
-                    base64::encode_config(
-                        recipient_pk,
-                        base64::URL_SAFE_NO_PAD
-                    )
-                ))
-                .body(
-                    serde_json::to_string(&MessageRequest {
-                        uuid: "1111".to_string(),
-                        action: "packed".to_string(),
-                        data: Payload {
-                            signature: "signature".to_string(),
-                            share: "share".to_string(),
-                        },
-                    })
-                    .unwrap()
-                )
-                .build()
-            ),
-            MessageStored {
-                id: 1,
-                uuid: "1111".to_string(),
-                action: "packed".to_string(),
-                from: base64::encode(
-                    sender_pk
-                ),
-                data: Payload {
-                    signature: "signature".to_string(),
-                    share: "share".to_string(),
-                },
+
+        // 1. get empty mailbox
+        //
+        let req1 = surf::get(&url).build();
+        let mut res1 = mb_do_req(&api, &dbs, &recipient_id, req1).await?;
+        assert_eq!(res1.status(), StatusCode::Ok);
+        let bytes1 = res1.take_body().into_bytes().await
+            .map_err(|e| anyhow!(e))?;
+        let body1: Mailbox = serde_json::from_slice(&bytes1)?;
+        assert_eq!(body1, Mailbox { messages: vec!() });
+
+
+        // 2. post a new message and check the stored message
+        // 
+        let req_body2 = MessageRequest {
+            uuid: "1111".to_string(),
+            action: "packed".to_string(),
+            data: Payload {
+                signature: "signature".to_string(),
+                share: "share".to_string(),
+            },
+        };
+        let req2 = surf::post(&url)
+            .body(serde_json::to_string(&req_body2)?)
+            .build();
+        let mut res2 = mb_do_req(&api, &dbs, &sender_id, req2).await?;
+        assert_eq!(res2.status(), StatusCode::Created);
+
+        let expected2 = MessageStored {
+            id: 1,
+            uuid: "1111".to_string(),
+            action: "packed".to_string(),
+            from: sender_pk_b64.clone(),
+            data: Payload {
+                signature: "signature".to_string(),
+                share: "share".to_string(),
+            },
+        };
+        let bytes2 = res2.take_body().into_bytes().await
+            .map_err(|e| anyhow!(e))?;
+        let body2: MessageStored = serde_json::from_slice(&bytes2)?;
+        assert_eq!(body2, expected2);
+
+
+        // 3. post message 2 and ensure the resulting id has been incremented
+        //
+        let req_body3 = MessageRequest {
+            uuid: "2222".to_string(),
+            action: "packed".to_string(),
+            data: Payload {
+                signature: "signature".to_string(),
+                share: "share".to_string(),
+            },
+        };
+        let req3 = surf::post(&url)
+            .body(serde_json::to_string(&req_body3)?)
+            .build();
+        let mut res3 = mb_do_req(&api, &dbs, &sender_id, req3).await?;
+        assert_eq!(res3.status(), StatusCode::Created);
+
+        let expected = MessageStored {
+            id: 2,
+            uuid: "2222".to_string(),
+            action: "packed".to_string(),
+            from: sender_pk_b64.clone(),
+            data: Payload {
+                signature: "signature".to_string(),
+                share: "share".to_string(),
+            },
+        };
+        let bytes3 = res3.take_body().into_bytes().await
+            .map_err(|e| anyhow!(e))?;
+        let body3: MessageStored = serde_json::from_slice(&bytes3)?;
+        assert_eq!(body3, expected);
+
+
+        // 4. delete both messages 
+        // 
+        let body4 = vec!(
+            MessageToDelete {
+                from: sender_pk_b64.clone(),
+                id: 1
+            },
+            MessageToDelete {
+                from: sender_pk_b64.clone(),
+                id: 2
             }
         );
+        let req4 = surf::delete(&url)
+            .body(serde_json::to_string(&body4)?)
+            .build();
 
-        assert_eq!(
-            post_request(
-                &sender_id,
-                surf::post(format!(
-                    "https://example.com/mailboxes/{}",
-                    base64::encode_config(
-                        recipient_pk,
-                        base64::URL_SAFE_NO_PAD
-                    )
-                ))
-                .body(
-                    serde_json::to_string(&MessageRequest {
-                        action: "packed".to_string(),
-                        uuid: "2222".to_string(),
-                        data: Payload {
-                            signature: "signature".to_string(),
-                            share: "share".to_string(),
-                        },
-                    })
-                    .unwrap()
-                )
-                .into()
-            ),
-            MessageStored {
-                id: 2,
-                uuid: "2222".to_string(),
-                action: "packed".to_string(),
-                from: base64::encode(
-                    sender_pk
-                ),
-                data: Payload {
-                    signature: "signature".to_string(),
-                    share: "share".to_string(),
-                },
-            }
-        );
+        let res4 = mb_do_req(&api, &dbs, &recipient_id, req4).await?;
+        assert_eq!(res4.status(), StatusCode::NoContent);
 
-        assert_eq!(
-            delete_request(
-                &recipient_id,
-                surf::delete(format!(
-                    "https://example.com/mailboxes/{}",
-                    base64::encode_config(
-                        recipient_pk,
-                        base64::URL_SAFE_NO_PAD
-                    )
-                ))
-                .body(
-                    serde_json::to_string(&vec!(
-                        MessageToDelete {
-                            from: base64::encode(
-                                sender_pk
-                            ),
-                            id: 1
-                        },
-                        MessageToDelete {
-                            from: base64::encode(
-                                sender_pk
-                            ),
-                            id: 2
-                        }
-                    ))
-                    .unwrap()
-                )
-                .build(),
-            )
-            .status(),
-            StatusCode::NoContent
-        );
 
-        assert_eq!(
-            request(
-                &recipient_id,
-                surf::get(format!(
-                    "https://example.com/mailboxes/{}",
-                    base64::encode_config(
-                        recipient_pk,
-                        base64::URL_SAFE_NO_PAD
-                    )
-                ))
-                .build(),
-            ),
-            Mailbox { messages: vec!() }
-        );
+        // 5. mailbox should once again be empty
+        //
+        let req5 = surf::get(&url).build();
+        let mut res5 = mb_do_req(&api, &dbs, &recipient_id, req5).await?;
+        assert_eq!(res5.status(), StatusCode::Ok);
+        let bytes5 = res5.take_body().into_bytes().await
+            .map_err(|e| anyhow!(e))?;
+        let body5: Mailbox = serde_json::from_slice(&bytes5)?;
+        assert_eq!(body5, Mailbox { messages: vec!() });
+
+
+        Ok(())
     }
 
-    #[test]
-    fn v2_vault_get() -> anyhow::Result<()> {
-        let (api, dbs) = setup_tmp_api_v2().unwrap();
+    #[async_std::test]
+    async fn vault_get() -> Result<()> {
+        let (api, dbs) = setup_tmp_api().await?;
 
-        let nonce_b64 = init_nonce(&dbs.tokens, &["read"])?;
+        let nonce_b64 = init_nonce(&dbs.tokens, &["read"]).await?;
 
         let id = Id([0u8; ID_LENGTH]);
         let keypair = KeyPair::from(&id);
         let pubkey = keypair.public.as_bytes();
         let vid = base64::encode_config(&pubkey, base64::URL_SAFE_NO_PAD);
-        let vpath = format!("v2/{}", &vid);
         let base = Url::parse("http://example.com/vaults/")?;
-        let url = base.join(&vid).unwrap();
+        let url = base.join(&vid)?;
 
         let mut req1: Request = surf::get(url.to_string()).into();
         sign_req(&mut req1, &nonce_b64, TUNE, SALT, &id)?;
 
-        let res1: Response = task::block_on(api.respond(req1))
+        let res1: Response = api.respond(req1).await
             .map_err(|_| anyhow!("request failed"))?;
 
         assert_eq!(StatusCode::NotFound, res1.status());
@@ -1299,13 +1023,12 @@ mod requests {
             "vclock": { "c": { "c1": 1, "c2": 3, "c3": 2 } }
         });
         let tdata_vec1 = serde_json::to_vec(&tdata_json1)?;
-        let tdata_task1 = dbs.vaults.put(&vpath, &tdata_vec1);
-        let _ = task::block_on(tdata_task1)?;
+        let _ = dbs.vaults.put(&vid, &tdata_vec1).await?;
 
         let mut req2: Request = surf::get(url.to_string()).into();
         sign_req_using_res_with_id(&res1, &mut req2, &id)?;
 
-        let mut res2: Response = task::block_on(api.respond(req2))
+        let mut res2: Response = api.respond(req2).await
             .map_err(|_| anyhow!("request failed"))?;
 
         assert_eq!(StatusCode::Ok, res2.status());
@@ -1318,7 +1041,7 @@ mod requests {
         assert_eq!(expected_vclock, vc_hdr_str);
 
         let expected_body = "vault data is opaque";
-        let actual_body = task::block_on(res2.take_body().into_bytes())
+        let actual_body = res2.take_body().into_bytes().await
             .map_err(|_| anyhow!("body read failed"))?;
         assert_eq!(expected_body.as_bytes(), actual_body);
 
@@ -1329,7 +1052,7 @@ mod requests {
         let mut req3: Request = surf::get(url.to_string()).into();
         sign_req_using_res_with_id(&res2, &mut req3, &bad_id)?;
 
-        let res3: Response = task::block_on(api.respond(req3))
+        let res3: Response = api.respond(req3).await
             .map_err(|_| anyhow!("request failed"))?;
 
         assert_eq!(StatusCode::Forbidden, res3.status());
@@ -1337,16 +1060,13 @@ mod requests {
         // test migrate
 
         let tdata_bytes4 = b"vault data is migrating";
-        let tdata_task4 = dbs.vaults.put(&vid, &*tdata_bytes4);
-        let _ = task::block_on(tdata_task4)?;
-
-        let tdata_del_task4 = dbs.vaults.del(&vpath);
-        let _ = task::block_on(tdata_del_task4)?;
+        let _ = dbs.vaults.put_version("v1", &vid, &*tdata_bytes4).await?;
+        let _ = dbs.vaults.del(&vid).await?;
 
         let mut req4: Request = surf::get(url.to_string()).into();
         sign_req_using_res_with_id(&res3, &mut req4, &id)?;
 
-        let mut res4: Response = task::block_on(api.respond(req4))
+        let mut res4: Response = api.respond(req4).await
             .map_err(|_| anyhow!("request failed"))?;
 
         assert_eq!(StatusCode::Ok, res4.status());
@@ -1359,26 +1079,25 @@ mod requests {
         assert_eq!(expected_vclock4, vc_hdr_str4);
 
         let expected_body4 = "vault data is migrating";
-        let actual_body4 = task::block_on(res4.take_body().into_bytes())
+        let actual_body4 = res4.take_body().into_bytes().await
             .map_err(|_| anyhow!("body read failed"))?;
         assert_eq!(expected_body4, String::from_utf8(actual_body4)?);
 
         Ok(())
     }
 
-    #[test]
-    fn v2_vault_put() -> anyhow::Result<()> {
-        let (api, dbs) = setup_tmp_api_v2().unwrap();
+    #[async_std::test]
+    async fn vault_put() -> Result<()> {
+        let (api, dbs) = setup_tmp_api().await?;
 
-        let nonce_b64 = init_nonce(&dbs.tokens, &["create", "update"])?;
+        let nonce_b64 = init_nonce(&dbs.tokens, &["create", "update"]).await?;
 
         let id = Id([0u8; ID_LENGTH]);
         let keypair = KeyPair::from(&id);
         let pubkey = keypair.public.as_bytes();
         let vid = base64::encode_config(&pubkey, base64::URL_SAFE_NO_PAD);
-        let vpath = format!("v2/{}", &vid);
         let base = Url::parse("http://example.com/vaults/")?;
-        let url = base.join(&vid).unwrap();
+        let url = base.join(&vid)?;
         let mut vc = VClock::new("c1");
 
         // don't attach the vclock, req1 should fail
@@ -1388,7 +1107,7 @@ mod requests {
             .into();
         sign_req(&mut req1, &nonce_b64, TUNE, SALT, &id)?;
 
-        let res1: Response = task::block_on(api.respond(req1))
+        let res1: Response = api.respond(req1).await
             .map_err(|_| anyhow!("request failed"))?;
 
         assert_eq!(StatusCode::BadRequest, res1.status());
@@ -1400,10 +1119,10 @@ mod requests {
             .body("vault data is opaque")
             .into();
 
-        let nonce2_b64 = init_nonce(&dbs.tokens, &["create", "update"])?;
+        let nonce2_b64 = init_nonce(&dbs.tokens, &["create", "update"]).await?;
         sign_req(&mut req2, &nonce2_b64, TUNE, SALT, &id)?;
 
-        let mut res2: Response = task::block_on(api.respond(req2))
+        let mut res2: Response = api.respond(req2).await
             .map_err(|_| anyhow!("request failed"))?;
 
         assert_eq!(StatusCode::Ok, res2.status());
@@ -1416,7 +1135,7 @@ mod requests {
         assert_eq!("c1=1", vc_hdr_str2);
 
         let expected_body2 = "vault data is opaque";
-        let actual_body2 = task::block_on(res2.take_body().into_bytes())
+        let actual_body2 = res2.take_body().into_bytes().await
             .map_err(|_| anyhow!("body read failed"))?;
         assert_eq!(expected_body2.as_bytes(), actual_body2);
 
@@ -1428,7 +1147,7 @@ mod requests {
         let mut req3: Request = surf::get(url.to_string()).into();
         sign_req_using_res_with_id(&res2, &mut req3, &bad_id)?;
 
-        let res3: Response = task::block_on(api.respond(req3))
+        let res3: Response = api.respond(req3).await
             .map_err(|_| anyhow!("request failed"))?;
 
         assert_eq!(StatusCode::Forbidden, res3.status());
@@ -1439,7 +1158,7 @@ mod requests {
             .into();
         sign_req_using_res_with_id(&res3, &mut req4, &id)?;
 
-        let mut res4: Response = task::block_on(api.respond(req4))
+        let mut res4: Response = api.respond(req4).await
             .map_err(|_| anyhow!("request failed"))?;
 
         assert_eq!(StatusCode::Conflict, res4.status());
@@ -1448,7 +1167,7 @@ mod requests {
             \"error\": \"causality violation\", \
             \"vault\": {}\
         }}", serde_json::to_string(b"vault data is opaque")?);
-        let actual_body4 = task::block_on(res4.take_body().into_bytes())
+        let actual_body4 = res4.take_body().into_bytes().await
             .map_err(|_| anyhow!("body read failed"))?;
         assert_eq!(expected_body4, String::from_utf8(actual_body4)?);
 
@@ -1462,7 +1181,7 @@ mod requests {
             .into();
         sign_req_using_res_with_id(&res4, &mut req5, &id)?;
 
-        let mut res5: Response = task::block_on(api.respond(req5))
+        let mut res5: Response = api.respond(req5).await
             .map_err(|_| anyhow!("request failed"))?;
 
         assert_eq!(StatusCode::Ok, res5.status());
@@ -1475,7 +1194,7 @@ mod requests {
         assert_eq!("c1=2", vc_hdr_str5);
 
         let expected_body5 = "vault data is fresh";
-        let actual_body5 = task::block_on(res5.take_body().into_bytes())
+        let actual_body5 = res5.take_body().into_bytes().await
             .map_err(|_| anyhow!("body read failed"))?;
         assert_eq!(expected_body5.as_bytes(), actual_body5);
 
@@ -1494,10 +1213,9 @@ mod requests {
             "vclock": { "c": { "c1": 2, "c2": 1 } }
         });
         let tdata_vec6 = serde_json::to_vec(&tdata_json6)?;
-        let tdata_task6 = dbs.vaults.put(&vpath, &tdata_vec6);
-        let _ = task::block_on(tdata_task6)?;
+        let _ = dbs.vaults.put(&vid, &tdata_vec6).await?;
 
-        let res6: Response = task::block_on(api.respond(req6))
+        let res6: Response = api.respond(req6).await
             .map_err(|_| anyhow!("request failed"))?;
 
         assert_eq!(StatusCode::Conflict, res6.status());
@@ -1518,7 +1236,7 @@ mod requests {
             .into();
         sign_req_using_res_with_id(&res6, &mut req7, &id)?;
 
-        let mut res7: Response = task::block_on(api.respond(req7))
+        let mut res7: Response = api.respond(req7).await
             .map_err(|_| anyhow!("request failed"))?;
 
         assert_eq!(StatusCode::Ok, res7.status());
@@ -1531,7 +1249,7 @@ mod requests {
         assert_eq!("c1=3,c2=1", vc_hdr_str7);
 
         let expected_body7 = "vault data is merged";
-        let actual_body7 = task::block_on(res7.take_body().into_bytes())
+        let actual_body7 = res7.take_body().into_bytes().await
             .map_err(|_| anyhow!("body read failed"))?;
         assert_eq!(expected_body7.as_bytes(), actual_body7);
 
@@ -1543,7 +1261,7 @@ mod requests {
             .into();
         sign_req_using_res_with_id(&res7, &mut req8, &id)?;
 
-        let res8: Response = task::block_on(api.respond(req8))
+        let res8: Response = api.respond(req8).await
             .map_err(|_| anyhow!("request failed"))?;
 
         assert_eq!(StatusCode::BadRequest, res8.status());
@@ -1554,29 +1272,29 @@ mod requests {
             .into();
         sign_req_using_res_with_id(&res8, &mut req9, &id)?;
 
-        let res9: Response = task::block_on(api.respond(req9))
+        let res9: Response = api.respond(req9).await
             .map_err(|_| anyhow!("request failed"))?;
 
         assert_eq!(StatusCode::BadRequest, res9.status());
+
 
         Ok(())
     }
 
     // This tests that the server can read the data that the server wrote.
     // Technically tested during the put tests but not explicitly.
-    #[test]
-    fn v2_vault_roundtrip() -> anyhow::Result<()> {
-        let (api, dbs) = setup_tmp_api_v2().unwrap();
+    #[async_std::test]
+    async fn vault_roundtrip() -> Result<()> {
+        let (api, dbs) = setup_tmp_api().await?;
 
-        let nonce_b64 = init_nonce(&dbs.tokens, &["create", "update"])?;
+        let nonce_b64 = init_nonce(&dbs.tokens, &["create", "update"]).await?;
 
         let id = Id([0u8; ID_LENGTH]);
         let keypair = KeyPair::from(&id);
         let pubkey = keypair.public.as_bytes();
         let vid = base64::encode_config(&pubkey, base64::URL_SAFE_NO_PAD);
-        let vpath = format!("v2/{}", &vid);
         let base = Url::parse("http://example.com/vaults/")?;
-        let url = base.join(&vid).unwrap();
+        let url = base.join(&vid)?;
         let mut vc = VClock::new("cz");
 
         // we'll make it version 5
@@ -1590,7 +1308,7 @@ mod requests {
             .into();
         sign_req(&mut req1, &nonce_b64, TUNE, SALT, &id)?;
 
-        let mut res1: Response = task::block_on(api.respond(req1))
+        let mut res1: Response = api.respond(req1).await
             .map_err(|_| anyhow!("request failed"))?;
 
         assert_eq!(StatusCode::Ok, res1.status());
@@ -1603,7 +1321,7 @@ mod requests {
         assert_eq!(expected_vclock, vc_hdr_str);
 
         let expected_body1 = "vault data is opaque";
-        let actual_body1 = task::block_on(res1.take_body().into_bytes())
+        let actual_body1 = res1.take_body().into_bytes().await
             .map_err(|_| anyhow!("body read failed"))?;
         assert_eq!(expected_body1, std::str::from_utf8(&actual_body1)?);
 
@@ -1613,7 +1331,7 @@ mod requests {
         });
         let expected_data_str2 = serde_json::to_string(&expected_data_json2)?;
 
-        let stored_data2 = task::block_on(dbs.vaults.get(&vpath))?;
+        let stored_data2 = dbs.vaults.get(&vid).await?;
 
         assert_eq!(expected_data_str2, String::from_utf8(stored_data2)?);
 
@@ -1622,7 +1340,7 @@ mod requests {
         let mut req2: Request = surf::get(url.to_string()).into();
         sign_req_using_res_with_id(&res1, &mut req2, &id)?;
 
-        let mut res2: Response = task::block_on(api.respond(req2))
+        let mut res2: Response = api.respond(req2).await
             .map_err(|_| anyhow!("request failed"))?;
 
         assert_eq!(StatusCode::Ok, res2.status());
@@ -1635,19 +1353,20 @@ mod requests {
         assert_eq!(expected_vclock, vc_hdr_str);
 
         let expected_body2 = "vault data is opaque";
-        let actual_body2 = task::block_on(res2.take_body().into_bytes())
+        let actual_body2 = res2.take_body().into_bytes().await
             .map_err(|_| anyhow!("body read failed"))?;
         assert_eq!(expected_body2.as_bytes(), actual_body2);
+
 
         Ok(())
     }
 
-    #[test]
-    fn v2_service_list_get() -> anyhow::Result<()> {
-        let (api, dbs) = setup_tmp_api_v2().unwrap();
+    #[async_std::test]
+    async fn service_list_get() -> Result<()> {
+        let (api, dbs) = setup_tmp_api().await?;
 
         let id = Id([0u8; ID_LENGTH]); // use the zero id
-        let n64_1 = init_nonce(&dbs.tokens, &["read"])?;
+        let n64_1 = init_nonce(&dbs.tokens, &["read"]).await?;
 
         let resource = "http://example.com/service_list/services.json";
         let url = Url::parse(resource)?;
@@ -1655,40 +1374,39 @@ mod requests {
 
         let salt1 = SALT;
         sign_req(&mut req1, &n64_1, TUNE, salt1, &id)?;
-        let fut1 = api.respond(req1);
-        let res1: Response =
-            task::block_on(fut1).map_err(|_| anyhow!("request failed"))?;
+        let res1: Response = api.respond(req1).await
+            .map_err(|_| anyhow!("request failed"))?;
 
         // expect a 404 since the file does not exist yet
         assert_eq!(StatusCode::NotFound, res1.status());
 
         // add the file so the next request will succeed
         let tdata = r#"{"test": "data"}"#;
-        let foof = dbs.services.put("services.json", &tdata.as_bytes());
-        let _ = task::block_on(foof)?;
+        let _ = dbs.services.put("services.json", &tdata.as_bytes()).await?;
 
         let mut req2: Request = surf::get(url.to_string()).into();
         sign_req_using_res_with_id(&res1, &mut req2, &id)?;
 
-        let fut2 = api.respond(req2);
-        let mut res2: Response =
-            task::block_on(fut2).map_err(|_| anyhow!("request2 failed"))?;
+        let mut res2: Response = api.respond(req2).await
+            .map_err(|_| anyhow!("request2 failed"))?;
 
         assert_eq!(StatusCode::Ok, res2.status());
         let expected_body2 = r#"{"test": "data"}"#;
-        let actual_body2 = task::block_on(res2.take_body().into_bytes())
+        let actual_body2 = res2.take_body().into_bytes().await
             .map_err(|_| anyhow!("body read failed"))?;
         assert_eq!(&expected_body2.as_bytes(), &actual_body2);
+
 
         Ok(())
     }
 
 
     #[allow(dead_code)]
-    fn print_body(res: &mut Response) -> anyhow::Result<()> {
+    fn print_body(res: &mut Response) -> Result<()> {
         let body_bytes = task::block_on(res.take_body().into_bytes())
             .map_err(|_| anyhow!("error reading body"))?;
-        println!("{:?}", String::from_utf8(body_bytes));
+        println!("{:?}", String::from_utf8(body_bytes.clone()));
+        res.set_body(body_bytes);
         Ok(())
     }
 }

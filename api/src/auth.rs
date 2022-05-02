@@ -197,8 +197,7 @@ where
         Method::Delete => "delete",
         Method::Put | Method::Post => {
             let id = req.param("id").map_err(|_| StatusCode::BadRequest)?;
-            let rpath = format!("v2/{}", id);
-            let exists = match req.state().db.exists(&rpath).await {
+            let exists = match req.state().db.exists(&id).await {
                 Ok(e) => e,
                 Err(e) => {
                     println!("db error: {:?}", e);

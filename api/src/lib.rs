@@ -214,7 +214,7 @@ where
         Ok(ms) => ms,
         Err(_) => return Ok(StatusCode::BadRequest.into()),
     };
-    mailbox::delete_messages(db, id, &m)?;
+    mailbox::delete_messages(db, id, &m).await?;
 
     Ok(Response::builder(StatusCode::NoContent).build())
 }
@@ -235,7 +235,7 @@ where
         Ok(m) => m,
         Err(_) => return Ok(StatusCode::BadRequest.into()),
     };
-    let message = mailbox::post_message(db, id, &signerb64, &m)?;
+    let message = mailbox::post_message(db, id, &signerb64, &m).await?;
 
     let r = serde_json::to_string(&message)?;
 
@@ -249,7 +249,7 @@ where
     let db = &req.state().db;
     let id = &req.ext::<MailboxId>().unwrap().0;
 
-    let mailbox = mailbox::get_messages(db, id)?;
+    let mailbox = mailbox::get_messages(db, id).await?;
 
     let j = serde_json::to_string(&mailbox)?;
 
@@ -264,7 +264,7 @@ where
 // signature on the request. Requires VaultId middleware. Returns status 403
 // forbidden if there is a mismatch.
 //
-fn check_vault_ownership2<'a, T>(
+fn check_vault_ownership<'a, T>(
     req: Request<State<T>>,
     next: Next<'a, State<T>>,
 ) -> Pin<Box<dyn Future<Output = Result> + Send + 'a>>
@@ -310,28 +310,26 @@ struct Vault {
     vclock: VClock<String>,
 }
 
-async fn fetch_vault_v2<T>(req: Request<State<T>>) -> Result<Response>
+async fn fetch_vault<T>(req: Request<State<T>>) -> Result<Response>
 where
     T: Database + 'static,
 {
     let db = &req.state().db;
     let id = &req.ext::<VaultId>().unwrap().0;
 
-    let vpath = format!("v2/{}", id);
-
-    let vault_bytes = match db.get(&vpath).await {
+    let vault_bytes = match db.get(&id).await {
         Ok(vb) => vb,
         Err(_) => {
             // check the v1 location, if found migrate the vault, if not 404
-            let vb_old = db.get(id).await.map_err(not_found)?;
+            let vb_old = db.get_version("v1", id).await.map_err(not_found)?;
             let vault = Vault {
                 data: vb_old,
                 vclock: VClock::<String>::default(),
             };
             let vb_new = serde_json::to_vec(&vault).map_err(server_err)?;
-            db.put(&vpath, &vb_new).await.map_err(server_err)?;
+            db.put(&id, &vb_new).await.map_err(server_err)?;
 
-            db.get(&vpath).await.map_err(not_found)?
+            db.get(&id).await.map_err(not_found)?
         }
     };
 
@@ -351,14 +349,13 @@ where
     Ok(resp)
 }
 
-async fn store_vault_v2<T>(mut req: Request<State<T>>) -> Result<Response>
+async fn store_vault<T>(mut req: Request<State<T>>) -> Result<Response>
 where
     T: Database + 'static,
 {
     let body = &req.body_bytes().await.map_err(server_err)?;
     let db = &req.state().db;
     let id = &req.ext::<VaultId>().unwrap().0;
-    let vpath = format!("v2/{}", id);
 
     // The client is required to provide a vclock that progresses time forward
     // in the vault's reference frame. This ensures each client sees a
@@ -392,9 +389,9 @@ where
         vclock: VClock::<String>::default(),
     };
 
-    if db.exists(&vpath).await.map_err(server_err)? {
+    if db.exists(&id).await.map_err(server_err)? {
         v_sto = db
-            .get(&vpath)
+            .get(&id)
             .await
             .and_then(|b| serde_json::from_slice(&b).map_err(|e| e.into()))
             .map_err(server_err)?;
@@ -422,10 +419,10 @@ where
     };
     let vault_bytes = serde_json::to_vec(&vault).map_err(server_err)?;
 
-    db.put(&vpath, &vault_bytes).await.map_err(server_err)?;
+    db.put(&id, &vault_bytes).await.map_err(server_err)?;
 
     // Read our own write...
-    let read_bytes = db.get(&vpath).await.map_err(not_found)?;
+    let read_bytes = db.get(&id).await.map_err(not_found)?;
     let v_read =
         serde_json::from_slice::<Vault>(&read_bytes).map_err(server_err)?;
 
@@ -676,7 +673,7 @@ where
     })
 }
 
-pub fn build_api_v2<T>(
+pub fn build_routes<T>(
     token_db: T,
     vault_db: T,
     service_db: T,
@@ -698,10 +695,10 @@ where
             .with(add_auth_info)
             .with(signed_pow_auth)
             .with(ensure_vault_id)
-            .with(check_vault_ownership2)
+            .with(check_vault_ownership)
             .options(option_vault)
-            .get(fetch_vault_v2)
-            .put(store_vault_v2);
+            .get(fetch_vault)
+            .put(store_vault);
         api.at("vaults").nest(vaults);
     }
 

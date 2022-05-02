@@ -1,15 +1,18 @@
 use anyhow::{anyhow, ensure, Result};
 
+use anyhow::bail;
 use async_trait::async_trait;
+use async_std::path::Path;
 use std::fmt;
 
 use serde::Deserialize;
 use serde_xml_rs::from_reader;
 
-use rusty_s3::{Bucket, Credentials, S3Action};
+use rusty_s3::{Bucket, Credentials, S3Action, UrlStyle};
 
 use surf::http::Method;
 use surf::{Request, Response, StatusCode};
+use surf::Url;
 
 use std::fmt::Debug;
 use std::time::Duration;
@@ -64,6 +67,7 @@ impl ListBucketResult {
 pub struct S3Store {
     creds: Credentials,
     bucket: Bucket,
+    version: String,
 }
 
 impl S3Store {
@@ -75,6 +79,8 @@ impl S3Store {
         Ok(())
     }
 
+    // TODO: in prod all the buckets are already created because we need to
+    //       turn object versioning on. can this be done here?
     pub async fn create_bucket_if_not_exists(&self) -> Result<()> {
         let action = self.bucket.create_bucket(&self.creds);
         let ttl = Duration::from_secs(60 * 60);
@@ -92,36 +98,68 @@ impl S3Store {
         Ok(())
     }
 
-    pub fn new(
+    pub async fn new(
         host: &str,
         region: &str,
         key_id: &str,
         secret: &str,
         name: &str,
+        version: &str,
     ) -> Result<S3Store> {
-        let path_style = true;
-
         let phost = host.parse()?;
 
         let bucket = Bucket::new(
             phost,
-            path_style,
+            UrlStyle::VirtualHost,
             name.to_string(),
             region.to_string(),
-        )
-        .ok_or_else(|| anyhow!("invalid bucket scheme"))?;
+        )?;
 
         Ok(S3Store {
             creds: Credentials::new(key_id.to_string(), secret.to_string()),
             bucket: bucket,
+            version: version.to_owned(),
         })
+    }
+}
+
+fn obj_str_from_path<P, Q>(version: Q, object: P) -> Result<String>
+where
+    P: AsRef<Path>,
+    Q: AsRef<Path>,
+{
+    let path = version.as_ref().join(object);
+
+    // convert windows style paths to a universal `/` scheme
+    let path_url = Url::from_file_path(path)
+        .map_err(|_| anyhow!("bad path for url"))?;
+   
+    // remove the leading "file:///" 
+    let fbase = Url::parse("file:///")?;
+
+    match fbase.make_relative(&path_url) {
+        Some(u) => Ok(u.as_str().to_owned()),
+        None => bail!("invalid version or object name"),
     }
 }
 
 #[async_trait]
 impl Database for S3Store {
-    async fn exists(&self, object: &str) -> Result<bool> {
-        let action = self.bucket.get_object(Some(&self.creds), object);
+
+    async fn exists<P>(&self, object: P) -> Result<bool>
+    where
+        P: AsRef<Path> + Send,
+    {
+        Ok(self.exists_version(&self.version, object).await?)
+    }
+
+    async fn exists_version<P, Q>(&self, version: Q, object: P) -> Result<bool> 
+    where
+        P: AsRef<Path> + Send,
+        Q: AsRef<Path> + Send,
+    {
+        let vobject = obj_str_from_path(version, object)?;
+        let action = self.bucket.get_object(Some(&self.creds), &vobject);
         let ttl = Duration::from_secs(60 * 60);
         let bro = Request::builder(Method::Get, action.sign(ttl)).build();
         let res = let_it_rip(bro).await?;
@@ -132,8 +170,20 @@ impl Database for S3Store {
         }
     }
 
-    async fn get(&self, object: &str) -> Result<Vec<u8>> {
-        let action = self.bucket.get_object(Some(&self.creds), object);
+    async fn get<P>(&self, object: P) -> Result<Vec<u8>>
+    where
+        P: AsRef<Path> + Send,
+    {
+        Ok(self.get_version(&self.version, object).await?)
+    }
+
+    async fn get_version<P, Q>(&self, version: Q, object: P) -> Result<Vec<u8>> 
+    where
+        P: AsRef<Path> + Send,
+        Q: AsRef<Path> + Send,
+    {
+        let vobject = obj_str_from_path(version, object)?;
+        let action = self.bucket.get_object(Some(&self.creds), &vobject);
         let ttl = Duration::from_secs(60 * 60);
         let bro = Request::builder(Method::Get, action.sign(ttl)).build();
 
@@ -143,8 +193,21 @@ impl Database for S3Store {
         Ok(res.body_bytes().await.map_err(|e| anyhow!(e))?)
     }
 
-    async fn put(&self, object: &str, content: &[u8]) -> Result<()> {
-        let action = self.bucket.put_object(Some(&self.creds), object);
+    async fn put<P>(&self, object: P, content: &[u8]) -> Result<()>
+    where
+        P: AsRef<Path> + Send,
+    {
+        Ok(self.put_version(&self.version, object, content).await?)
+    }
+
+    async fn put_version<P, Q>(&self, version: Q, object: P, content: &[u8])
+    -> Result<()>
+    where
+        P: AsRef<Path> + Send,
+        Q: AsRef<Path> + Send,
+    {
+        let vobject = obj_str_from_path(version, object)?;
+        let action = self.bucket.put_object(Some(&self.creds), &vobject);
         let ttl = Duration::from_secs(60 * 60);
         let bro = Request::builder(Method::Put, action.sign(ttl))
             .body(content)
@@ -155,8 +218,20 @@ impl Database for S3Store {
         Ok(())
     }
 
-    async fn del(&self, object: &str) -> Result<()> {
-        let action = self.bucket.delete_object(Some(&self.creds), object);
+    async fn del<P>(&self, object: P) -> Result<()>
+    where
+        P: AsRef<Path> + Send,
+    {
+        Ok(self.del_version(&self.version, object).await?)
+    }
+
+    async fn del_version<P, Q>(&self, version: Q, object: P) -> Result<()>
+    where
+        P: AsRef<Path> + Send,
+        Q: AsRef<Path> + Send,
+    {
+        let vobject = obj_str_from_path(version, object)?;
+        let action = self.bucket.delete_object(Some(&self.creds), &vobject);
         let ttl = Duration::from_secs(60 * 60);
         let bro = Request::builder(Method::Delete, action.sign(ttl)).build();
         let res = let_it_rip(bro).await?;
@@ -169,10 +244,23 @@ impl Database for S3Store {
         Ok(())
     }
 
-    async fn list(&self, prefix: &str) -> Result<Vec<String>> {
+    async fn list<P>(&self, prefix: P) -> Result<Vec<String>>
+    where
+        P: AsRef<Path> + Send,
+    {
+        Ok(self.list_version(&self.version, prefix).await?)
+    }
+
+    async fn list_version<P, Q>(&self, version: Q, prefix: P)
+    -> Result<Vec<String>>
+    where
+        P: AsRef<Path> + Send,
+        Q: AsRef<Path> + Send,
+    {
         let mut action = self.bucket.list_objects_v2(Some(&self.creds));
         let query = action.query_mut();
-        query.insert("prefix", prefix);
+        let vprefix = obj_str_from_path(version, prefix)?;
+        query.insert("prefix", &vprefix);
 
         let ttl = Duration::from_secs(60 * 60);
         let bro = Request::builder(Method::Get, action.sign(ttl)).build();
@@ -216,104 +304,80 @@ async fn let_it_rip(req: Request) -> Result<Response> {
 mod tests {
     use super::*;
 
-    #[test]
-    fn s3_store() {
-        let f = match S3Store::new(
+    #[async_std::test]
+    async fn s3_store() -> Result<()> {
+        let s = S3Store::new(
             "http://localhost:9000",
             "minio",
             "minioadmin",
             "minioadmin",
             "somebucket",
-        ) {
-            Ok(s) => s,
-            Err(error) => panic!("{:?}", error),
-        };
+            "v0",
+        )?;
 
-        async_std::task::block_on(f.create_bucket_if_not_exists()).unwrap();
+        let _ = s.create_bucket_if_not_exists()?;
 
-        {
-            let fut = f.get("anyfile");
-            let err = async_std::task::block_on(fut);
-            assert!(err.is_err());
-        }
-        {
-            let fut = f.put("anyfile", b"some content");
-            let yes = async_std::task::block_on(fut);
+        let err = s.get("anyfile");
+        assert!(err.is_err());
 
-            assert!(yes.is_ok());
-        }
-        {
-            let fut = f.get("anyfile");
-            let yes = async_std::task::block_on(fut);
-            assert!(yes.is_ok());
-        }
-        {
-            let fut = f.del("anyfile");
-            let yes = async_std::task::block_on(fut);
-            assert!(yes.is_ok());
-        }
-        {
-            let fut = f.get("anyfile");
-            let err = async_std::task::block_on(fut);
-            assert!(err.is_err());
-        }
-        {
-            let fut = f.put("some/sub/directory", b"subcontent");
-            let result = async_std::task::block_on(fut);
-            assert!(result.is_ok());
+        let yes = s.put("anyfile", b"some content");
+        assert!(yes.is_ok());
 
-            let fut = f.get("some/sub/directory");
-            let result = async_std::task::block_on(fut);
-            assert!(result.is_ok());
+        let yes = s.get("anyfile");
+        assert!(yes.is_ok());
 
-            let fut = f.get("some/sub/missing");
-            let err = async_std::task::block_on(fut);
-            assert!(err.is_err());
+        let yes = s.del("anyfile");
+        assert!(yes.is_ok());
 
-            let fut = f.get("some/sub");
-            let err = async_std::task::block_on(fut);
-            assert!(err.is_err());
-        }
-        {
-            let f1 = f.put("multi/key1/file1", b"AA");
-            let f2 = f.put("multi/key1/file2", b"AA");
-            let f3 = f.put("multi/key2/file1", b"BB");
-            let f4 = f.put("multiother/file1", b"CC");
-            // don't need to do any of this jazz.
-            let r1 = async_std::task::block_on(f1);
-            let r2 = async_std::task::block_on(f2);
-            let r3 = async_std::task::block_on(f3);
-            let r4 = async_std::task::block_on(f4);
+        let err = s.get("anyfile");
+        assert!(err.is_err());
 
-            assert!(r1.is_ok());
-            assert!(r2.is_ok());
-            assert!(r3.is_ok());
-            assert!(r4.is_ok());
+        let resutl = s.put("some/sub/directory", b"subcontent");
+        assert!(result.is_ok());
 
-            let fut = f.list("multi/");
-            let result = async_std::task::block_on(fut);
-            assert!(result.is_ok());
+        let result = s.get("some/sub/directory");
+        assert!(result.is_ok());
 
-            assert_eq!(
-                result.unwrap(),
-                // does not need to be order dependent eventually
-                vec!(
-                    "multi/key1/file1",
-                    "multi/key1/file2",
-                    "multi/key2/file1",
-                )
-            );
-        }
+        let err = s.get("some/sub/missing");
+        assert!(err.is_err());
+
+        let err = s.get("some/sub");
+        assert!(err.is_err());
+
+        let r1 = s.put("multi/key1/file1", b"AA");
+        let r2 = s.put("multi/key1/file2", b"AA");
+        let r3 = s.put("multi/key2/file1", b"BB");
+        let r4 = s.put("multiother/file1", b"CC");
+
+        assert!(r1.is_ok());
+        assert!(r2.is_ok());
+        assert!(r3.is_ok());
+        assert!(r4.is_ok());
+
+        let resut = s.list("multi/");
+        assert!(result.is_ok());
+
+        assert_eq!(
+            result.unwrap(),
+            // does not need to be order dependent eventually
+            vec!(
+                "multi/key1/file1",
+                "multi/key1/file2",
+                "multi/key2/file1",
+            )
+        );
+
+        Ok(())
     }
 
     #[test]
-    fn list_bucket_response() {
+    fn list_bucket_response() -> Result<()> {
         let r = r#"
 <?xml version="1.0" encoding="UTF-8"?>
 <ListBucketResult xmlns="http://s3.amazonaws.com/doc/2006-03-01/"><Name>somebucket</Name><Prefix>multi</Prefix><KeyCount>4</KeyCount><MaxKeys>4500</MaxKeys><Delimiter></Delimiter><IsTruncated>false</IsTruncated><Contents><Key>multi/key1/file1</Key><LastModified>2021-06-24T14:14:00.068Z</LastModified><ETag>&#34;3b98e2dffc6cb06a89dcb0d5c60a0206&#34;</ETag><Size>2</Size><Owner><ID>02d6176db174dc93cb1b899f7c6078f08654445fe8cf1b6ce98d8855f66bdbf4</ID><DisplayName>minio</DisplayName></Owner><StorageClass>STANDARD</StorageClass></Contents><Contents><Key>multi/key1/file2</Key><LastModified>2021-06-24T14:14:00.074Z</LastModified><ETag>&#34;3b98e2dffc6cb06a89dcb0d5c60a0206&#34;</ETag><Size>2</Size><Owner><ID>02d6176db174dc93cb1b899f7c6078f08654445fe8cf1b6ce98d8855f66bdbf4</ID><DisplayName>minio</DisplayName></Owner><StorageClass>STANDARD</StorageClass></Contents><Contents><Key>multi/key2/file1</Key><LastModified>2021-06-24T14:14:00.080Z</LastModified><ETag>&#34;9d3d9048db16a7eee539e93e3618cbe7&#34;</ETag><Size>2</Size><Owner><ID>02d6176db174dc93cb1b899f7c6078f08654445fe8cf1b6ce98d8855f66bdbf4</ID><DisplayName>minio</DisplayName></Owner><StorageClass>STANDARD</StorageClass></Contents><Contents><Key>multiother/file1</Key><LastModified>2021-06-24T14:14:00.086Z</LastModified><ETag>&#34;aa53ca0b650dfd85c4f59fa156f7a2cc&#34;</ETag><Size>2</Size><Owner><ID>02d6176db174dc93cb1b899f7c6078f08654445fe8cf1b6ce98d8855f66bdbf4</ID><DisplayName>minio</DisplayName></Owner><StorageClass>STANDARD</StorageClass></Contents><EncodingType>url</EncodingType></ListBucketResult>
 "#;
 
-        let response = ListBucketResult::from_xml(r.as_bytes()).unwrap();
+        let response = ListBucketResult::from_xml(r.as_bytes())?;
 
         assert_eq!(
             response,
