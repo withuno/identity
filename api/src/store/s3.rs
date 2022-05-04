@@ -1,6 +1,5 @@
-use anyhow::{anyhow, ensure, Result};
+use anyhow::{anyhow, bail, Context, ensure, Result};
 
-use anyhow::bail;
 use async_trait::async_trait;
 use async_std::path::Path;
 use std::fmt;
@@ -110,7 +109,7 @@ impl S3Store {
 
         let bucket = Bucket::new(
             phost,
-            UrlStyle::VirtualHost,
+            UrlStyle::Path,
             name.to_string(),
             region.to_string(),
         )?;
@@ -123,23 +122,59 @@ impl S3Store {
     }
 }
 
-fn obj_str_from_path<P, Q>(version: Q, object: P) -> Result<String>
+fn full_obj_from_path<P, Q>(version: Q, object: P) -> Result<String>
 where
     P: AsRef<Path>,
     Q: AsRef<Path>,
 {
-    let path = version.as_ref().join(object);
+    let path = Path::new("/").join(version).join(object);
 
     // convert windows style paths to a universal `/` scheme
     let path_url = Url::from_file_path(path)
         .map_err(|_| anyhow!("bad path for url"))?;
-   
+
     // remove the leading "file:///" 
     let fbase = Url::parse("file:///")?;
 
     match fbase.make_relative(&path_url) {
         Some(u) => Ok(u.as_str().to_owned()),
         None => bail!("invalid version or object name"),
+    }
+}
+
+fn full_prefix_from_path<P, Q>(version: Q, prefix: P) -> Result<String>
+where
+    P: AsRef<Path>,
+    Q: AsRef<Path>,
+{
+    // Note to the future: be very *very* careful. In s3 a trailing `/` is
+    // relevant but for paths it is not. Nor do we know if the incoming prefix
+    // is a simple prefix or should be treated as a directory. We *could*
+    // probably assume a dir for our use case and use Url::from_directory_path.
+    let path = Path::new("/").join(version).join(prefix);
+    let pstr = path.to_str()
+        .ok_or(anyhow!("prefix not valid utf-8"))?;
+
+    // Url::make_relative unconditionally strips trailing `/`. So we must check
+    // if the path ends with the path separator and add a `/` back at the end.
+    let is_directory = pstr.ends_with(std::path::MAIN_SEPARATOR);
+
+    let purl = match is_directory {
+        true => Url::from_directory_path(path),
+        false => Url::from_file_path(path),
+    }
+    .map_err(|_| anyhow!("cannot convert path to Url"))?;
+
+    // remove the leading "file:///"
+    let base = Url::parse("file:///")?;
+
+    let url_style_prefix = base.make_relative(&purl)
+        .context("cannot make prefix relative to the root")?;
+
+    if is_directory {
+      Ok(format!("{}/", url_style_prefix.as_str()))
+    } else {
+      Ok(url_style_prefix.as_str().to_owned())
     }
 }
 
@@ -158,7 +193,7 @@ impl Database for S3Store {
         P: AsRef<Path> + Send,
         Q: AsRef<Path> + Send,
     {
-        let vobject = obj_str_from_path(version, object)?;
+        let vobject = full_obj_from_path(version, object)?;
         let action = self.bucket.get_object(Some(&self.creds), &vobject);
         let ttl = Duration::from_secs(60 * 60);
         let bro = Request::builder(Method::Get, action.sign(ttl)).build();
@@ -182,7 +217,7 @@ impl Database for S3Store {
         P: AsRef<Path> + Send,
         Q: AsRef<Path> + Send,
     {
-        let vobject = obj_str_from_path(version, object)?;
+        let vobject = full_obj_from_path(version, object)?;
         let action = self.bucket.get_object(Some(&self.creds), &vobject);
         let ttl = Duration::from_secs(60 * 60);
         let bro = Request::builder(Method::Get, action.sign(ttl)).build();
@@ -206,7 +241,7 @@ impl Database for S3Store {
         P: AsRef<Path> + Send,
         Q: AsRef<Path> + Send,
     {
-        let vobject = obj_str_from_path(version, object)?;
+        let vobject = full_obj_from_path(version, object)?;
         let action = self.bucket.put_object(Some(&self.creds), &vobject);
         let ttl = Duration::from_secs(60 * 60);
         let bro = Request::builder(Method::Put, action.sign(ttl))
@@ -230,7 +265,7 @@ impl Database for S3Store {
         P: AsRef<Path> + Send,
         Q: AsRef<Path> + Send,
     {
-        let vobject = obj_str_from_path(version, object)?;
+        let vobject = full_obj_from_path(version, object)?;
         let action = self.bucket.delete_object(Some(&self.creds), &vobject);
         let ttl = Duration::from_secs(60 * 60);
         let bro = Request::builder(Method::Delete, action.sign(ttl)).build();
@@ -259,7 +294,7 @@ impl Database for S3Store {
     {
         let mut action = self.bucket.list_objects_v2(Some(&self.creds));
         let query = action.query_mut();
-        let vprefix = obj_str_from_path(version, prefix)?;
+        let vprefix = full_prefix_from_path(version, prefix)?;
         query.insert("prefix", &vprefix);
 
         let ttl = Duration::from_secs(60 * 60);
@@ -269,27 +304,22 @@ impl Database for S3Store {
         let status = res.status();
         ensure!(status.is_success(), "s3 GET unexpected result ({})", status);
 
-        let body = res.body_bytes().await;
+        let body = res.body_bytes().await
+            .map_err(|e| anyhow!(e))?;
 
-        match body {
-            Ok(b) => {
-                let result = match ListBucketResult::from_xml(&b[..]) {
-                    Ok(r) => r,
-                    Err(error) => return Err(anyhow!(error)),
-                };
+        let result = ListBucketResult::from_xml(&body[..])
+            .map_err(|e| anyhow!(e))?;
 
-                Ok(result
-                    .contents
-                    .into_iter()
-                    .filter_map(|c| {
-                        //XXX: i don't know if this is the right place
-                        // to URL decode...
-                        decode(&c.key).ok()
-                    })
-                    .collect())
-            }
-            Err(error) => Err(anyhow!(error)),
-        }
+        let decoded = result.contents.iter()
+            .filter_map(|c| decode(&c.key).ok())
+            .collect::<Vec<String>>();
+
+        let stripped = decoded.iter()
+            .filter_map(|k| k.strip_prefix(&self.version))
+            .filter_map(|k| k.strip_prefix("/"))
+            .collect::<Vec<&str>>();
+
+        Ok(stripped.into_iter().map(|s| s.to_owned()).collect())
     }
 }
 
