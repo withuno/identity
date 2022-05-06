@@ -556,7 +556,7 @@ fn do_share_put(ctx: Context, opt: ShareOpts, p: SharePut) -> Result<String> {
     let mut data = String::new();
     let _ = stdin().read_to_string(&mut data)?;
 
-    let v = cli::put_share(url, id, &p.expire_seconds, data.as_bytes())
+    let v = cli::post_share(url, id, &p.expire_seconds, data.as_bytes())
         .context("cannot upload share")?;
 
     Ok(v)
