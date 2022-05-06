@@ -66,6 +66,9 @@ enum SubCommand
     Mu(Mu),
 
     #[clap(display_order = 80)]
+    Share(Share),
+
+    #[clap(display_order = 80)]
     Session(Session),
 
     #[clap(display_order = 80)]
@@ -81,8 +84,7 @@ enum SubCommand
 /// Data and config is stored under `~/.uno`. .
 ///
 #[derive(Parser)]
-struct Init
-{
+struct Init {
     /// Override the default API service endpoint. This option is used for testing and development and should not be used normally.
     #[clap(
         long,
@@ -93,12 +95,11 @@ struct Init
     host: String,
 }
 
-fn do_init(ctx: Context, cmd: Init) -> Result<String>
-{
+fn do_init(ctx: Context, cmd: Init) -> Result<String> {
     // Check for existing config. If it exists, bail.
     match load_conf(&ctx) {
         Ok(_) => bail!("uno already initialized"),
-        _ => {},
+        _ => {}
     };
 
     let conf_file = config_path(&ctx)?;
@@ -112,8 +113,7 @@ fn do_init(ctx: Context, cmd: Init) -> Result<String>
     Ok(format!("wrote: {}", conf_file.to_string_lossy()))
 }
 
-fn config_path(ctx: &Context) -> Result<std::path::PathBuf>
-{
+fn config_path(ctx: &Context) -> Result<std::path::PathBuf> {
     Ok(match ctx.conf {
         Some(ref p) => p.to_path_buf(),
         None => {
@@ -122,12 +122,11 @@ fn config_path(ctx: &Context) -> Result<std::path::PathBuf>
             home.push(".uno");
             home.push("config");
             home
-        },
+        }
     })
 }
 
-fn load_conf(ctx: &Context) -> Result<cli::Config>
-{
+fn load_conf(ctx: &Context) -> Result<cli::Config> {
     let conf_file = config_path(ctx)?;
     cli::load_config(&conf_file)
 }
@@ -139,14 +138,12 @@ fn load_conf(ctx: &Context) -> Result<cli::Config>
 /// is written to standard out. .
 ///
 #[derive(Parser)]
-struct Seed
-{
+struct Seed {
     #[clap(long, display_order = 1)]
     ephemeral: bool,
 }
 
-fn do_seed(ctx: Context, s: Seed) -> Result<String>
-{
+fn do_seed(ctx: Context, s: Seed) -> Result<String> {
     let id = match s.ephemeral {
         true => uno::Id::new(),
         false => cli::load_seed(&load_conf(&ctx)?)?,
@@ -161,15 +158,13 @@ fn do_seed(ctx: Context, s: Seed) -> Result<String>
 /// Print the public key corresponding to the signing keypair associated with
 /// the configured identity seed. .
 #[derive(Parser)]
-struct Pubkey
-{
+struct Pubkey {
     /// Override the configured identity seed
     #[clap(long, value_name = "b64", display_order = 1)]
     seed: Option<String>,
 }
 
-fn do_pubkey(ctx: Context, c: Pubkey) -> Result<String>
-{
+fn do_pubkey(ctx: Context, c: Pubkey) -> Result<String> {
     let id = match c.seed {
         Some(s) => id_from_b64(s)?,
         None => cli::load_seed(&load_conf(&ctx)?)?,
@@ -186,8 +181,7 @@ fn do_pubkey(ctx: Context, c: Pubkey) -> Result<String>
 /// Mu. The actual symmetric key is derived appropriate in each case.
 ///
 #[derive(Parser)]
-struct Decrypt
-{
+struct Decrypt {
     /// Identity seed.
     #[clap(long, value_name = "b64", conflicts_with = "mu", display_order = 1)]
     seed: Option<String>,
@@ -217,8 +211,7 @@ struct Decrypt
     data: Option<String>,
 }
 
-fn do_decrypt(ctx: Context, c: Decrypt) -> Result<String>
-{
+fn do_decrypt(ctx: Context, c: Decrypt) -> Result<String> {
     let key: uno::SymmetricKey = match (c.seed, c.mu) {
         (None, None) => cli::load_seed(&load_conf(&ctx)?)?.into(),
         (Some(s), _) => id_from_b64(s)?.into(),
@@ -229,8 +222,7 @@ fn do_decrypt(ctx: Context, c: Decrypt) -> Result<String>
     let mut ciphertext = String::new();
     let _ = stdin().read_to_string(&mut ciphertext)?;
 
-    let blob = base64::decode(ciphertext)
-        .context("ciphertext must be base64 encoded")?;
+    let blob = base64::decode(ciphertext).context("ciphertext must be base64 encoded")?;
 
     let mut ctx = Binding::None;
     if let Some(o) = c.bind {
@@ -253,8 +245,7 @@ fn do_decrypt(ctx: Context, c: Decrypt) -> Result<String>
 /// Mu. The actual symmetric key is derived appropriate in each case.
 ///
 #[derive(Parser)]
-struct Encrypt
-{
+struct Encrypt {
     /// 32 byte identity seed.
     #[clap(long, value_name = "b64", conflicts_with = "mu", display_order = 1)]
     seed: Option<String>,
@@ -288,8 +279,7 @@ struct Encrypt
     raw: bool,
 }
 
-fn do_encrypt(ctx: Context, c: Encrypt) -> Result<String>
-{
+fn do_encrypt(ctx: Context, c: Encrypt) -> Result<String> {
     let key: uno::SymmetricKey = match (c.seed, c.mu) {
         (None, None) => cli::load_seed(&load_conf(&ctx)?)?.into(),
         (Some(s), _) => id_from_b64(s)?.into(),
@@ -308,8 +298,7 @@ fn do_encrypt(ctx: Context, c: Encrypt) -> Result<String>
     let mut plaintext = String::new();
     let _ = stdin().read_to_string(&mut plaintext)?;
 
-    let blob = uno::encrypt(ctx, key, &plaintext.as_bytes())
-        .context("encryption failed")?;
+    let blob = uno::encrypt(ctx, key, &plaintext.as_bytes()).context("encryption failed")?;
 
     let out = match c.raw {
         true => "raw not supported".into(),
@@ -325,15 +314,13 @@ fn do_encrypt(ctx: Context, c: Encrypt) -> Result<String>
 /// The message is read from stdin.
 ///
 #[derive(Parser)]
-struct Sign
-{
+struct Sign {
     /// Override the configured identity
     #[clap(long, value_name = "b64", display_order = 1)]
     seed: Option<String>,
 }
 
-fn do_sign(ctx: Context, c: Sign) -> Result<String>
-{
+fn do_sign(ctx: Context, c: Sign) -> Result<String> {
     let id = match c.seed {
         Some(s) => id_from_b64(s)?,
         None => cli::load_seed(&load_conf(&ctx)?)?,
@@ -354,8 +341,7 @@ fn do_sign(ctx: Context, c: Sign) -> Result<String>
 /// The message is read from stdin.
 ///
 #[derive(Parser)]
-struct Verify
-{
+struct Verify {
     /// EdDSA public key.
     #[clap(long, value_name = "b64", display_order = 1)]
     pubkey: String,
@@ -365,8 +351,7 @@ struct Verify
     signature: String,
 }
 
-fn do_verify(_: Context, c: Verify) -> Result<String>
-{
+fn do_verify(_: Context, c: Verify) -> Result<String> {
     use uno::Verifier;
 
     let raw =
@@ -388,13 +373,11 @@ fn do_verify(_: Context, c: Verify) -> Result<String>
     Ok("The signature is valid.".into())
 }
 
-
 ///
 /// Operate on a vault.
 ///
 #[derive(Parser)]
-struct Vault
-{
+struct Vault {
     #[clap(subcommand)]
     subcmd: VaultCmd,
     #[clap(flatten)]
@@ -402,8 +385,7 @@ struct Vault
 }
 
 #[derive(Parser)]
-struct VaultOpts
-{
+struct VaultOpts {
     /// Vault service API endpoint. If specified, supersedes the configured the
     /// configured value.
     #[clap(long, value_name = "endpoint", display_order = 1)]
@@ -415,8 +397,7 @@ struct VaultOpts
 }
 
 #[derive(Parser)]
-enum VaultCmd
-{
+enum VaultCmd {
     #[clap(display_order = 1)]
     Get(VaultGet),
 
@@ -436,16 +417,14 @@ struct VaultGet;
 #[derive(Parser)]
 struct VaultPut;
 
-fn do_vault(ctx: Context, v: Vault) -> Result<String>
-{
+fn do_vault(ctx: Context, v: Vault) -> Result<String> {
     match v.subcmd {
         VaultCmd::Get(c) => do_vault_get(ctx, v.opts, c),
         VaultCmd::Put(c) => do_vault_put(ctx, v.opts, c),
     }
 }
 
-fn do_vault_get(ctx: Context, opt: VaultOpts, _: VaultGet) -> Result<String>
-{
+fn do_vault_get(ctx: Context, opt: VaultOpts, _: VaultGet) -> Result<String> {
     let cfg = load_conf(&ctx)?;
 
     let id = match opt.seed {
@@ -460,8 +439,7 @@ fn do_vault_get(ctx: Context, opt: VaultOpts, _: VaultGet) -> Result<String>
     Ok(v)
 }
 
-fn do_vault_put(ctx: Context, opt: VaultOpts, _: VaultPut) -> Result<String>
-{
+fn do_vault_put(ctx: Context, opt: VaultOpts, _: VaultPut) -> Result<String> {
     let cfg = load_conf(&ctx)?;
 
     let id = match opt.seed {
@@ -474,8 +452,7 @@ fn do_vault_put(ctx: Context, opt: VaultOpts, _: VaultPut) -> Result<String>
     let mut data = String::new();
     let _ = stdin().read_to_string(&mut data)?;
 
-    let v = cli::put_vault(&cfg, url, id, data.as_bytes())
-        .context("cannot upload vault")?;
+    let v = cli::put_vault(&cfg, url, id, data.as_bytes()).context("cannot upload vault")?;
 
     Ok(v)
 }
@@ -486,8 +463,7 @@ fn do_vault_put(ctx: Context, opt: VaultOpts, _: VaultPut) -> Result<String>
 #[derive(Parser)]
 struct Mu;
 
-fn do_mu(_: Context, _: Mu) -> Result<String>
-{
+fn do_mu(_: Context, _: Mu) -> Result<String> {
     let id = uno::Mu::new();
     Ok(base64::encode(id.0))
 }
@@ -496,20 +472,95 @@ fn do_mu(_: Context, _: Mu) -> Result<String>
 /// Print the session id derived from Mu entropy.
 ///
 #[derive(Parser)]
-struct Session
-{
+struct Session {
     /// Identity seed
     #[clap(long, value_name = "b64", display_order = 1)]
     mu: String,
 }
 
-fn do_session(_: Context, c: Session) -> Result<String>
-{
+fn do_session(_: Context, c: Session) -> Result<String> {
     let mu = mu_from_b64(c.mu)?;
     let sid = uno::Session::try_from(mu)?;
     Ok(base64::encode_config(&sid.0, base64::URL_SAFE_NO_PAD))
 }
 
+#[derive(Parser)]
+struct Share {
+    #[clap(subcommand)]
+    subcmd: ShareCmd,
+    #[clap(flatten)]
+    opts: ShareOpts,
+}
+
+#[derive(Parser)]
+struct ShareOpts {
+    #[clap(long, value_name = "endpoint", display_order = 1)]
+    url: Option<String>,
+}
+
+#[derive(Parser)]
+enum ShareCmd {
+    #[clap(display_order = 1)]
+    Get(ShareGet),
+
+    #[clap(display_order = 2)]
+    Put(SharePut),
+}
+
+fn do_share(ctx: Context, h: Share) -> Result<String> {
+    match h.subcmd {
+        ShareCmd::Get(s) => do_share_get(ctx, h.opts, s),
+        ShareCmd::Put(s) => do_share_put(ctx, h.opts, s),
+    }
+}
+
+#[derive(Parser)]
+struct ShareGet {
+    #[clap(long, value_name = "b64", display_order = 1)]
+    mu: String,
+}
+
+fn do_share_get(ctx: Context, opt: ShareOpts, g: ShareGet) -> Result<String> {
+    let cfg = load_conf(&ctx)?;
+    let url = opt.url.as_ref().unwrap_or(&cfg.api_host);
+
+    let mu = mu_from_b64(g.mu)?;
+
+    Ok("hi".to_string())
+}
+
+#[derive(Parser)]
+struct SharePut {
+    #[clap(
+        long,
+        value_name = "expire_seconds",
+        display_order = 1,
+        default_value = "86400"
+    )]
+    expire_seconds: String,
+
+    /// Identity seed to use. If specified, supersedes the configured value.
+    #[clap(long, value_name = "b64", display_order = 1)]
+    seed: Option<String>,
+}
+
+fn do_share_put(ctx: Context, opt: ShareOpts, p: SharePut) -> Result<String> {
+    let cfg = load_conf(&ctx)?;
+    let url = opt.url.as_ref().unwrap_or(&cfg.api_host);
+
+    let id = match p.seed {
+        Some(s) => id_from_b64(s)?,
+        None => cli::load_seed(&cfg)?,
+    };
+
+    let mut data = String::new();
+    let _ = stdin().read_to_string(&mut data)?;
+
+    let v = cli::put_share(url, id, &p.expire_seconds, data.as_bytes())
+        .context("cannot upload share")?;
+
+    Ok(v)
+}
 
 ///
 /// Shamir's secret sharing session operations.
@@ -518,8 +569,7 @@ fn do_session(_: Context, c: Session) -> Result<String>
 /// encrypted prior to uploading and decrypted when downloading.
 ///
 #[derive(Parser)]
-struct Ssss
-{
+struct Ssss {
     #[clap(subcommand)]
     subcmd: SsssCmd,
     #[clap(flatten)]
@@ -527,8 +577,7 @@ struct Ssss
 }
 
 #[derive(Parser)]
-struct SsssOpts
-{
+struct SsssOpts {
     /// Ephemeral session API endpoint. If specified, supersedes the configured
     /// value.
     #[clap(long, value_name = "endpoint", display_order = 1)]
@@ -541,8 +590,7 @@ struct SsssOpts
 }
 
 #[derive(Parser)]
-enum SsssCmd
-{
+enum SsssCmd {
     #[clap(display_order = 1)]
     Get(SsssGet),
 
@@ -553,8 +601,7 @@ enum SsssCmd
     Patch(SsssPatch),
 }
 
-fn do_ssss(ctx: Context, c: Ssss) -> Result<String>
-{
+fn do_ssss(ctx: Context, c: Ssss) -> Result<String> {
     match c.subcmd {
         SsssCmd::Get(s) => do_ssss_get(ctx, c.opts, s),
         SsssCmd::Put(s) => do_ssss_put(ctx, c.opts, s),
@@ -570,8 +617,7 @@ fn do_ssss(ctx: Context, c: Ssss) -> Result<String>
 #[derive(Parser)]
 struct SsssGet;
 
-fn do_ssss_get(ctx: Context, opt: SsssOpts, _: SsssGet) -> Result<String>
-{
+fn do_ssss_get(ctx: Context, opt: SsssOpts, _: SsssGet) -> Result<String> {
     let cfg = load_conf(&ctx)?;
     let url = opt.url.as_ref().unwrap_or(&cfg.api_host);
 
@@ -591,8 +637,7 @@ fn do_ssss_get(ctx: Context, opt: SsssOpts, _: SsssGet) -> Result<String>
 #[derive(Parser)]
 struct SsssPut;
 
-fn do_ssss_put(ctx: Context, opt: SsssOpts, _: SsssPut) -> Result<String>
-{
+fn do_ssss_put(ctx: Context, opt: SsssOpts, _: SsssPut) -> Result<String> {
     let cfg = load_conf(&ctx)?;
     let url = opt.url.as_ref().unwrap_or(&cfg.api_host);
 
@@ -601,8 +646,7 @@ fn do_ssss_put(ctx: Context, opt: SsssOpts, _: SsssPut) -> Result<String>
     let mut data = String::new();
     let _ = stdin().read_to_string(&mut data)?;
 
-    let s = cli::put_ssss(url, mu, data.as_bytes())
-        .context("cannot upload session")?;
+    let s = cli::put_ssss(url, mu, data.as_bytes()).context("cannot upload session")?;
 
     Ok(s)
 }
@@ -615,8 +659,7 @@ fn do_ssss_put(ctx: Context, opt: SsssOpts, _: SsssPut) -> Result<String>
 #[derive(Parser)]
 struct SsssPatch;
 
-fn do_ssss_patch(ctx: Context, opt: SsssOpts, _: SsssPatch) -> Result<String>
-{
+fn do_ssss_patch(ctx: Context, opt: SsssOpts, _: SsssPatch) -> Result<String> {
     let cfg = load_conf(&ctx)?;
     let url = opt.url.as_ref().unwrap_or(&cfg.api_host);
 
@@ -625,19 +668,16 @@ fn do_ssss_patch(ctx: Context, opt: SsssOpts, _: SsssPatch) -> Result<String>
     let mut data = String::new();
     let _ = stdin().read_to_string(&mut data)?;
 
-    let s = cli::patch_ssss(url, mu, data.as_bytes())
-        .context("cannot update session")?;
+    let s = cli::patch_ssss(url, mu, data.as_bytes()).context("cannot update session")?;
 
     Ok(s)
 }
-
 
 ///
 /// SLIP-0039 recovery shares operations
 ///
 #[derive(Parser)]
-enum S39
-{
+enum S39 {
     #[clap(display_order = 1)]
     Split(S39Split),
 
@@ -651,8 +691,7 @@ enum S39
 /// SLIP-0039 recovery shares options
 ///
 #[derive(Parser)]
-struct S39Cmd
-{
+struct S39Cmd {
     // TODO group threshold, group support, etc.
     #[clap(subcommand)]
     subcmd: S39,
@@ -661,8 +700,7 @@ struct S39Cmd
 /// Split the configured uno identity seed into a number of shares. .
 ///
 #[derive(Parser)]
-struct S39Split
-{
+struct S39Split {
     /// minimum shares needed to reconstitute the seed
     #[clap(long, value_name = "num", default_value = "2", display_order = 1)]
     minimum: u8,
@@ -676,8 +714,7 @@ struct S39Split
     seed: Option<String>,
 }
 
-fn do_s39(ctx: Context, s: S39Cmd) -> Result<String>
-{
+fn do_s39(ctx: Context, s: S39Cmd) -> Result<String> {
     match s.subcmd {
         S39::Split(c) => do_s39_split(ctx, c),
         S39::Combine(c) => do_s39_combine(c),
@@ -685,8 +722,7 @@ fn do_s39(ctx: Context, s: S39Cmd) -> Result<String>
     }
 }
 
-fn do_s39_split(ctx: Context, c: S39Split) -> Result<String>
-{
+fn do_s39_split(ctx: Context, c: S39Split) -> Result<String> {
     let id = match c.seed {
         Some(s) => id_from_b64(s)?,
         None => cli::load_seed(&load_conf(&ctx)?)?,
@@ -724,8 +760,7 @@ fn do_s39_split(ctx: Context, c: S39Split) -> Result<String>
 /// Combine shares of a split seed back into the whole identity seed.
 ///
 #[derive(Parser)]
-struct S39Combine
-{
+struct S39Combine {
     /// mnemonic share obtained from a previous s39 split operation
     #[clap(
         long,
@@ -753,8 +788,7 @@ fn do_s39_combine(c: S39Combine) -> Result<String>
 /// View metadata about a mnemonic share.
 ///
 #[derive(Parser)]
-struct S39View
-{
+struct S39View {
     /// mnemonic share obtained from a previous s39 split operation
     share: String,
 }
@@ -778,8 +812,7 @@ fn do_s39_view(c: S39View) -> Result<String>
     Ok(view)
 }
 
-fn main() -> Result<()>
-{
+fn main() -> Result<()> {
     let cli = Opts::parse();
     let ctx = cli.ctx;
 
@@ -795,6 +828,7 @@ fn main() -> Result<()>
         SubCommand::Mu(cmd) => do_mu(ctx, cmd),
         SubCommand::Session(cmd) => do_session(ctx, cmd),
         SubCommand::Ssss(cmd) => do_ssss(ctx, cmd),
+        SubCommand::Share(cmd) => do_share(ctx, cmd),
         SubCommand::S39(cmd) => do_s39(ctx, cmd),
     }?;
 

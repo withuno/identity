@@ -238,6 +238,9 @@ pub enum Binding<'a>
     /// A 1 of 1 "split" for bootstrapping the web extension or another app
     #[strum(serialize = "transfer")]
     Transfer,
+    /// A Magic Share payload
+    #[strum(serialize = "share")]
+    MagicShare,
     /// User-specified additional data
     #[strum(disabled)]
     Custom(&'a str),
@@ -255,6 +258,7 @@ impl<'a> Binding<'a>
             Binding::Split => "uno ssss split",
             Binding::Combine => "uno share combine",
             Binding::Transfer => "uno ssss transfer",
+            Binding::MagicShare => "uno magic share",
             Binding::Custom(s) => s,
             Binding::None => "",
         }
