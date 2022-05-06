@@ -1,9 +1,9 @@
 #[cfg(test)]
 mod requests {
-    use api::{add_auth_info, build_routes, signed_pow_auth};
     use api::mailbox::{
         Mailbox, MessageRequest, MessageStored, MessageToDelete, Payload,
     };
+    use api::{add_auth_info, build_routes, signed_pow_auth};
 
     use api::State;
     use tide::{Body, Response, StatusCode};
@@ -48,6 +48,7 @@ mod requests {
         sessions: T,
         mailboxes: T,
         objects: T,
+        shares: T,
     }
 
     #[cfg(not(feature = "s3"))]
@@ -63,6 +64,7 @@ mod requests {
             services: FileStore::new(dir.path(), "serv", "v0").await?,
             sessions: FileStore::new(dir.path(), "sess", "v0").await?,
             mailboxes: FileStore::new(dir.path(), "mbxs", "v0").await?,
+            shares: FileStore::new(dir.path(), "shrs", "v0").await?,
         };
         // we don't include objects db here because its only used in tests
         // todo: I don't understand this comment ^
@@ -72,6 +74,7 @@ mod requests {
             dbs.services.clone(),
             dbs.sessions.clone(),
             dbs.mailboxes.clone(),
+            dbs.shares.clone(),
         )?;
         Ok((api, dbs))
     }
@@ -105,6 +108,15 @@ mod requests {
         }
 
         let dbs = Dbs {
+            shares: S3Store::new(
+                "http://localhost:9000",
+                "minio",
+                "minioadmin",
+                "minioadmin",
+                &tmpname(32),
+                "v0",
+            )
+            .await?,
             objects: S3Store::new(
                 "http://localhost:9000",
                 "minio",
@@ -112,7 +124,8 @@ mod requests {
                 "minioadmin",
                 &tmpname(32),
                 "v0",
-            ).await?,
+            )
+            .await?,
             tokens: S3Store::new(
                 "http://localhost:9000",
                 "minio",
@@ -120,7 +133,8 @@ mod requests {
                 "minioadmin",
                 &tmpname(32),
                 "v0",
-            ).await?,
+            )
+            .await?,
             vaults: S3Store::new(
                 "http://localhost:9000",
                 "minio",
@@ -128,7 +142,8 @@ mod requests {
                 "minioadmin",
                 &tmpname(32),
                 "v0",
-            ).await?,
+            )
+            .await?,
             services: S3Store::new(
                 "http://localhost:9000",
                 "minio",
@@ -136,7 +151,8 @@ mod requests {
                 "minioadmin",
                 &tmpname(32),
                 "v0",
-            ).await?,
+            )
+            .await?,
             sessions: S3Store::new(
                 "http://localhost:9000",
                 "minio",
@@ -144,7 +160,8 @@ mod requests {
                 "minioadmin",
                 &tmpname(32),
                 "v0",
-            ).await?,
+            )
+            .await?,
             mailboxes: S3Store::new(
                 "http://localhost:9000",
                 "minio",
@@ -152,7 +169,8 @@ mod requests {
                 "minioadmin",
                 &tmpname(32),
                 "v0",
-            ).await?,
+            )
+            .await?,
         };
 
         dbs.objects.create_bucket_if_not_exists().await?;
@@ -161,6 +179,7 @@ mod requests {
         dbs.services.create_bucket_if_not_exists().await?;
         dbs.sessions.create_bucket_if_not_exists().await?;
         dbs.mailboxes.create_bucket_if_not_exists().await?;
+        dbs.shares.create_bucket_if_not_exists().await?;
 
         dbs.objects.empty_bucket().await?;
         dbs.tokens.empty_bucket().await?;
@@ -168,6 +187,7 @@ mod requests {
         dbs.services.empty_bucket().await?;
         dbs.sessions.empty_bucket().await?;
         dbs.mailboxes.empty_bucket().await?;
+        dbs.shares.empty_bucket().await?;
 
         Ok(dbs)
     }
@@ -182,6 +202,7 @@ mod requests {
             dbs.services.clone(),
             dbs.sessions.clone(),
             dbs.mailboxes.clone(),
+            dbs.shares.clone(),
         )?;
         Ok((api, dbs))
     }
@@ -251,9 +272,7 @@ mod requests {
         prev: &Response,
         next: &mut Request,
         id: &Id,
-    )
-    -> Result<()>
-    {
+    ) -> Result<()> {
         let auth_info_str = prev
             .header("authentication-info")
             .ok_or(anyhow!("expected auth-info"))?
@@ -341,7 +360,9 @@ mod requests {
         let (api, _) = setup_tmp_api().await?;
 
         let req: Request = surf::get("http://example.com/health").into();
-        let res: Response = api.respond(req).await
+        let res: Response = api
+            .respond(req)
+            .await
             .map_err(|_| anyhow!("request failed"))?;
         assert_eq!(StatusCode::NoContent, res.status());
         Ok(())
@@ -369,7 +390,9 @@ mod requests {
         let bytes0 = vec![0xF0; ONE_MB];
         req0.set_body(bytes0);
 
-        let res0: Response = api.respond(req0).await
+        let res0: Response = api
+            .respond(req0)
+            .await
             .map_err(|_| anyhow!("request0 failed"))?;
 
         assert_eq!(StatusCode::NoContent, res0.status());
@@ -378,7 +401,9 @@ mod requests {
         let bytes1 = vec![0xF0; ONE_MB + 1];
         req1.set_body(bytes1);
 
-        let res1: Response = api.respond(req1).await
+        let res1: Response = api
+            .respond(req1)
+            .await
             .map_err(|_| anyhow!("request1 failed"))?;
 
         assert_eq!(StatusCode::BadRequest, res1.status());
@@ -410,7 +435,9 @@ mod requests {
 
         // don't sign the initial request
         let req0: Request = surf::get(url.to_string()).into();
-        let res0: Response = api.respond(req0).await
+        let res0: Response = api
+            .respond(req0)
+            .await
             .map_err(|_| anyhow!("request0 failed"))?;
 
         // process the www-authenticate header
@@ -431,7 +458,9 @@ mod requests {
         let mut req1: Request = surf::get(url.to_string()).into();
         let alg1 = &www_auth1.params["algorithm"];
         sign_req(&mut req1, &n64_1, alg1, &salt64_1, &id)?;
-        let res1: Response = api.respond(req1).await
+        let res1: Response = api
+            .respond(req1)
+            .await
             .map_err(|_| anyhow!("request1 failed"))?;
 
         assert_eq!(StatusCode::NoContent, res1.status());
@@ -453,13 +482,18 @@ mod requests {
         let alg2 = &auth_info2.params["argon"];
         sign_req(&mut req2, &n64_2, alg2, &salt64_2, &id)?;
 
-        let mut res2: Response = api.respond(req2).await
+        let mut res2: Response = api
+            .respond(req2)
+            .await
             .map_err(|_| anyhow!("request2 failed"))?;
 
         assert_eq!(StatusCode::Unauthorized, res2.status());
 
         let exp_body2 = r#"{"reason":"scope mismatch","action":"create"}"#;
-        let actual_body2 = res2.take_body().into_bytes().await
+        let actual_body2 = res2
+            .take_body()
+            .into_bytes()
+            .await
             .map_err(|_| anyhow!("body read failed"))?;
         assert_eq!(exp_body2.as_bytes(), actual_body2);
 
@@ -479,7 +513,9 @@ mod requests {
         let alg3 = &www_auth3.params["algorithm"];
         sign_req(&mut req3, &n64_3, alg3, &salt64_3, &id)?;
 
-        let res3: Response = api.respond(req3).await
+        let res3: Response = api
+            .respond(req3)
+            .await
             .map_err(|_| anyhow!("request3 failed"))?;
 
         assert_eq!(StatusCode::NoContent, res3.status());
@@ -507,7 +543,9 @@ mod requests {
         let alg4 = &auth_info4.params["argon"];
         sign_req(&mut req4, &n64_4, alg4, &salt64_4, &id)?;
 
-        let res4: Response = api.respond(req4).await
+        let res4: Response = api
+            .respond(req4)
+            .await
             .map_err(|_| anyhow!("request4 failed"))?;
 
         assert_eq!(StatusCode::NoContent, res4.status());
@@ -521,13 +559,18 @@ mod requests {
 
         sign_req(&mut req5, &n64_4, alg4, &salt64_5, &id)?;
 
-        let mut res5: Response = api.respond(req5).await
+        let mut res5: Response = api
+            .respond(req5)
+            .await
             .map_err(|_| anyhow!("request5 failed"))?;
 
         assert_eq!(StatusCode::Unauthorized, res5.status());
 
         let expected_body5 = r#"{"reason":"unknown nonce","action":"update"}"#;
-        let actual_body5 = res5.take_body().into_bytes().await
+        let actual_body5 = res5
+            .take_body()
+            .into_bytes()
+            .await
             .map_err(|_| anyhow!("body read failed"))?;
         assert_eq!(expected_body5.as_bytes(), actual_body5);
 
@@ -549,7 +592,9 @@ mod requests {
         sign_req(&mut req1, &n64_1, TUNE, salt1, &id)?;
         let mut req2 = req1.clone(); // for the next request
 
-        let res1: Response = api.respond(req1).await
+        let res1: Response = api
+            .respond(req1)
+            .await
             .map_err(|_| anyhow!("request failed"))?;
 
         // expect a 404 since the file does not exist yet
@@ -573,12 +618,17 @@ mod requests {
         let alg2 = &auth_info1.params["argon"];
         sign_req(&mut req2, &n64_2, alg2, &salt64_2, &id)?;
 
-        let mut res2: Response = api.respond(req2).await
+        let mut res2: Response = api
+            .respond(req2)
+            .await
             .map_err(|_| anyhow!("request2 failed"))?;
 
         assert_eq!(StatusCode::Ok, res2.status());
         let expected_body2 = r#"{"test": "data"}"#;
-        let actual_body2 = res2.take_body().into_bytes().await
+        let actual_body2 = res2
+            .take_body()
+            .into_bytes()
+            .await
             .map_err(|_| anyhow!("body read failed"))?;
         assert_eq!(&expected_body2.as_bytes(), &actual_body2);
 
@@ -603,14 +653,22 @@ mod requests {
 
         // add the file pr-add/bar.json so the next request will succeed
         let tdata3 = r#"{"newservice": "bar"}"#;
-        let _ = dbs.services.put("pr-add/bar.json", &tdata3.as_bytes()).await?;
+        let _ = dbs
+            .services
+            .put("pr-add/bar.json", &tdata3.as_bytes())
+            .await?;
 
-        let mut res3: Response = api.respond(req3).await
+        let mut res3: Response = api
+            .respond(req3)
+            .await
             .map_err(|_| anyhow!("request3 failed"))?;
 
         assert_eq!(StatusCode::Ok, res3.status());
         let expected_body3 = r#"{"newservice": "bar"}"#;
-        let actual_body3 = res3.take_body().into_bytes().await
+        let actual_body3 = res3
+            .take_body()
+            .into_bytes()
+            .await
             .map_err(|_| anyhow!("body read failed"))?;
         assert_eq!(&expected_body3.as_bytes(), &actual_body3);
 
@@ -632,7 +690,9 @@ mod requests {
         let id = Id([0u8; ID_LENGTH]);
         sign_req(&mut req, &n64, TUNE, SALT, &id)?;
 
-        let res: Response = api.respond(req).await
+        let res: Response = api
+            .respond(req)
+            .await
             .map_err(|_| anyhow!("request failed"))?;
 
         assert_eq!(StatusCode::MethodNotAllowed, res.status());
@@ -652,7 +712,9 @@ mod requests {
 
         let id = Id([0u8; ID_LENGTH]);
         sign_req(&mut req, &n64, TUNE, SALT, &id)?;
-        let res: Response = api.respond(req).await
+        let res: Response = api
+            .respond(req)
+            .await
             .map_err(|_| anyhow!("request failed"))?;
 
         assert_eq!(StatusCode::MethodNotAllowed, res.status());
@@ -684,12 +746,17 @@ mod requests {
         let tdata = r#"{"test":"data"}"#;
         let _ = dbs.sessions.put(&sid, &tdata.as_bytes()).await?;
 
-        let mut res2: Response = api.respond(req2).await
+        let mut res2: Response = api
+            .respond(req2)
+            .await
             .map_err(|_| anyhow!("request2 failed"))?;
 
         assert_eq!(StatusCode::Ok, res2.status());
         let expected_body2 = r#"{"test":"data"}"#;
-        let actual_body2 = res2.take_body().into_bytes().await
+        let actual_body2 = res2
+            .take_body()
+            .into_bytes()
+            .await
             .map_err(|_| anyhow!("body read failed"))?;
         assert_eq!(&expected_body2.as_bytes(), &actual_body2);
 
@@ -711,12 +778,17 @@ mod requests {
             .body(json!({"test":"data"}))
             .into();
 
-        let mut res1: Response = api.respond(req1).await
+        let mut res1: Response = api
+            .respond(req1)
+            .await
             .map_err(|_| anyhow!("request failed"))?;
 
         assert_eq!(StatusCode::Ok, res1.status());
         let expected_body1 = r#"{"test":"data"}"#;
-        let actual_body1 = res1.take_body().into_bytes().await
+        let actual_body1 = res1
+            .take_body()
+            .into_bytes()
+            .await
             .map_err(|_| anyhow!("body read failed"))?;
         assert_eq!(expected_body1.as_bytes(), actual_body1);
 
@@ -741,7 +813,9 @@ mod requests {
             .body(json!({"patch": "me in"}))
             .into();
 
-        let res1: Response = api.respond(req1).await
+        let res1: Response = api
+            .respond(req1)
+            .await
             .map_err(|_| anyhow!("request failed"))?;
 
         assert_eq!(StatusCode::NotFound, res1.status());
@@ -754,12 +828,17 @@ mod requests {
             .body(json!({"patch": "me in"}))
             .into();
 
-        let mut res2: Response = api.respond(req2).await
+        let mut res2: Response = api
+            .respond(req2)
+            .await
             .map_err(|_| anyhow!("request2 failed"))?;
 
         assert_eq!(StatusCode::Ok, res2.status());
         let expected_body2 = r#"{"patch":"me in","test":"session data"}"#;
-        let actual_body2 = res2.take_body().into_bytes().await
+        let actual_body2 = res2
+            .take_body()
+            .into_bytes()
+            .await
             .map_err(|_| anyhow!("body read failed"))?;
         assert_eq!(&expected_body2.as_bytes(), &actual_body2);
 
@@ -782,19 +861,25 @@ mod requests {
         let _ = dbs.sessions.put(&sid, &tdata.as_bytes()).await?;
 
         let req1: Request = surf::delete(url.to_string()).into();
-        let res1: Response = api.respond(req1).await
+        let res1: Response = api
+            .respond(req1)
+            .await
             .map_err(|_| anyhow!("request failed"))?;
 
         assert_eq!(StatusCode::NoContent, res1.status());
 
         let req2: Request = surf::delete(url.to_string()).into();
-        let res2: Response = api.respond(req2).await
+        let res2: Response = api
+            .respond(req2)
+            .await
             .map_err(|_| anyhow!("request2 failed"))?;
 
         assert_eq!(StatusCode::NoContent, res2.status());
 
         let req3: Request = surf::get(url.to_string()).into();
-        let res3: Response = api.respond(req3).await
+        let res3: Response = api
+            .respond(req3)
+            .await
             .map_err(|_| anyhow!("request3 failed"))?;
 
         assert_eq!(StatusCode::NotFound, res3.status());
@@ -806,14 +891,13 @@ mod requests {
         api: &tide::Server<()>,
         dbs: &Dbs<impl Database>,
         signed_by: &Id,
-        mut req: Request
+        mut req: Request,
     ) -> Result<Response> {
-        let nonce = init_nonce(&dbs.tokens, &["read", "create", "delete"])
-            .await?;
+        let nonce =
+            init_nonce(&dbs.tokens, &["read", "create", "delete"]).await?;
         sign_req(&mut req, &nonce, TUNE, SALT, &signed_by)?;
 
-        let res = api.respond(req).await
-            .map_err(|e| anyhow!(e))?;
+        let res = api.respond(req).await.map_err(|e| anyhow!(e))?;
 
         Ok(res)
     }
@@ -826,13 +910,11 @@ mod requests {
         let recipient_keypair = KeyPair::from(&recipient_id);
         let recipient_pk = recipient_keypair.public.as_bytes();
 
-        let urlenc_rec_pk = base64::encode_config(recipient_pk,
-            base64::URL_SAFE_NO_PAD
-        );
+        let urlenc_rec_pk =
+            base64::encode_config(recipient_pk, base64::URL_SAFE_NO_PAD);
         let url = format!("https://example.com/mailboxes/{}", urlenc_rec_pk);
 
         let sender_id = Id([1u8; ID_LENGTH]);
-
 
         // 1. get your own mailbox
         //
@@ -840,13 +922,11 @@ mod requests {
         let res1 = mb_do_req(&api, &dbs, &recipient_id, req1).await?;
         assert_eq!(res1.status(), StatusCode::Ok);
 
-
         // 2. get someone else's mailbox
         //
         let req2 = surf::get(&url).build();
         let res2 = mb_do_req(&api, &dbs, &sender_id, req2).await?;
         assert_eq!(res2.status(), StatusCode::Forbidden);
-
 
         // 3. post to someone's mailbox
         //
@@ -858,19 +938,16 @@ mod requests {
                 share: "share".to_string(),
             },
         };
-        let req3 = surf::post(&url)
-            .body(serde_json::to_string(&body)?)
-            .build();
+        let req3 =
+            surf::post(&url).body(serde_json::to_string(&body)?).build();
         let res3 = mb_do_req(&api, &dbs, &sender_id, req3).await?;
         assert_eq!(res3.status(), StatusCode::Created);
-
 
         // 4 delete someone else's message (even if you created it)
         //
         let req4 = surf::delete(&url).build();
         let res4 = mb_do_req(&api, &dbs, &sender_id, req4).await?;
         assert_eq!(res4.status(), StatusCode::Forbidden);
-
 
         Ok(())
     }
@@ -886,25 +963,25 @@ mod requests {
         let sender_pk = KeyPair::from(&sender_id).public;
         let sender_pk_b64 = base64::encode(sender_pk);
 
-        let urlenc_rec_pk = base64::encode_config(recipient_pk,
-            base64::URL_SAFE_NO_PAD
-        );
+        let urlenc_rec_pk =
+            base64::encode_config(recipient_pk, base64::URL_SAFE_NO_PAD);
         let url = format!("https://example.com/mailboxes/{}", urlenc_rec_pk);
-
 
         // 1. get empty mailbox
         //
         let req1 = surf::get(&url).build();
         let mut res1 = mb_do_req(&api, &dbs, &recipient_id, req1).await?;
         assert_eq!(res1.status(), StatusCode::Ok);
-        let bytes1 = res1.take_body().into_bytes().await
+        let bytes1 = res1
+            .take_body()
+            .into_bytes()
+            .await
             .map_err(|e| anyhow!(e))?;
         let body1: Mailbox = serde_json::from_slice(&bytes1)?;
         assert_eq!(body1, Mailbox { messages: vec!() });
 
-
         // 2. post a new message and check the stored message
-        // 
+        //
         let req_body2 = MessageRequest {
             uuid: "1111".to_string(),
             action: "packed".to_string(),
@@ -929,11 +1006,13 @@ mod requests {
                 share: "share".to_string(),
             },
         };
-        let bytes2 = res2.take_body().into_bytes().await
+        let bytes2 = res2
+            .take_body()
+            .into_bytes()
+            .await
             .map_err(|e| anyhow!(e))?;
         let body2: MessageStored = serde_json::from_slice(&bytes2)?;
         assert_eq!(body2, expected2);
-
 
         // 3. post message 2 and ensure the resulting id has been incremented
         //
@@ -961,24 +1040,26 @@ mod requests {
                 share: "share".to_string(),
             },
         };
-        let bytes3 = res3.take_body().into_bytes().await
+        let bytes3 = res3
+            .take_body()
+            .into_bytes()
+            .await
             .map_err(|e| anyhow!(e))?;
         let body3: MessageStored = serde_json::from_slice(&bytes3)?;
         assert_eq!(body3, expected);
 
-
-        // 4. delete both messages 
-        // 
-        let body4 = vec!(
+        // 4. delete both messages
+        //
+        let body4 = vec![
             MessageToDelete {
                 from: sender_pk_b64.clone(),
-                id: 1
+                id: 1,
             },
             MessageToDelete {
                 from: sender_pk_b64.clone(),
-                id: 2
-            }
-        );
+                id: 2,
+            },
+        ];
         let req4 = surf::delete(&url)
             .body(serde_json::to_string(&body4)?)
             .build();
@@ -986,17 +1067,18 @@ mod requests {
         let res4 = mb_do_req(&api, &dbs, &recipient_id, req4).await?;
         assert_eq!(res4.status(), StatusCode::NoContent);
 
-
         // 5. mailbox should once again be empty
         //
         let req5 = surf::get(&url).build();
         let mut res5 = mb_do_req(&api, &dbs, &recipient_id, req5).await?;
         assert_eq!(res5.status(), StatusCode::Ok);
-        let bytes5 = res5.take_body().into_bytes().await
+        let bytes5 = res5
+            .take_body()
+            .into_bytes()
+            .await
             .map_err(|e| anyhow!(e))?;
         let body5: Mailbox = serde_json::from_slice(&bytes5)?;
         assert_eq!(body5, Mailbox { messages: vec!() });
-
 
         Ok(())
     }
@@ -1017,7 +1099,9 @@ mod requests {
         let mut req1: Request = surf::get(url.to_string()).into();
         sign_req(&mut req1, &nonce_b64, TUNE, SALT, &id)?;
 
-        let res1: Response = api.respond(req1).await
+        let res1: Response = api
+            .respond(req1)
+            .await
             .map_err(|_| anyhow!("request failed"))?;
 
         assert_eq!(StatusCode::NotFound, res1.status());
@@ -1034,12 +1118,15 @@ mod requests {
         let mut req2: Request = surf::get(url.to_string()).into();
         sign_req_using_res_with_id(&res1, &mut req2, &id)?;
 
-        let mut res2: Response = api.respond(req2).await
+        let mut res2: Response = api
+            .respond(req2)
+            .await
             .map_err(|_| anyhow!("request failed"))?;
 
         assert_eq!(StatusCode::Ok, res2.status());
 
-        let vc_hdr_str = res2.header("vclock")
+        let vc_hdr_str = res2
+            .header("vclock")
             .ok_or(anyhow!("expected vclock"))?
             .last()
             .as_str();
@@ -1047,7 +1134,10 @@ mod requests {
         assert_eq!(expected_vclock, vc_hdr_str);
 
         let expected_body = "vault data is opaque";
-        let actual_body = res2.take_body().into_bytes().await
+        let actual_body = res2
+            .take_body()
+            .into_bytes()
+            .await
             .map_err(|_| anyhow!("body read failed"))?;
         assert_eq!(expected_body.as_bytes(), actual_body);
 
@@ -1058,7 +1148,9 @@ mod requests {
         let mut req3: Request = surf::get(url.to_string()).into();
         sign_req_using_res_with_id(&res2, &mut req3, &bad_id)?;
 
-        let res3: Response = api.respond(req3).await
+        let res3: Response = api
+            .respond(req3)
+            .await
             .map_err(|_| anyhow!("request failed"))?;
 
         assert_eq!(StatusCode::Forbidden, res3.status());
@@ -1072,12 +1164,15 @@ mod requests {
         let mut req4: Request = surf::get(url.to_string()).into();
         sign_req_using_res_with_id(&res3, &mut req4, &id)?;
 
-        let mut res4: Response = api.respond(req4).await
+        let mut res4: Response = api
+            .respond(req4)
+            .await
             .map_err(|_| anyhow!("request failed"))?;
 
         assert_eq!(StatusCode::Ok, res4.status());
 
-        let vc_hdr_str4 = res4.header("vclock")
+        let vc_hdr_str4 = res4
+            .header("vclock")
             .ok_or(anyhow!("expected vclock"))?
             .last()
             .as_str();
@@ -1085,7 +1180,10 @@ mod requests {
         assert_eq!(expected_vclock4, vc_hdr_str4);
 
         let expected_body4 = "vault data is migrating";
-        let actual_body4 = res4.take_body().into_bytes().await
+        let actual_body4 = res4
+            .take_body()
+            .into_bytes()
+            .await
             .map_err(|_| anyhow!("body read failed"))?;
         assert_eq!(expected_body4, String::from_utf8(actual_body4)?);
 
@@ -1113,7 +1211,9 @@ mod requests {
             .into();
         sign_req(&mut req1, &nonce_b64, TUNE, SALT, &id)?;
 
-        let res1: Response = api.respond(req1).await
+        let res1: Response = api
+            .respond(req1)
+            .await
             .map_err(|_| anyhow!("request failed"))?;
 
         assert_eq!(StatusCode::BadRequest, res1.status());
@@ -1125,15 +1225,19 @@ mod requests {
             .body("vault data is opaque")
             .into();
 
-        let nonce2_b64 = init_nonce(&dbs.tokens, &["create", "update"]).await?;
+        let nonce2_b64 =
+            init_nonce(&dbs.tokens, &["create", "update"]).await?;
         sign_req(&mut req2, &nonce2_b64, TUNE, SALT, &id)?;
 
-        let mut res2: Response = api.respond(req2).await
+        let mut res2: Response = api
+            .respond(req2)
+            .await
             .map_err(|_| anyhow!("request failed"))?;
 
         assert_eq!(StatusCode::Ok, res2.status());
 
-        let vc_hdr_str2 = res2.header("vclock")
+        let vc_hdr_str2 = res2
+            .header("vclock")
             .ok_or(anyhow!("expected vclock"))?
             .last()
             .as_str();
@@ -1141,7 +1245,10 @@ mod requests {
         assert_eq!("c1=1", vc_hdr_str2);
 
         let expected_body2 = "vault data is opaque";
-        let actual_body2 = res2.take_body().into_bytes().await
+        let actual_body2 = res2
+            .take_body()
+            .into_bytes()
+            .await
             .map_err(|_| anyhow!("body read failed"))?;
         assert_eq!(expected_body2.as_bytes(), actual_body2);
 
@@ -1153,7 +1260,9 @@ mod requests {
         let mut req3: Request = surf::get(url.to_string()).into();
         sign_req_using_res_with_id(&res2, &mut req3, &bad_id)?;
 
-        let res3: Response = api.respond(req3).await
+        let res3: Response = api
+            .respond(req3)
+            .await
             .map_err(|_| anyhow!("request failed"))?;
 
         assert_eq!(StatusCode::Forbidden, res3.status());
@@ -1164,16 +1273,24 @@ mod requests {
             .into();
         sign_req_using_res_with_id(&res3, &mut req4, &id)?;
 
-        let mut res4: Response = api.respond(req4).await
+        let mut res4: Response = api
+            .respond(req4)
+            .await
             .map_err(|_| anyhow!("request failed"))?;
 
         assert_eq!(StatusCode::Conflict, res4.status());
 
-        let expected_body4 = format!("{{\
+        let expected_body4 = format!(
+            "{{\
             \"error\": \"causality violation\", \
             \"vault\": {}\
-        }}", serde_json::to_string(b"vault data is opaque")?);
-        let actual_body4 = res4.take_body().into_bytes().await
+        }}",
+            serde_json::to_string(b"vault data is opaque")?
+        );
+        let actual_body4 = res4
+            .take_body()
+            .into_bytes()
+            .await
             .map_err(|_| anyhow!("body read failed"))?;
         assert_eq!(expected_body4, String::from_utf8(actual_body4)?);
 
@@ -1187,12 +1304,15 @@ mod requests {
             .into();
         sign_req_using_res_with_id(&res4, &mut req5, &id)?;
 
-        let mut res5: Response = api.respond(req5).await
+        let mut res5: Response = api
+            .respond(req5)
+            .await
             .map_err(|_| anyhow!("request failed"))?;
 
         assert_eq!(StatusCode::Ok, res5.status());
 
-        let vc_hdr_str5 = res5.header("vclock")
+        let vc_hdr_str5 = res5
+            .header("vclock")
             .ok_or(anyhow!("expected vclock"))?
             .last()
             .as_str();
@@ -1200,7 +1320,10 @@ mod requests {
         assert_eq!("c1=2", vc_hdr_str5);
 
         let expected_body5 = "vault data is fresh";
-        let actual_body5 = res5.take_body().into_bytes().await
+        let actual_body5 = res5
+            .take_body()
+            .into_bytes()
+            .await
             .map_err(|_| anyhow!("body read failed"))?;
         assert_eq!(expected_body5.as_bytes(), actual_body5);
 
@@ -1221,12 +1344,15 @@ mod requests {
         let tdata_vec6 = serde_json::to_vec(&tdata_json6)?;
         let _ = dbs.vaults.put(&vid, &tdata_vec6).await?;
 
-        let res6: Response = api.respond(req6).await
+        let res6: Response = api
+            .respond(req6)
+            .await
             .map_err(|_| anyhow!("request failed"))?;
 
         assert_eq!(StatusCode::Conflict, res6.status());
 
-        let vc_hdr_str6 = res6.header("vclock")
+        let vc_hdr_str6 = res6
+            .header("vclock")
             .ok_or(anyhow!("expected vclock"))?
             .last()
             .as_str();
@@ -1242,12 +1368,15 @@ mod requests {
             .into();
         sign_req_using_res_with_id(&res6, &mut req7, &id)?;
 
-        let mut res7: Response = api.respond(req7).await
+        let mut res7: Response = api
+            .respond(req7)
+            .await
             .map_err(|_| anyhow!("request failed"))?;
 
         assert_eq!(StatusCode::Ok, res7.status());
 
-        let vc_hdr_str7 = res7.header("vclock")
+        let vc_hdr_str7 = res7
+            .header("vclock")
             .ok_or(anyhow!("expected vclock"))?
             .last()
             .as_str();
@@ -1255,7 +1384,10 @@ mod requests {
         assert_eq!("c1=3,c2=1", vc_hdr_str7);
 
         let expected_body7 = "vault data is merged";
-        let actual_body7 = res7.take_body().into_bytes().await
+        let actual_body7 = res7
+            .take_body()
+            .into_bytes()
+            .await
             .map_err(|_| anyhow!("body read failed"))?;
         assert_eq!(expected_body7.as_bytes(), actual_body7);
 
@@ -1267,7 +1399,9 @@ mod requests {
             .into();
         sign_req_using_res_with_id(&res7, &mut req8, &id)?;
 
-        let res8: Response = api.respond(req8).await
+        let res8: Response = api
+            .respond(req8)
+            .await
             .map_err(|_| anyhow!("request failed"))?;
 
         assert_eq!(StatusCode::BadRequest, res8.status());
@@ -1278,11 +1412,12 @@ mod requests {
             .into();
         sign_req_using_res_with_id(&res8, &mut req9, &id)?;
 
-        let res9: Response = api.respond(req9).await
+        let res9: Response = api
+            .respond(req9)
+            .await
             .map_err(|_| anyhow!("request failed"))?;
 
         assert_eq!(StatusCode::BadRequest, res9.status());
-
 
         Ok(())
     }
@@ -1304,7 +1439,10 @@ mod requests {
         let mut vc = VClock::new("cz");
 
         // we'll make it version 5
-        vc.incr("cz"); vc.incr("cz"); vc.incr("cz"); vc.incr("cz");
+        vc.incr("cz");
+        vc.incr("cz");
+        vc.incr("cz");
+        vc.incr("cz");
 
         // put data
 
@@ -1314,12 +1452,15 @@ mod requests {
             .into();
         sign_req(&mut req1, &nonce_b64, TUNE, SALT, &id)?;
 
-        let mut res1: Response = api.respond(req1).await
+        let mut res1: Response = api
+            .respond(req1)
+            .await
             .map_err(|_| anyhow!("request failed"))?;
 
         assert_eq!(StatusCode::Ok, res1.status());
 
-        let vc_hdr_str = res1.header("vclock")
+        let vc_hdr_str = res1
+            .header("vclock")
             .ok_or(anyhow!("expected vclock"))?
             .last()
             .as_str();
@@ -1327,7 +1468,10 @@ mod requests {
         assert_eq!(expected_vclock, vc_hdr_str);
 
         let expected_body1 = "vault data is opaque";
-        let actual_body1 = res1.take_body().into_bytes().await
+        let actual_body1 = res1
+            .take_body()
+            .into_bytes()
+            .await
             .map_err(|_| anyhow!("body read failed"))?;
         assert_eq!(expected_body1, std::str::from_utf8(&actual_body1)?);
 
@@ -1346,12 +1490,15 @@ mod requests {
         let mut req2: Request = surf::get(url.to_string()).into();
         sign_req_using_res_with_id(&res1, &mut req2, &id)?;
 
-        let mut res2: Response = api.respond(req2).await
+        let mut res2: Response = api
+            .respond(req2)
+            .await
             .map_err(|_| anyhow!("request failed"))?;
 
         assert_eq!(StatusCode::Ok, res2.status());
 
-        let vc_hdr_str = res2.header("vclock")
+        let vc_hdr_str = res2
+            .header("vclock")
             .ok_or(anyhow!("expected vclock"))?
             .last()
             .as_str();
@@ -1359,10 +1506,69 @@ mod requests {
         assert_eq!(expected_vclock, vc_hdr_str);
 
         let expected_body2 = "vault data is opaque";
-        let actual_body2 = res2.take_body().into_bytes().await
+        let actual_body2 = res2
+            .take_body()
+            .into_bytes()
+            .await
             .map_err(|_| anyhow!("body read failed"))?;
         assert_eq!(expected_body2.as_bytes(), actual_body2);
 
+        Ok(())
+    }
+
+    #[async_std::test]
+    async fn share_roundtrip() -> Result<()> {
+        let (api, _) = setup_tmp_api().await?;
+
+        let id = Id([0u8; ID_LENGTH]);
+        let keypair = KeyPair::from(&id);
+        let pubkey = keypair.public.as_bytes();
+        let sid = base64::encode_config(&pubkey, base64::URL_SAFE_NO_PAD);
+        let base = Url::parse("https://example.com/shares/")?;
+        let url = base.join(&sid)?;
+
+        let post: Request =
+            surf::post(url.to_string()).body("some secret share").into();
+
+        let res1: Response = api
+            .respond(post)
+            .await
+            .map_err(|_| anyhow!("request failed"))?;
+
+        assert_eq!(StatusCode::Created, res1.status());
+
+        let get: Request = surf::get(url.to_string()).into();
+        let res2: Response = api
+            .respond(get)
+            .await
+            .map_err(|_| anyhow!("request failed"))?;
+
+        assert_eq!(StatusCode::Ok, res2.status());
+
+        Ok(())
+    }
+
+    #[async_std::test]
+    async fn share_expiry() -> Result<()> {
+        let (api, dbs) = setup_tmp_api().await?;
+
+        let id = Id([0u8; ID_LENGTH]);
+        let keypair = KeyPair::from(&id);
+        let pubkey = keypair.public.as_bytes();
+        let sid = base64::encode_config(&pubkey, base64::URL_SAFE_NO_PAD);
+        let base = Url::parse("https://example.com/shares/")?;
+        let url = base.join(&sid)?;
+
+        let post1: Request =
+            surf::post(url.to_string()).body("some secret share").into();
+
+        let _: Response = api.respond(post1)
+            .await
+            .map_err(|_| anyhow!("request failed"))?;
+
+        let share = dbs.shares.get(sid).await?;
+
+        assert_eq!(false, true);
 
         Ok(())
     }
@@ -1380,7 +1586,9 @@ mod requests {
 
         let salt1 = SALT;
         sign_req(&mut req1, &n64_1, TUNE, salt1, &id)?;
-        let res1: Response = api.respond(req1).await
+        let res1: Response = api
+            .respond(req1)
+            .await
             .map_err(|_| anyhow!("request failed"))?;
 
         // expect a 404 since the file does not exist yet
@@ -1393,19 +1601,22 @@ mod requests {
         let mut req2: Request = surf::get(url.to_string()).into();
         sign_req_using_res_with_id(&res1, &mut req2, &id)?;
 
-        let mut res2: Response = api.respond(req2).await
+        let mut res2: Response = api
+            .respond(req2)
+            .await
             .map_err(|_| anyhow!("request2 failed"))?;
 
         assert_eq!(StatusCode::Ok, res2.status());
         let expected_body2 = r#"{"test": "data"}"#;
-        let actual_body2 = res2.take_body().into_bytes().await
+        let actual_body2 = res2
+            .take_body()
+            .into_bytes()
+            .await
             .map_err(|_| anyhow!("body read failed"))?;
         assert_eq!(&expected_body2.as_bytes(), &actual_body2);
 
-
         Ok(())
     }
-
 
     #[allow(dead_code)]
     fn print_body(res: &mut Response) -> Result<()> {

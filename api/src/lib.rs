@@ -52,7 +52,6 @@ where
     })
 }
 
-
 /// Short circuit the middleware chain if the request is not authorized.
 ///
 pub fn signed_pow_auth<'a, T>(
@@ -259,6 +258,30 @@ where
         .build())
 }
 
+async fn fetch_share<T>(req: Request<State<T>>) -> Result<Body>
+where
+    T: Database + 'static,
+{
+    let db = &req.state().db;
+    let id = &req.ext::<ShareId>().unwrap().0;
+
+    let share = db.get(&id).await.map_err(not_found)?;
+
+    Ok(share.into())
+}
+
+async fn store_share<T>(mut req: Request<State<T>>) -> Result<StatusCode>
+where
+    T: Database + 'static,
+{
+    let body = &req.body_bytes().await.map_err(server_err)?;
+    let db = &req.state().db;
+    let id = &req.ext::<ShareId>().unwrap().0;
+
+    db.put(&id, &body).await.map_err(server_err)?;
+
+    Ok(StatusCode::Created)
+}
 
 // Make sure the vault in the url matches the public key that generated the
 // signature on the request. Requires VaultId middleware. Returns status 403
@@ -637,6 +660,7 @@ where
 
 struct VaultId(String);
 struct MailboxId(String);
+struct ShareId(String);
 
 // Extract the MailboxId from the url parameter for conveniennce.
 //
@@ -656,7 +680,7 @@ where
     })
 }
 
-// Extract the VaultId from the url parameter for conveniennce.
+// Extract the VaultId from the url parameter for convenience.
 //
 fn ensure_vault_id<'a, T>(
     mut req: Request<State<T>>,
@@ -673,12 +697,30 @@ where
     })
 }
 
+// Extract the ShareId from the url parameter for convenience.
+//
+fn ensure_share_id<'a, T>(
+    mut req: Request<State<T>>,
+    next: Next<'a, State<T>>,
+) -> Pin<Box<dyn Future<Output = Result> + Send + 'a>>
+where
+    T: Database + 'static,
+{
+    Box::pin(async {
+        let p = req.param("id").map_err(bad_request)?;
+        let vid = ShareId(String::from(p));
+        req.set_ext(vid);
+        Ok(next.run(req).await)
+    })
+}
+
 pub fn build_routes<T>(
     token_db: T,
     vault_db: T,
     service_db: T,
     session_db: T,
     mailbox_db: T,
+    share_db: T,
 ) -> anyhow::Result<tide::Server<()>>
 where
     T: Database + 'static,
@@ -758,6 +800,18 @@ where
             .post(post_mailbox)
             .delete(delete_messages);
         api.at("mailboxes").nest(mailboxes);
+    }
+
+    {
+        let mut shares =
+            tide::with_state(State::new(share_db, token_db.clone()));
+        shares
+            .at(":id")
+            .with(body_size_limit)
+            .with(ensure_share_id)
+            .post(store_share)
+            .get(fetch_share);
+        api.at("shares").nest(shares);
     }
 
     Ok(api)

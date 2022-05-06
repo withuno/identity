@@ -248,7 +248,6 @@ pub fn put_share(host: &str, id: uno::Id, expire_seconds: &str, data: &[u8]) -> 
         encrypted_credential: encrypted,
     };
 
-
     let keypair = uno::KeyPair::from(&entropy);
     let location = base64::encode_config(keypair.public, base64::URL_SAFE_NO_PAD);
 
@@ -260,10 +259,14 @@ pub fn put_share(host: &str, id: uno::Id, expire_seconds: &str, data: &[u8]) -> 
         .body(json_envelope)
         .build();
 
+    let result =
+        async_std::task::block_on(do_http_signed(req, &id)).map_err(|e| anyhow!("{}", e))?;
+
     Ok(format!(
         "share created at {} with entropy {}",
-        url, base64::encode_config(entropy.0, base64::URL_SAFE_NO_PAD))
-    )
+        url,
+        base64::encode_config(entropy.0, base64::URL_SAFE_NO_PAD)
+    ))
 }
 
 pub fn get_ssss(host: &String, mu: uno::Mu) -> Result<String> {
