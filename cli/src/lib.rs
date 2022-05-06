@@ -237,7 +237,7 @@ fn vault_url_from_key(endpoint: &str, key: &uno::KeyPair) -> Result<Url> {
     Ok(base.join(&vid)?)
 }
 
-pub fn put_share(host: &str, id: uno::Id, expire_seconds: &str, data: &[u8]) -> Result<String> {
+pub fn post_share(host: &str, _id: uno::Id, expire_seconds: &str, data: &[u8]) -> Result<String> {
     let entropy = uno::Id::new();
 
     let encryption_key = uno::SymmetricKey::from(&entropy);
@@ -260,7 +260,7 @@ pub fn put_share(host: &str, id: uno::Id, expire_seconds: &str, data: &[u8]) -> 
         .build();
 
     let result =
-        async_std::task::block_on(do_http_signed(req, &id)).map_err(|e| anyhow!("{}", e))?;
+        async_std::task::block_on(do_http_simple(req)).map_err(|e| anyhow!("{}", e))?;
 
     Ok(format!(
         "share created at {} with entropy {}",
@@ -435,7 +435,7 @@ async fn do_http_simple(req: surf::Request) -> Result<Vec<u8>> {
     let mut res = client.send(req).await.map_err(|e| anyhow!("{}", e))?;
 
     let status = res.status();
-    if status != 200 {
+    if status != 201 {
         bail!("server returned: {}", status);
     }
     let body = res.body_bytes().await.map_err(|e| anyhow!("{}", e))?;
