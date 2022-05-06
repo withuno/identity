@@ -142,6 +142,33 @@ pub fn wasm_decrypt_share(share: String, seed: String) -> Option<String> {
 }
 
 #[wasm_bindgen]
+pub fn wasm_decrypt_magic_share(share: &[u8], seed: String) -> Option<String> {
+    let decoded_seed =
+        match base64::decode_config(seed, base64::URL_SAFE_NO_PAD) {
+            Ok(v) => v,
+            Err(_) => return None,
+        };
+
+    let id = match uno::Id::try_from(&decoded_seed[..]) {
+        Ok(v) => v,
+        Err(_) => return None,
+    };
+
+    let key = uno::SymmetricKey::from(&id);
+    let ctx = uno::Binding::MagicShare;
+
+    let decrypted_share = match uno::decrypt(ctx, key, share) {
+        Ok(v) => v,
+        Err(_) => return None,
+    };
+
+    match String::from_utf8(decrypted_share) {
+        Ok(s) => Some(s),
+        Err(_) => None,
+    }
+}
+
+#[wasm_bindgen]
 pub fn wasm_decrypt_vault(vault: &[u8], seed: String) -> Option<String> {
     let decoded_seed = match base64::decode(seed) {
         Ok(v) => v,
@@ -181,6 +208,14 @@ pub fn wasm_generate_session_id(seed: String) -> Option<String> {
     match argon_hash(32, 256, 2, salt, &decoded_seed) {
         Ok(v) => Some(base64::encode_config(v, base64::URL_SAFE_NO_PAD)),
         Err(_) => None,
+    }
+}
+
+#[wasm_bindgen]
+pub fn wasm_get_public_key_url_encoded(seed: String) -> Option<String> {
+    match base64::decode_config(seed, base64::URL_SAFE_NO_PAD) {
+        Ok(v) => wasm_get_public_key(base64::encode(v), true),
+        Err(_) => return None,
     }
 }
 
