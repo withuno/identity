@@ -42,7 +42,7 @@ pub struct Config {
 #[derive(Serialize, Deserialize)]
 struct MagicShareEnvelope {
     pub schema_version: u16,
-    pub encrypted_credential: Vec<u8>,
+    pub encrypted_credential: String,
 }
 
 impl Default for Config {
@@ -245,11 +245,10 @@ pub fn post_share(host: &str, _id: uno::Id, expire_seconds: &str, data: &[u8]) -
 
     let envelope = MagicShareEnvelope {
         schema_version: 0,
-        encrypted_credential: encrypted,
+        encrypted_credential: base64::encode(encrypted),
     };
 
     let keypair = uno::KeyPair::from(&entropy);
-    let location = base64::encode_config(keypair.public, base64::URL_SAFE_NO_PAD);
 
     let url = share_url_from_public_key(&host, &keypair.public)?;
     let json_envelope = serde_json::to_string(&envelope)?;
@@ -259,8 +258,7 @@ pub fn post_share(host: &str, _id: uno::Id, expire_seconds: &str, data: &[u8]) -
         .body(json_envelope)
         .build();
 
-    let result =
-        async_std::task::block_on(do_http_simple(req)).map_err(|e| anyhow!("{}", e))?;
+    async_std::task::block_on(do_http_simple(req)).map_err(|e| anyhow!("{}", e))?;
 
     Ok(format!(
         "share created at {} with entropy {}",
