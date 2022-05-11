@@ -150,11 +150,8 @@ pub fn wasm_decrypt_share(share: String, seed: String) -> Option<String>
 }
 
 #[wasm_bindgen]
-pub fn wasm_decrypt_vault(vault: &[u8], seed: String) -> Option<String>
+pub fn wasm_decrypt_magic_share(share: &[u8], seed: String) -> Option<String>
 {
-
-
-pub fn wasm_decrypt_magic_share(share: &[u8], seed: String) -> Option<String> {
     let decoded_seed =
         match base64::decode_config(seed, base64::URL_SAFE_NO_PAD) {
             Ok(v) => v,
@@ -169,7 +166,7 @@ pub fn wasm_decrypt_magic_share(share: &[u8], seed: String) -> Option<String> {
     let key = uno::SymmetricKey::from(&id);
     let ctx = uno::Binding::MagicShare;
 
-    let decrypted_share = match uno::decrypt(ctx, key, share) {
+    let decrypted_share = match uno::decrypt(ctx, key, &decoded_share) {
         Ok(v) => v,
         Err(_) => return None,
     };
