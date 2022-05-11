@@ -487,16 +487,17 @@ fn do_share(ctx: Context, h: Share) -> Result<String> {
 #[derive(Parser)]
 struct ShareGet {
     #[clap(long, value_name = "b64", display_order = 1)]
-    mu: String,
+    seed: String,
 }
 
 fn do_share_get(ctx: Context, opt: ShareOpts, g: ShareGet) -> Result<String> {
     let cfg = load_conf(&ctx)?;
     let url = opt.url.as_ref().unwrap_or(&cfg.api_host);
+    let seed = id_from_b64(g.seed)?;
 
-    let mu = mu_from_b64(g.mu)?;
+    let v = cli::get_share(url, seed)?;
 
-    Ok("hi".to_string())
+    Ok(v)
 }
 
 #[derive(Parser)]

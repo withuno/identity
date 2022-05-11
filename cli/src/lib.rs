@@ -237,6 +237,28 @@ fn vault_url_from_key(endpoint: &str, key: &uno::KeyPair) -> Result<Url> {
     Ok(base.join(&vid)?)
 }
 
+pub fn get_share(host: &str, seed: uno::Id) -> Result<String> {
+    let keypair = uno::KeyPair::from(&seed);
+    let url = share_url_from_public_key(&host, &keypair.public)?;
+
+    let req = surf::get(url.as_str()).build();
+    let result = async_std::task::block_on(do_http_simple(req)).map_err(|e| anyhow!("{}", e))?;
+
+    let v: MagicShareEnvelope = serde_json::from_slice(&result)?;
+    let decoded_encrypted_credential = base64::decode(v.encrypted_credential)?;
+
+    let decryption_key = uno::SymmetricKey::from(&seed);
+    let decrypted = uno::decrypt(
+        Binding::MagicShare,
+        decryption_key,
+        &decoded_encrypted_credential,
+    )?;
+
+    let s = String::from_utf8(decrypted)?;
+
+    Ok(s)
+}
+
 pub fn post_share(host: &str, _id: uno::Id, expire_seconds: &str, data: &[u8]) -> Result<String> {
     let entropy = uno::Id::new();
 
@@ -433,7 +455,7 @@ async fn do_http_simple(req: surf::Request) -> Result<Vec<u8>> {
     let mut res = client.send(req).await.map_err(|e| anyhow!("{}", e))?;
 
     let status = res.status();
-    if status != 201 {
+    if status != 201 && status != 200 {
         bail!("server returned: {}", status);
     }
     let body = res.body_bytes().await.map_err(|e| anyhow!("{}", e))?;
