@@ -1,7 +1,7 @@
-use anyhow::{anyhow, bail, Context, ensure, Result};
+use anyhow::{anyhow, bail, ensure, Context, Result};
 
-use async_trait::async_trait;
 use async_std::path::Path;
+use async_trait::async_trait;
 use std::fmt;
 
 use serde::Deserialize;
@@ -10,11 +10,12 @@ use serde_xml_rs::from_reader;
 use rusty_s3::{Bucket, Credentials, S3Action, UrlStyle};
 
 use surf::http::Method;
-use surf::{Request, Response, StatusCode};
 use surf::Url;
+use surf::{Request, Response, StatusCode};
 
 use std::fmt::Debug;
 use std::time::Duration;
+use chrono::DateTime;
 
 use crate::store::Database;
 
@@ -130,10 +131,10 @@ where
     let path = Path::new("/").join(version).join(object);
 
     // convert windows style paths to a universal `/` scheme
-    let path_url = Url::from_file_path(path)
-        .map_err(|_| anyhow!("bad path for url"))?;
+    let path_url =
+        Url::from_file_path(path).map_err(|_| anyhow!("bad path for url"))?;
 
-    // remove the leading "file:///" 
+    // remove the leading "file:///"
     let fbase = Url::parse("file:///")?;
 
     match fbase.make_relative(&path_url) {
@@ -152,8 +153,7 @@ where
     // is a simple prefix or should be treated as a directory. We *could*
     // probably assume a dir for our use case and use Url::from_directory_path.
     let path = Path::new("/").join(version).join(prefix);
-    let pstr = path.to_str()
-        .ok_or(anyhow!("prefix not valid utf-8"))?;
+    let pstr = path.to_str().ok_or(anyhow!("prefix not valid utf-8"))?;
 
     // Url::make_relative unconditionally strips trailing `/`. So we must check
     // if the path ends with the path separator and add a `/` back at the end.
@@ -168,19 +168,19 @@ where
     // remove the leading "file:///"
     let base = Url::parse("file:///")?;
 
-    let url_style_prefix = base.make_relative(&purl)
+    let url_style_prefix = base
+        .make_relative(&purl)
         .context("cannot make prefix relative to the root")?;
 
     if is_directory {
-      Ok(format!("{}/", url_style_prefix.as_str()))
+        Ok(format!("{}/", url_style_prefix.as_str()))
     } else {
-      Ok(url_style_prefix.as_str().to_owned())
+        Ok(url_style_prefix.as_str().to_owned())
     }
 }
 
 #[async_trait]
 impl Database for S3Store {
-
     async fn exists<P>(&self, object: P) -> Result<bool>
     where
         P: AsRef<Path> + Send,
@@ -188,7 +188,7 @@ impl Database for S3Store {
         Ok(self.exists_version(&self.version, object).await?)
     }
 
-    async fn exists_version<P, Q>(&self, version: Q, object: P) -> Result<bool> 
+    async fn exists_version<P, Q>(&self, version: Q, object: P) -> Result<bool>
     where
         P: AsRef<Path> + Send,
         Q: AsRef<Path> + Send,
@@ -205,6 +205,50 @@ impl Database for S3Store {
         }
     }
 
+    async fn get_metadata<P>(
+        &self,
+        object: P,
+    ) -> Result<crate::store::Metadata>
+    where
+        P: AsRef<Path> + Send,
+    {
+        Ok(self.get_metadata_version(&self.version, object).await?)
+    }
+
+    async fn get_metadata_version<P, Q>(
+        &self,
+        version: Q,
+        object: P,
+    ) -> Result<crate::store::Metadata>
+    where
+        P: AsRef<Path> + Send,
+        Q: AsRef<Path> + Send,
+    {
+        let vobject = full_obj_from_path(version, object)?;
+        let action = self.bucket.get_object(Some(&self.creds), &vobject);
+        let ttl = Duration::from_secs(60 * 60);
+        let bro = Request::builder(Method::Get, action.sign(ttl)).build();
+
+        let res = let_it_rip(bro).await?;
+        let status = res.status();
+        ensure!(status.is_success(), "s3 GET unexpected result ({})", status);
+
+        let h = match res.header("Last-Modified") {
+            Some(v) => { v.get(0) },
+            _ => anyhow::bail!("unexpected result from s3 api"),
+        };
+
+        let dt = match h {
+            Some(v) => { DateTime::parse_from_rfc2822(v.as_str()) },
+            _ => anyhow::bail!("unexpected result from s3 api"),
+        };
+
+        match dt {
+            Ok(v) => Ok(crate::store::Metadata{created_at: v.into() }),
+            _ => anyhow::bail!("unexpected result from s3 api"),
+        }
+    }
+
     async fn get<P>(&self, object: P) -> Result<Vec<u8>>
     where
         P: AsRef<Path> + Send,
@@ -212,7 +256,7 @@ impl Database for S3Store {
         Ok(self.get_version(&self.version, object).await?)
     }
 
-    async fn get_version<P, Q>(&self, version: Q, object: P) -> Result<Vec<u8>> 
+    async fn get_version<P, Q>(&self, version: Q, object: P) -> Result<Vec<u8>>
     where
         P: AsRef<Path> + Send,
         Q: AsRef<Path> + Send,
@@ -235,8 +279,12 @@ impl Database for S3Store {
         Ok(self.put_version(&self.version, object, content).await?)
     }
 
-    async fn put_version<P, Q>(&self, version: Q, object: P, content: &[u8])
-    -> Result<()>
+    async fn put_version<P, Q>(
+        &self,
+        version: Q,
+        object: P,
+        content: &[u8],
+    ) -> Result<()>
     where
         P: AsRef<Path> + Send,
         Q: AsRef<Path> + Send,
@@ -286,8 +334,11 @@ impl Database for S3Store {
         Ok(self.list_version(&self.version, prefix).await?)
     }
 
-    async fn list_version<P, Q>(&self, version: Q, prefix: P)
-    -> Result<Vec<String>>
+    async fn list_version<P, Q>(
+        &self,
+        version: Q,
+        prefix: P,
+    ) -> Result<Vec<String>>
     where
         P: AsRef<Path> + Send,
         Q: AsRef<Path> + Send,
@@ -304,17 +355,19 @@ impl Database for S3Store {
         let status = res.status();
         ensure!(status.is_success(), "s3 GET unexpected result ({})", status);
 
-        let body = res.body_bytes().await
-            .map_err(|e| anyhow!(e))?;
+        let body = res.body_bytes().await.map_err(|e| anyhow!(e))?;
 
-        let result = ListBucketResult::from_xml(&body[..])
-            .map_err(|e| anyhow!(e))?;
+        let result =
+            ListBucketResult::from_xml(&body[..]).map_err(|e| anyhow!(e))?;
 
-        let decoded = result.contents.iter()
+        let decoded = result
+            .contents
+            .iter()
             .filter_map(|c| decode(&c.key).ok())
             .collect::<Vec<String>>();
 
-        let stripped = decoded.iter()
+        let stripped = decoded
+            .iter()
             .filter_map(|k| k.strip_prefix(&self.version))
             .filter_map(|k| k.strip_prefix("/"))
             .collect::<Vec<&str>>();
@@ -343,7 +396,8 @@ mod tests {
             "minioadmin",
             "somebucket",
             "v0",
-        ).await?;
+        )
+        .await?;
 
         let _ = s.create_bucket_if_not_exists().await?;
 
@@ -390,11 +444,7 @@ mod tests {
         assert_eq!(
             result.unwrap(),
             // does not need to be order dependent eventually
-            vec!(
-                "multi/key1/file1",
-                "multi/key1/file2",
-                "multi/key2/file1",
-            )
+            vec!("multi/key1/file1", "multi/key1/file2", "multi/key2/file1",)
         );
 
         Ok(())

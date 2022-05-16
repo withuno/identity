@@ -4,6 +4,7 @@ use async_std::fs;
 use async_std::path::Path;
 use async_std::path::PathBuf;
 use async_trait::async_trait;
+
 use std::convert::AsRef;
 use std::fmt::Debug;
 
@@ -16,16 +17,17 @@ pub struct FileStore {
 }
 
 impl FileStore {
-    pub async fn new<P, Q, R>(root: P, name: Q, version: R)
-    -> Result<FileStore>
+    pub async fn new<P, Q, R>(
+        root: P,
+        name: Q,
+        version: R,
+    ) -> Result<FileStore>
     where
         P: AsRef<Path>,
         Q: AsRef<Path>,
         R: AsRef<Path>,
     {
-        let path = root.as_ref()
-                       .join(&name)
-                       .join(&version);
+        let path = root.as_ref().join(&name).join(&version);
 
         async_std::fs::create_dir_all(&path).await?;
 
@@ -61,8 +63,11 @@ impl Database for FileStore {
         Ok(self.list_version(&self.version, prefix).await?)
     }
 
-    async fn list_version<P, Q>(&self, version: Q, prefix: P)
-    -> Result<Vec<String>>
+    async fn list_version<P, Q>(
+        &self,
+        version: Q,
+        prefix: P,
+    ) -> Result<Vec<String>>
     where
         P: AsRef<Path> + Send,
         Q: AsRef<Path> + Send,
@@ -82,6 +87,31 @@ impl Database for FileStore {
                     .to_string()
             })
             .collect())
+    }
+
+    async fn get_metadata<P>(&self, object: P) -> Result<crate::store::Metadata>
+    where
+        P: AsRef<Path> + Send,
+    {
+        Ok(self.get_metadata_version(&self.version, object).await?)
+    }
+
+    async fn get_metadata_version<P, Q>(
+        &self,
+        version: Q,
+        file: P,
+    ) -> Result<crate::store::Metadata>
+    where
+        P: AsRef<Path> + Send,
+        Q: AsRef<Path> + Send,
+    {
+        let path = self.db.join(version).join(file);
+        let f = async_std::fs::File::open(path).await?;
+
+        let m = f.metadata().await?;
+        let c = m.created()?;
+
+        Ok(crate::store::Metadata{ created_at: c.into() })
     }
 
     async fn get<P>(&self, file: P) -> Result<Vec<u8>>
@@ -107,8 +137,12 @@ impl Database for FileStore {
         Ok(self.put_version(&self.version, file, content).await?)
     }
 
-    async fn put_version<P, Q>(&self, version: Q, file: P, content: &[u8])
-    -> Result<()>
+    async fn put_version<P, Q>(
+        &self,
+        version: Q,
+        file: P,
+        content: &[u8],
+    ) -> Result<()>
     where
         P: AsRef<Path> + Send,
         Q: AsRef<Path> + Send,
@@ -139,15 +173,16 @@ impl Database for FileStore {
         match fs::remove_file(path).await {
             Ok(_) => return Ok(()),
             // Trying to delete a file that doesn't exist is okay.
-            Err(e) => if ErrorKind::NotFound == e.kind() {
-                Ok(())
-            } else {
-                bail!(e)
-            },
+            Err(e) => {
+                if ErrorKind::NotFound == e.kind() {
+                    Ok(())
+                } else {
+                    bail!(e)
+                }
+            }
         }
     }
 }
-
 
 #[cfg(test)]
 #[cfg(not(feature = "s3"))]
@@ -203,11 +238,8 @@ mod tests {
         assert_eq!(
             result?.sort(),
             // does not need to be order dependent eventually
-            vec!(
-                "multi/key2/file1",
-                "multi/key1/file2",
-                "multi/key1/file1",
-            ).sort()
+            vec!("multi/key2/file1", "multi/key1/file2", "multi/key1/file1",)
+                .sort()
         );
 
         Ok(())
