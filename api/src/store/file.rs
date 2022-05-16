@@ -11,6 +11,7 @@ use async_std::fs;
 use async_std::path::Path;
 use async_std::path::PathBuf;
 use async_trait::async_trait;
+
 use std::convert::AsRef;
 use std::fmt::Debug;
 
@@ -94,6 +95,31 @@ impl Database for FileStore
             .collect())
     }
 
+    async fn get_metadata<P>(&self, object: P) -> Result<crate::store::Metadata>
+    where
+        P: AsRef<Path> + Send,
+    {
+        Ok(self.get_metadata_version(&self.version, object).await?)
+    }
+
+    async fn get_metadata_version<P, Q>(
+        &self,
+        version: Q,
+        file: P,
+    ) -> Result<crate::store::Metadata>
+    where
+        P: AsRef<Path> + Send,
+        Q: AsRef<Path> + Send,
+    {
+        let path = self.db.join(version).join(file);
+        let f = async_std::fs::File::open(path).await?;
+
+        let m = f.metadata().await?;
+        let c = m.created()?;
+
+        Ok(crate::store::Metadata{ created_at: c.into() })
+    }
+
     async fn get<P>(&self, file: P) -> Result<Vec<u8>>
     where
         P: AsRef<Path> + Send,
@@ -163,7 +189,6 @@ impl Database for FileStore
         }
     }
 }
-
 
 #[cfg(test)]
 #[cfg(not(feature = "s3"))]
