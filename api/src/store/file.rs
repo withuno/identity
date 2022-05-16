@@ -13,7 +13,6 @@ use crate::store::Database;
 pub struct FileStore {
     db: PathBuf,
     version: PathBuf,
-    
 }
 
 impl FileStore {

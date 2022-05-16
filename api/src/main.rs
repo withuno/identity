@@ -46,7 +46,7 @@ async fn make_db(name: &str, version: &str) -> Result<S3Store> {
 async fn main() -> Result<()> {
     let tok2 = make_db("tokens", "v2").await?;
     let vau2 = make_db("vaults", "v2").await?;
-    let srv2 = make_db("services", "v2").await?;
+    let srv2 = make_db("services", "").await?; // not (yet) versioned
     let ses2 = make_db("sessions", "v2").await?;
     let mbx2 = make_db("mailboxes", "v2").await?;
     let shr2 = make_db("shares", "v2").await?;

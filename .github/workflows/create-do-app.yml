@@ -50,7 +50,7 @@ jobs:
                 branch: $BRANCH_NAME
                 deploy_on_push: true
               health_check:
-                http_path: /v1/health
+                http_path: /v2/health
               instance_size_slug: basic-xs
               envs:
                 - key: SPACES_ACCESS_KEY_ID
