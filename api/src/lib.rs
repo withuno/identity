@@ -371,6 +371,7 @@ where
                 Vault { data: vb_old, vclock: VClock::<String>::default() };
             let vb_new = serde_json::to_vec(&vault).map_err(server_err)?;
             db.put(&id, &vb_new).await.map_err(server_err)?;
+            db.del_version("v1", id).await.map_err(server_err)?;
 
             db.get(&id).await.map_err(not_found)?
         },
@@ -530,6 +531,19 @@ where
 
     Ok(out)
 }
+
+async fn delete_vault<T>(req: Request<State<T>>) -> Result<Response>
+where
+    T: Database + 'static,
+{
+    let db = &req.state().db;
+    let id = &req.ext::<VaultId>().unwrap().0;
+
+    db.del(&id).await.map_err(server_err)?;
+
+    Ok(Response::new(StatusCode::NoContent))
+}
+
 
 #[derive(Debug, PartialEq, Deserialize)]
 struct ServiceQuery
@@ -793,7 +807,8 @@ where
             .with(check_vault_ownership)
             .options(option_vault)
             .get(fetch_vault)
-            .put(store_vault);
+            .put(store_vault)
+            .delete(delete_vault);
         api.at("vaults").nest(vaults);
     }
 

@@ -18,6 +18,7 @@ mod requests
 
     use anyhow::anyhow;
     use anyhow::bail;
+    use anyhow::Context;
     use anyhow::Result;
     use async_std::task;
 
@@ -1480,6 +1481,51 @@ mod requests
             api.respond(get).await.map_err(|_| anyhow!("request failed"))?;
 
         assert_eq!(StatusCode::Ok, res2.status());
+
+        Ok(())
+    }
+
+    #[async_std::test]
+    async fn vault_delete() -> Result<()>
+    {
+        let (api, dbs) = setup_tmp_api().await?;
+
+        let nonce_b64 = init_nonce(&dbs.tokens, &["delete"]).await?;
+
+        let id = Id([0u8; ID_LENGTH]);
+        let keypair = KeyPair::from(&id);
+        let pubkey = keypair.public.as_bytes();
+        let vid = base64::encode_config(&pubkey, base64::URL_SAFE_NO_PAD);
+        let base = Url::parse("http://example.com/vaults/")?;
+        let url = base.join(&vid)?;
+
+        // put a vault to be deleted
+        dbs.vaults.put(&vid, b"data").await?;
+        assert_eq!(true, dbs.vaults.exists(&vid).await?);
+
+        let mut req1: Request = surf::delete(url.to_string()).into();
+        sign_req(&mut req1, &nonce_b64, TUNE, SALT, &id)?;
+
+        let res1: Response = api
+            .respond(req1)
+            .await
+            .map_err(|e| anyhow!(e))
+            .context("req1 delete failed")?;
+
+        assert_eq!(StatusCode::NoContent, res1.status());
+        // make sure the data is gone
+        assert_eq!(false, dbs.vaults.exists(&vid).await?);
+
+        let mut req2: Request = surf::delete(url.to_string()).into();
+        sign_req_using_res_with_id(&res1, &mut req2, &id)?;
+
+        let res2: Response = api
+            .respond(req2)
+            .await
+            .map_err(|e| anyhow!(e))
+            .context("req2 delete failed")?;
+
+        assert_eq!(StatusCode::NoContent, res2.status());
 
         Ok(())
     }
