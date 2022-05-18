@@ -15,7 +15,6 @@ use surf::{Request, Response, StatusCode};
 
 use std::fmt::Debug;
 use std::time::Duration;
-use chrono::DateTime;
 
 use crate::store::Database;
 
@@ -201,50 +200,6 @@ impl Database for S3Store {
         match res.status() {
             http_types::StatusCode::Ok => Ok(true),
             http_types::StatusCode::NotFound => Ok(false),
-            _ => anyhow::bail!("unexpected result from s3 api"),
-        }
-    }
-
-    async fn get_metadata<P>(
-        &self,
-        object: P,
-    ) -> Result<crate::store::Metadata>
-    where
-        P: AsRef<Path> + Send,
-    {
-        Ok(self.get_metadata_version(&self.version, object).await?)
-    }
-
-    async fn get_metadata_version<P, Q>(
-        &self,
-        version: Q,
-        object: P,
-    ) -> Result<crate::store::Metadata>
-    where
-        P: AsRef<Path> + Send,
-        Q: AsRef<Path> + Send,
-    {
-        let vobject = full_obj_from_path(version, object)?;
-        let action = self.bucket.get_object(Some(&self.creds), &vobject);
-        let ttl = Duration::from_secs(60 * 60);
-        let bro = Request::builder(Method::Get, action.sign(ttl)).build();
-
-        let res = let_it_rip(bro).await?;
-        let status = res.status();
-        ensure!(status.is_success(), "s3 GET unexpected result ({})", status);
-
-        let h = match res.header("Last-Modified") {
-            Some(v) => { v.get(0) },
-            _ => anyhow::bail!("unexpected result from s3 api"),
-        };
-
-        let dt = match h {
-            Some(v) => { DateTime::parse_from_rfc2822(v.as_str()) },
-            _ => anyhow::bail!("unexpected result from s3 api"),
-        };
-
-        match dt {
-            Ok(v) => Ok(crate::store::Metadata{created_at: v.into() }),
             _ => anyhow::bail!("unexpected result from s3 api"),
         }
     }

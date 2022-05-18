@@ -1528,7 +1528,7 @@ mod requests {
         let url = base.join(&sid)?;
 
         let post: Request =
-            surf::post(url.to_string()).body("some secret share").into();
+            surf::post(url.to_string()).body(json!({"share_id": sid})).into();
 
         let res1: Response = api
             .respond(post)
@@ -1544,31 +1544,6 @@ mod requests {
             .map_err(|_| anyhow!("request failed"))?;
 
         assert_eq!(StatusCode::Ok, res2.status());
-
-        Ok(())
-    }
-
-    #[async_std::test]
-    async fn share_expiry() -> Result<()> {
-        let (api, dbs) = setup_tmp_api().await?;
-
-        let id = Id([0u8; ID_LENGTH]);
-        let keypair = KeyPair::from(&id);
-        let pubkey = keypair.public.as_bytes();
-        let sid = base64::encode_config(&pubkey, base64::URL_SAFE_NO_PAD);
-        let base = Url::parse("https://example.com/shares/")?;
-        let url = base.join(&sid)?;
-
-        let post1: Request =
-            surf::post(url.to_string()).body("some secret share").into();
-
-        let _: Response = api.respond(post1)
-            .await
-            .map_err(|_| anyhow!("request failed"))?;
-
-        let share = dbs.shares.get(sid).await?;
-
-        assert_eq!(false, true);
 
         Ok(())
     }

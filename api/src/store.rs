@@ -10,12 +10,7 @@ pub use s3::S3Store;
 pub mod file;
 pub use file::FileStore;
 
-use chrono::{DateTime, Utc};
 use async_std::path::Path;
-
-pub struct Metadata {
-    created_at: DateTime::<Utc>,
-}
 
 #[async_trait]
 pub trait Database: Send + Sync + Clone + Debug {
@@ -29,11 +24,6 @@ pub trait Database: Send + Sync + Clone + Debug {
     ;
 
     async fn get<P>(&self, object: P) -> Result<Vec<u8>>
-    where
-        P: AsRef<Path> + Send,
-    ;
-
-    async fn get_metadata<P>(&self, object: P) -> Result<Metadata>
     where
         P: AsRef<Path> + Send,
     ;
@@ -60,13 +50,6 @@ pub trait Database: Send + Sync + Clone + Debug {
     //
     async fn exists_version<P, Q>(&self, version: Q, object: P)
     -> Result<bool>
-    where
-        P: AsRef<Path> + Send,
-        Q: AsRef<Path> + Send,
-    ;
-
-    async fn get_metadata_version<P, Q>(&self, version: Q, object: P)
-    -> Result<Metadata>
     where
         P: AsRef<Path> + Send,
         Q: AsRef<Path> + Send,
