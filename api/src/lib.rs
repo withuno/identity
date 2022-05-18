@@ -16,6 +16,8 @@ pub mod mailbox;
 // most of this is only used in tests, can you export there?
 pub use crate::mailbox::{MessageRequest, MessageToDelete};
 
+pub mod magic_share;
+
 use anyhow::bail;
 
 pub mod auth;
@@ -266,6 +268,35 @@ where
         .build())
 }
 
+async fn fetch_share<T>(req: Request<State<T>>) -> Result<Body>
+where
+    T: Database + 'static,
+{
+    let db = &req.state().db;
+    let id = &req.ext::<ShareId>().unwrap().0;
+
+    let share = db.get(&id).await.map_err(not_found)?;
+
+    Ok(share.into())
+}
+
+async fn store_share<T>(mut req: Request<State<T>>) -> Result<StatusCode>
+where
+    T: Database + 'static,
+{
+    let body = &req.body_bytes().await.map_err(server_err)?;
+    let db = &req.state().db;
+
+    let v: Value = serde_json::from_slice(&body)?;
+    let id = match &v["share_id"] {
+        Value::String(s) => s,
+        _ => return Ok(StatusCode::BadRequest),
+    };
+
+    db.put(id, &body).await.map_err(server_err)?;
+
+    Ok(StatusCode::Created)
+}
 
 // Make sure the vault in the url matches the public key that generated the
 // signature on the request. Requires VaultId middleware. Returns status 403
@@ -687,6 +718,7 @@ pub fn build_routes<T>(
 where
     T: Database + 'static,
 {
+    // XXX: this is used in the development environment and not anywhere else.
     use http_types::headers::HeaderValue;
     use tide::security::{CorsMiddleware, Origin};
 
@@ -694,6 +726,7 @@ where
         .allow_methods("GET, POST, OPTIONS".parse::<HeaderValue>().unwrap())
         .allow_origin(Origin::from("*"))
         .allow_credentials(false);
+    // XXX: end development environment.
 
     let mut api = tide::new();
     api.at("health").get(health);
@@ -774,14 +807,13 @@ where
 
     {
         let mut shares =
-            tide::with_state(State::new(share_db, token_db.clone()));
+            tide::with_state(State::new(share_db.clone(), token_db.clone()));
         shares
             .at(":id")
             .with(cors)
-            .with(body_size_limit)
             .with(ensure_share_id)
-            .post(store_share)
-            .get(fetch_share);
+            .get(fetch_share)
+            .post(store_share);
         api.at("shares").nest(shares);
     }
 

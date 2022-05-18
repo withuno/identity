@@ -1436,13 +1436,43 @@ mod requests
             .map_err(|_| anyhow!("body read failed"))?;
         assert_eq!(expected_body2.as_bytes(), actual_body2);
 
+        Ok(())
+    }
+
+    #[async_std::test]
+    async fn share_roundtrip() -> Result<()> {
+        let (api, _) = setup_tmp_api().await?;
+
+        let id = Id([0u8; ID_LENGTH]);
+        let keypair = KeyPair::from(&id);
+        let pubkey = keypair.public.as_bytes();
+        let sid = base64::encode_config(&pubkey, base64::URL_SAFE_NO_PAD);
+        let base = Url::parse("https://example.com/shares/")?;
+        let url = base.join(&sid)?;
+
+        let post: Request =
+            surf::post(url.to_string()).body(json!({"share_id": sid})).into();
+
+        let res1: Response = api
+            .respond(post)
+            .await
+            .map_err(|_| anyhow!("request failed"))?;
+
+        assert_eq!(StatusCode::Created, res1.status());
+
+        let get: Request = surf::get(url.to_string()).into();
+        let res2: Response = api
+            .respond(get)
+            .await
+            .map_err(|_| anyhow!("request failed"))?;
+
+        assert_eq!(StatusCode::Ok, res2.status());
 
         Ok(())
     }
 
     #[async_std::test]
-    async fn service_list_get() -> Result<()>
-    {
+    async fn service_list_get() -> Result<()> {
         let (api, dbs) = setup_tmp_api().await?;
 
         let id = Id([0u8; ID_LENGTH]); // use the zero id
