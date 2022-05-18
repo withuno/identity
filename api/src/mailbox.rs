@@ -112,12 +112,9 @@ pub async fn post_message(
     let j = serde_json::to_vec(&m)?;
 
     store.put(&dest, &j).await?;
-
-    let b2 = store.get(&dest).await?;
-    let m2: MessageStored = serde_json::from_slice(&b2)?;
     // UNLOCK
 
-    Ok(m2)
+    Ok(m)
 }
 
 #[cfg(test)]
