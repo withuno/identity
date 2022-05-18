@@ -268,16 +268,20 @@ where
         .build())
 }
 
-async fn fetch_share<T>(req: Request<State<T>>) -> Result<Body>
+async fn fetch_share<T>(req: Request<State<T>>) -> Result
 where
     T: Database + 'static,
 {
     let db = &req.state().db;
     let id = &req.ext::<ShareId>().unwrap().0;
 
-    let share = db.get(&id).await.map_err(not_found)?;
+    let share = magic_share::find_by_id(db, &id).await.map_err(not_found)?;
 
-    Ok(share.into())
+    let j = serde_json::to_string(&share)?;
+    Ok(Response::builder(StatusCode::Ok)
+        .header("content-type", "application/json")
+        .body(j)
+        .build())
 }
 
 async fn store_share<T>(mut req: Request<State<T>>) -> Result<StatusCode>
@@ -287,13 +291,8 @@ where
     let body = &req.body_bytes().await.map_err(server_err)?;
     let db = &req.state().db;
 
-    let v: Value = serde_json::from_slice(&body)?;
-    let id = match &v["share_id"] {
-        Value::String(s) => s,
-        _ => return Ok(StatusCode::BadRequest),
-    };
-
-    db.put(id, &body).await.map_err(server_err)?;
+    let m = magic_share::new_from_json(&body)?;
+    magic_share::store_share(db, &m).await?;
 
     Ok(StatusCode::Created)
 }

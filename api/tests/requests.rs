@@ -1451,7 +1451,7 @@ mod requests
         let url = base.join(&sid)?;
 
         let post: Request =
-            surf::post(url.to_string()).body(json!({"share_id": sid})).into();
+            surf::post(url.to_string()).body(json!({"id": sid, "schema_version": 0, "expires_at": "21000518T155434Z", "encrypted_credential": "1234"})).into();
 
         let res1: Response = api
             .respond(post)
