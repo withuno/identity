@@ -17,7 +17,7 @@
 //! The types from the uno crate are either aliased, newtyped, or wrapped so
 //! they become FFI-safe. The prefix `Uno` is appened to the uno::Type typename
 //! since, again, C does not have namespaces.
-//! 
+//!
 //! The Uno FFI uses a the conventional C "error as return value" call style.
 //! The actual data being returned is conveyed through a trailing out param.
 //! The output of FFI functions is most always a pointer to a rust allocated,
@@ -28,10 +28,10 @@
 //! ```
 //!
 //! Null is not a valid value for any of the FFI types and represents the None
-//! value of the Option. You must pass a non-null pointer as the value of the 
+//! value of the Option. You must pass a non-null pointer as the value of the
 //! out param, but you should not allocate (and cannot in the case of opaque
 //! types) underlying memory for the out value. That is handled by Rust.
-//! 
+//!
 //! If the call succeeds, the return value will be 0 and you may safely
 //! use the pointer returned to you by the function in future calls to `uno_`
 //! api functions and, if the type is not opaque, dereference the pointer in
@@ -46,14 +46,13 @@
 //!
 //! ```ignore
 //! uno_get_msg_for_error.
-//! ``` 
+//! ```
 //!
-
 
 #![feature(vec_into_raw_parts)]
 
 
-use std::convert::TryFrom; 
+use std::convert::TryFrom;
 use std::ffi::CStr;
 use std::ffi::CString;
 use std::mem::MaybeUninit;
@@ -63,7 +62,7 @@ use std::os::raw::c_int;
 use std::ptr::NonNull;
 
 // TODO: generally convert everything to _Nonnull compatible declarations. This
-// involves using refs and NonNull<> instead of const * and MaybeUninit<>. 
+// involves using refs and NonNull<> instead of const * and MaybeUninit<>.
 
 // TODO: make enum
 pub const UNO_ERR_SUCCESS: c_int = 0;
@@ -75,29 +74,22 @@ pub const UNO_ERR_SHARE_MISS: c_int = 5;
 pub const UNO_ERR_CHECKSUM: c_int = 6;
 pub const UNO_ERR_MNEMONIC: c_int = 7;
 
-const ERR_SUCCESS_STR: &[u8] =
-    b"success\0";
+const ERR_SUCCESS_STR: &[u8] = b"success\0";
 
-const ERR_ILLEGAL_ARG_STR: &[u8] =
-    b"illegal argument\0";
+const ERR_ILLEGAL_ARG_STR: &[u8] = b"illegal argument\0";
 
-const ERR_S39_SPLIT_STR: &[u8] =
-    b"s39 split failed\0";
+const ERR_S39_SPLIT_STR: &[u8] = b"s39 split failed\0";
 
-const ERR_S39_SHARE_ID_MISMATCH_STR: &[u8] =
-    b"s39 combine share id mismatch\0";
+const ERR_S39_SHARE_ID_MISMATCH_STR: &[u8] = b"s39 combine share id mismatch\0";
 
-const ERR_S39_SHARE_MISSING_STR: &[u8] =
-    b"s39 combine missing shares\0";
+const ERR_S39_SHARE_MISSING_STR: &[u8] = b"s39 combine missing shares\0";
 
 const ERR_S39_CHECKSUM_FAILURE_STR: &[u8] =
     b"s39 combine share checksum invalid\0";
 
-const ERR_S39_MNEMONIC_STR: &[u8] =
-    b"s39 mnemonic conversion failed\0";
+const ERR_S39_MNEMONIC_STR: &[u8] = b"s39 mnemonic conversion failed\0";
 
-const ERR_UNRECOGNIZED: &[u8] =
-    b"s39 unrecognized error\0";
+const ERR_UNRECOGNIZED: &[u8] = b"s39 unrecognized error\0";
 
 
 ///
@@ -105,8 +97,7 @@ const ERR_UNRECOGNIZED: &[u8] =
 /// string does not need to be managed by the caller.
 ///
 #[no_mangle]
-pub extern "C"
-fn uno_get_msg_from_err(err: c_int) -> *const c_char
+pub extern "C" fn uno_get_msg_from_err(err: c_int) -> *const c_char
 {
     let msg = match err {
         UNO_ERR_SUCCESS => ERR_SUCCESS_STR,
@@ -119,11 +110,11 @@ fn uno_get_msg_from_err(err: c_int) -> *const c_char
         _ => ERR_UNRECOGNIZED,
     };
 
-    // SAFETY: err "strings" are static and can be verified manually above ^ 
+    // SAFETY: err "strings" are static and can be verified manually above ^
     let cstr = unsafe { CStr::from_bytes_with_nul_unchecked(msg) };
 
     // TODO: This may possibly be unsound. as_ptr() says the returned pointer
-    //       is valid as long as the cstr is, and cstr falls out of scope.     
+    //       is valid as long as the cstr is, and cstr falls out of scope.
     cstr.as_ptr()
 }
 
@@ -138,27 +129,24 @@ pub struct UnoId(uno::Id);
 /// responsible calling `uno_free_id` on the returned struct once finished.
 ///
 #[no_mangle]
-pub extern "C"
-fn uno_get_id_from_bytes
-(
+pub extern "C" fn uno_get_id_from_bytes(
     bytes: Option<&u8>,
     len: usize,
     out: Option<&mut MaybeUninit<Option<&UnoId>>>,
-)
--> c_int
+) -> c_int
 {
     let seed = match bytes {
         // SAFETY: "nullable pointer optimization"
         Some(ptr) => unsafe { std::slice::from_raw_parts(ptr, len) },
         None => return UNO_ERR_ILLEGAL_ARG,
     };
-  
+
     let id = match uno::Id::try_from(seed) {
         Ok(id) => UnoId(id),
         Err(_) => return UNO_ERR_ILLEGAL_ARG,
     };
 
-    let raw = Box::into_raw(Box::new(id)); 
+    let raw = Box::into_raw(Box::new(id));
     // SAFETY: box raw ptr is valid ^
     let res = unsafe { raw.as_ref() };
 
@@ -170,14 +158,11 @@ fn uno_get_id_from_bytes
 /// Copy the raw 32 bytes backing an uno Id into caller-owned memory.
 ///
 #[no_mangle]
-pub extern "C"
-fn uno_copy_id_bytes
-(
+pub extern "C" fn uno_copy_id_bytes(
     uno_id: Option<&UnoId>,
     bytes: Option<NonNull<u8>>,
     len: usize,
-)
--> c_int
+) -> c_int
 {
     let id = match uno_id {
         Some(id) => id.0,
@@ -190,7 +175,7 @@ fn uno_copy_id_bytes
     if len < 32 {
         return UNO_ERR_ILLEGAL_ARG;
     }
- 
+
     for i in 0..32 {
         // SAFETY: bptr is not null and is obtained mutable
         unsafe { bptr.add(i).write(id.0[i]) }
@@ -202,10 +187,9 @@ fn uno_copy_id_bytes
 /// Free a previously allocated UnoId from `uno_get_id_from_bytes`.
 ///
 #[no_mangle]
-pub extern "C"
-fn uno_free_id(id: Option<NonNull<UnoId>>)
-{ 
-    id.map(|nn| unsafe { Box::from_raw(nn.as_ptr()) } );
+pub extern "C" fn uno_free_id(id: Option<NonNull<UnoId>>)
+{
+    id.map(|nn| unsafe { Box::from_raw(nn.as_ptr()) });
 }
 
 ///
@@ -219,20 +203,17 @@ pub struct UnoByteSlice
 {
     ptr: *const u8,
     len: usize,
-   _cap: usize,
+    _cap: usize,
 }
 
 ///
 /// Get the raw bytes backing an uno Id.
 ///
 #[no_mangle]
-pub extern "C"
-fn uno_get_bytes_from_id
-(
+pub extern "C" fn uno_get_bytes_from_id(
     uno_id: Option<&UnoId>,
     out: Option<&mut MaybeUninit<UnoByteSlice>>,
-)
--> c_int
+) -> c_int
 {
     let mut bytes = Vec::<u8>::with_capacity(32);
     {
@@ -246,10 +227,10 @@ fn uno_get_bytes_from_id
     // forget the vec
     let (rptr, len, cap) = bytes.into_raw_parts();
 
-    let res = UnoByteSlice { ptr: rptr, len: len, _cap: cap, };
+    let res = UnoByteSlice { ptr: rptr, len: len, _cap: cap };
 
     out.map(|ptr| ptr.write(res));
-    UNO_ERR_SUCCESS 
+    UNO_ERR_SUCCESS
 }
 
 ///
@@ -257,14 +238,11 @@ fn uno_get_bytes_from_id
 /// allocated UnoByteSlice, e.g. `uno_get_id_bytes`.
 ///
 #[no_mangle]
-pub extern "C"
-fn uno_free_byte_slice(byte_slice: UnoByteSlice)
+pub extern "C" fn uno_free_byte_slice(byte_slice: UnoByteSlice)
 {
     let bs = byte_slice;
     // SAFETY: the ptr is originally mutable acquired from into_raw_parts ^
-    unsafe {
-        Vec::from_raw_parts(bs.ptr as *mut u8, bs.len, bs._cap)
-    };
+    unsafe { Vec::from_raw_parts(bs.ptr as *mut u8, bs.len, bs._cap) };
 }
 
 ///
@@ -274,7 +252,7 @@ fn uno_free_byte_slice(byte_slice: UnoByteSlice)
 ///
 #[repr(C)]
 #[derive(Debug)]
-pub struct UnoGroupSpec 
+pub struct UnoGroupSpec
 {
     threshold: u8,
     total: u8,
@@ -282,7 +260,7 @@ pub struct UnoGroupSpec
 
 ///
 /// A SplitResult is the output of successfully running `uno_s39_split` on an
-/// UnoId. The structure represents an opaque array of UnoGroupSplit structs. 
+/// UnoId. The structure represents an opaque array of UnoGroupSplit structs.
 ///
 #[derive(Debug)]
 pub struct UnoSplitResult
@@ -303,16 +281,13 @@ pub struct UnoSplitResult
 /// length group_total.
 ///
 #[no_mangle]
-pub extern "C"
-fn uno_s39_split
-(
+pub extern "C" fn uno_s39_split(
     uno_id: Option<&UnoId>,
-   _group_threshold: usize,
+    _group_threshold: usize,
     group_specs: Option<&UnoGroupSpec>,
     group_total: usize,
     out: Option<&mut MaybeUninit<Option<&UnoSplitResult>>>,
-)
--> c_int
+) -> c_int
 {
     let id = match uno_id {
         Some(id) => id.0,
@@ -324,19 +299,15 @@ fn uno_s39_split
     };
 
     // convert group specs to spec tuples
-    // 
-    let mut specs = Vec::<(u8,u8)>::with_capacity(group_total);
+    //
+    let mut specs = Vec::<(u8, u8)>::with_capacity(group_total);
     for i in 0..group_total {
         //
         // SAFETY: data is initialized by caller, we're just reborrowing
         //         caller provides the bounds and we stay within them
         //
-        let gs = unsafe {
-            &*base.add(i)
-        };
-        specs.push(
-            (gs.threshold, gs.total)
-        );
+        let gs = unsafe { &*base.add(i) };
+        specs.push((gs.threshold, gs.total));
     }
 
     let group_splits = match uno::split(id, &specs[..]) {
@@ -364,10 +335,11 @@ fn uno_s39_split
 /// Free a previously allocated UnoSplitResult from `uno_s39_split`.
 ///
 #[no_mangle]
-pub extern "C"
-fn uno_free_split_result(split_result: Option<NonNull<UnoSplitResult>>)
-{ 
-    split_result.map(|sr| unsafe { 
+pub extern "C" fn uno_free_split_result(
+    split_result: Option<NonNull<UnoSplitResult>>,
+)
+{
+    split_result.map(|sr| unsafe {
         let srb = Box::from_raw(sr.as_ptr());
         Vec::from_raw_parts((*srb).ptr.as_ptr(), (*srb).len, (*srb).cap);
     });
@@ -413,22 +385,17 @@ pub struct UnoMemberSharesVec
 /// Get an UnoGroupSplit by index from an opaque UnoSplitResult.
 ///
 #[no_mangle]
-pub extern "C"
-fn uno_get_group_from_split_result
-(
+pub extern "C" fn uno_get_group_from_split_result(
     split_result: Option<&UnoSplitResult>,
     index: usize,
     out: Option<&mut MaybeUninit<UnoGroupSplit>>,
-)
--> c_int
+) -> c_int
 {
     let sr = match split_result {
         Some(sr) => sr,
         None => return UNO_ERR_ILLEGAL_ARG,
     };
-    let groups = unsafe {
-        std::slice::from_raw_parts(sr.ptr.as_ptr(), sr.len)
-    };
+    let groups = unsafe { std::slice::from_raw_parts(sr.ptr.as_ptr(), sr.len) };
     if index >= groups.len() {
         return UNO_ERR_ILLEGAL_ARG;
     }
@@ -438,7 +405,7 @@ fn uno_get_group_from_split_result
     // TODO: figure out if we can avoid clone().
     let (ptr, len, cap) = item.member_shares.clone().into_raw_parts();
 
-    let shares = UnoMemberSharesVec { 
+    let shares = UnoMemberSharesVec {
         // SAFETY: ptr is never null
         ptr: unsafe { NonNull::new_unchecked(ptr) },
         len: len,
@@ -465,9 +432,8 @@ fn uno_get_group_from_split_result
 /// `uno_get_group_from_split_result`.
 ///
 #[no_mangle]
-pub extern "C"
-fn uno_free_group_split(group_split: UnoGroupSplit)
-{ 
+pub extern "C" fn uno_free_group_split(group_split: UnoGroupSplit)
+{
     // ptr originally obtained mutable but presented as const for C
     let raw = group_split.member_shares as *mut UnoMemberSharesVec;
     let nnraw = NonNull::new(raw);
@@ -499,17 +465,14 @@ pub struct UnoShare
 }
 
 ///
-/// Returns the actual member share by index. 
+/// Returns the actual member share by index.
 ///
 #[no_mangle]
-pub extern "C"
-fn uno_get_s39_share_by_index
-(
+pub extern "C" fn uno_get_s39_share_by_index(
     group_split: UnoGroupSplit,
     index: u8,
     out: Option<&mut MaybeUninit<UnoShare>>,
-)
--> c_int
+) -> c_int
 {
     let mbsp = group_split.member_shares as *mut UnoMemberSharesVec;
 
@@ -518,9 +481,8 @@ fn uno_get_s39_share_by_index
         Some(ref nn) => unsafe { nn.as_ref() },
         None => return UNO_ERR_ILLEGAL_ARG,
     };
-    let shares = unsafe {
-        std::slice::from_raw_parts(mbsr.ptr.as_ptr(), mbsr.len)
-    };
+    let shares =
+        unsafe { std::slice::from_raw_parts(mbsr.ptr.as_ptr(), mbsr.len) };
 
     if usize::from(index) >= shares.len() {
         return UNO_ERR_ILLEGAL_ARG;
@@ -534,11 +496,9 @@ fn uno_get_s39_share_by_index
     let c_string = match CString::new(mnemonic) {
         Ok(cs) => cs,
         Err(_) => return UNO_ERR_MNEMONIC,
-    };  
+    };
 
-    out.map(|ptr| ptr.write(
-        UnoShare { mnemonic: c_string.into_raw(), })
-    );
+    out.map(|ptr| ptr.write(UnoShare { mnemonic: c_string.into_raw() }));
     UNO_ERR_SUCCESS
 }
 
@@ -547,14 +507,12 @@ fn uno_get_s39_share_by_index
 /// representation.
 ///
 #[no_mangle]
-pub extern "C"
-fn uno_get_s39_share_from_mnemonic(
+pub extern "C" fn uno_get_s39_share_from_mnemonic(
     ptr: *const c_char,
     out: Option<&mut MaybeUninit<UnoShare>>,
-)
--> c_int
+) -> c_int
 {
-    // Looks like this if we pas ptr as an &c_char:    
+    // Looks like this if we pas ptr as an &c_char:
     // let cstr = unsafe { CStr::from_ptr(ptr as *const c_char) };
 
     // SAFETY: call is responsible for providing a valid c_char
@@ -565,9 +523,7 @@ fn uno_get_s39_share_from_mnemonic(
         Err(_) => return UNO_ERR_ILLEGAL_ARG,
     };
 
-    let words: Vec<String> = str.split(' ')
-        .map(|s| s.to_owned())
-        .collect();
+    let words: Vec<String> = str.split(' ').map(|s| s.to_owned()).collect();
 
     let share = match uno::Share::from_mnemonic(&words) {
         Ok(share) => share,
@@ -580,8 +536,8 @@ fn uno_get_s39_share_from_mnemonic(
     let c_string = match CString::new(mnemonic) {
         Ok(cs) => cs,
         Err(_) => return UNO_ERR_MNEMONIC,
-    };  
-    let res = UnoShare { mnemonic: c_string.into_raw(), };
+    };
+    let res = UnoShare { mnemonic: c_string.into_raw() };
 
     out.map(|ptr| ptr.write(res));
     UNO_ERR_SUCCESS
@@ -592,17 +548,16 @@ fn uno_get_s39_share_from_mnemonic(
 /// or `uno_get_s39_share_from_mnemonic`.
 ///
 #[no_mangle]
-pub extern "C"
-fn uno_free_s39_share(share: UnoShare)
+pub extern "C" fn uno_free_s39_share(share: UnoShare)
 {
-    unsafe { 
+    unsafe {
         let _ = CString::from_raw(share.mnemonic as *mut c_char);
     };
 }
 
 ///
 /// Share metadata struct. Metadata about a share can be obtained by calling
-/// `uno_get_share_metadata` with an UnoS39Share. 
+/// `uno_get_share_metadata` with an UnoS39Share.
 ///
 #[repr(C)]
 #[derive(Debug)]
@@ -654,13 +609,10 @@ pub struct UnoShareMetadata
 /// Get the share metadata from an UnoShare.
 ///
 #[no_mangle]
-pub extern "C"
-fn uno_get_s39_share_metadata
-(
+pub extern "C" fn uno_get_s39_share_metadata(
     share: UnoShare,
     out: Option<&mut MaybeUninit<UnoShareMetadata>>,
-)
--> c_int
+) -> c_int
 {
     let mnemonic_c = unsafe { CStr::from_ptr(share.mnemonic) };
 
@@ -669,9 +621,8 @@ fn uno_get_s39_share_metadata
         Err(_) => return UNO_ERR_ILLEGAL_ARG,
     };
 
-    let words: Vec<String> = mnemonic_str.split(' ')
-        .map(|s| s.to_owned())
-        .collect();
+    let words: Vec<String> =
+        mnemonic_str.split(' ').map(|s| s.to_owned()).collect();
 
     let share = match uno::Share::from_mnemonic(&words) {
         Ok(s) => s,
@@ -688,11 +639,7 @@ fn uno_get_s39_share_metadata
         group_count: share.group_count,
         member_index: share.member_index,
         member_threshold: share.member_threshold,
-        share_value: UnoByteSlice {
-            ptr: ptr,
-            len: len,
-           _cap: cap,
-        },
+        share_value: UnoByteSlice { ptr: ptr, len: len, _cap: cap },
         checksum: share.checksum,
     };
 
@@ -705,27 +652,23 @@ fn uno_get_s39_share_metadata
 /// `uno_get_s39_share_metadata`.
 ///
 #[no_mangle]
-pub extern "C"
-fn uno_free_s39_share_metadata(metadata: UnoShareMetadata)
-{ 
+pub extern "C" fn uno_free_s39_share_metadata(metadata: UnoShareMetadata)
+{
     uno_free_byte_slice(metadata.share_value);
 }
 
 ///
 /// See s39::combine.
 ///
-/// Provided an array of c-stirng s39 shamir's shares, recombine and recover 
+/// Provided an array of c-stirng s39 shamir's shares, recombine and recover
 /// the original UnoId. The returned UnoId must be freed using `uno_free_id`.
-/// 
+///
 #[no_mangle]
-pub extern "C"
-fn uno_s39_combine
-(
+pub extern "C" fn uno_s39_combine(
     share_nmemonics: Option<&Option<&c_char>>,
     total_shares: usize,
     out: Option<&mut MaybeUninit<Option<&UnoId>>>,
-)
--> c_int
+) -> c_int
 {
     let shares_ptr = match share_nmemonics {
         Some(ptr) => ptr as *const Option<&c_char>,
@@ -744,10 +687,9 @@ fn uno_s39_combine
             Ok(ms) => ms,
             Err(_) => return UNO_ERR_ILLEGAL_ARG,
         };
-        let words: Vec<String> = mnemonic_str.split(' ')
-            .map(|s| s.to_owned())
-            .collect();
- 
+        let words: Vec<String> =
+            mnemonic_str.split(' ').map(|s| s.to_owned()).collect();
+
         shares.push(words);
     }
 
@@ -765,10 +707,11 @@ fn uno_s39_combine
 
 
 #[cfg(test)]
-mod tests {
+mod tests
+{
     #[test]
-    fn it_works() {
+    fn it_works()
+    {
         assert_eq!(2 + 2, 4);
     }
 }
-

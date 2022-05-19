@@ -18,9 +18,9 @@ pub type Error = aead::Error;
 pub const PRIVATE_KEY_LENGTH: usize = ed25519_dalek::SECRET_KEY_LENGTH;
 pub const SIGNATURE_LENGTH: usize = ed25519_dalek::SIGNATURE_LENGTH;
 
-use chacha20poly1305::{ChaCha20Poly1305, Nonce};
 use chacha20poly1305::aead;
 use chacha20poly1305::aead::{Aead, NewAead, Payload};
+use chacha20poly1305::{ChaCha20Poly1305, Nonce};
 
 #[cfg(not(test))]
 use rand::RngCore;
@@ -32,10 +32,13 @@ use rand;
 use test_rand as rand;
 
 #[cfg(test)]
-mod test_rand {
+mod test_rand
+{
     pub struct R {}
-    impl R {
-        pub fn fill_bytes(&mut self, dest: &mut [u8]) {
+    impl R
+    {
+        pub fn fill_bytes(&mut self, dest: &mut [u8])
+        {
             for i in dest.iter_mut() {
                 *i = 0;
             }
@@ -46,16 +49,16 @@ mod test_rand {
 
 /// Encrypt data using key and return an opaque blob. The nonce is the first 12
 /// bytes of the blob.
-pub fn encrypt(key: SymmetricKey, data: &[u8], aad: &[u8])
--> Result<Vec<u8>, aead::Error>
+pub fn encrypt(
+    key: SymmetricKey,
+    data: &[u8],
+    aad: &[u8],
+) -> Result<Vec<u8>, aead::Error>
 {
     let mut nonce = Nonce::default();
     rand::thread_rng().fill_bytes(&mut nonce);
     let cipher = ChaCha20Poly1305::new(&key);
-    let payload = Payload {
-        msg: data,
-        aad: aad,
-    };
+    let payload = Payload { msg: data, aad: aad };
     let ciphertext = cipher.encrypt(&nonce, payload)?;
     let blob = [&nonce.as_slice(), &ciphertext[..]].concat().to_vec();
 
@@ -64,15 +67,15 @@ pub fn encrypt(key: SymmetricKey, data: &[u8], aad: &[u8])
 
 /// Decrypt data using key and return the original message. The nonce is the
 /// first 12 bytes of data.
-pub fn decrypt(key: SymmetricKey, data: &[u8], aad: &[u8])
--> Result<Vec<u8>, aead::Error>
+pub fn decrypt(
+    key: SymmetricKey,
+    data: &[u8],
+    aad: &[u8],
+) -> Result<Vec<u8>, aead::Error>
 {
     let nonce = Nonce::from_slice(&data[0..12]);
     let cipher = ChaCha20Poly1305::new(&key);
-    let payload = Payload {
-        msg: &data[nonce.len()..],
-        aad: aad,
-    };
+    let payload = Payload { msg: &data[nonce.len()..], aad: aad };
 
     cipher.decrypt(&nonce, payload)
 }

@@ -10,7 +10,8 @@ use serde_json::{Result, Value};
 use std::fs;
 
 #[test]
-fn service_list_is_valid() {
+fn service_list_is_valid()
+{
     // try to deserialize the service list file and hope for the best!
     let contents = fs::read_to_string("tests/services.json").unwrap();
 

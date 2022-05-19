@@ -17,22 +17,21 @@ use std::fmt::Debug;
 use crate::store::Database;
 
 #[derive(Clone, Debug)]
-pub struct FileStore {
+pub struct FileStore
+{
     db: PathBuf,
     version: PathBuf,
 }
 
-impl FileStore {
-    pub async fn new<P, Q, R>(root: P, name: Q, version: R)
-    -> Result<FileStore>
+impl FileStore
+{
+    pub async fn new<P, Q, R>(root: P, name: Q, version: R) -> Result<FileStore>
     where
         P: AsRef<Path>,
         Q: AsRef<Path>,
         R: AsRef<Path>,
     {
-        let path = root.as_ref()
-                       .join(&name)
-                       .join(&version);
+        let path = root.as_ref().join(&name).join(&version);
 
         async_std::fs::create_dir_all(&path).await?;
 
@@ -44,7 +43,8 @@ impl FileStore {
 }
 
 #[async_trait]
-impl Database for FileStore {
+impl Database for FileStore
+{
     async fn exists<P>(&self, file: P) -> Result<bool>
     where
         P: AsRef<Path> + Send,
@@ -68,8 +68,11 @@ impl Database for FileStore {
         Ok(self.list_version(&self.version, prefix).await?)
     }
 
-    async fn list_version<P, Q>(&self, version: Q, prefix: P)
-    -> Result<Vec<String>>
+    async fn list_version<P, Q>(
+        &self,
+        version: Q,
+        prefix: P,
+    ) -> Result<Vec<String>>
     where
         P: AsRef<Path> + Send,
         Q: AsRef<Path> + Send,
@@ -114,8 +117,12 @@ impl Database for FileStore {
         Ok(self.put_version(&self.version, file, content).await?)
     }
 
-    async fn put_version<P, Q>(&self, version: Q, file: P, content: &[u8])
-    -> Result<()>
+    async fn put_version<P, Q>(
+        &self,
+        version: Q,
+        file: P,
+        content: &[u8],
+    ) -> Result<()>
     where
         P: AsRef<Path> + Send,
         Q: AsRef<Path> + Send,
@@ -146,10 +153,12 @@ impl Database for FileStore {
         match fs::remove_file(path).await {
             Ok(_) => return Ok(()),
             // Trying to delete a file that doesn't exist is okay.
-            Err(e) => if ErrorKind::NotFound == e.kind() {
-                Ok(())
-            } else {
-                bail!(e)
+            Err(e) => {
+                if ErrorKind::NotFound == e.kind() {
+                    Ok(())
+                } else {
+                    bail!(e)
+                }
             },
         }
     }
@@ -158,12 +167,14 @@ impl Database for FileStore {
 
 #[cfg(test)]
 #[cfg(not(feature = "s3"))]
-mod tests {
+mod tests
+{
     use super::*;
     use tempfile::TempDir;
 
     #[async_std::test]
-    async fn store() -> Result<()> {
+    async fn store() -> Result<()>
+    {
         let dir = TempDir::new()?;
         let f = FileStore::new(dir.path(), "testdata", "v0").await?;
 
@@ -210,11 +221,8 @@ mod tests {
         assert_eq!(
             result?.sort(),
             // does not need to be order dependent eventually
-            vec!(
-                "multi/key2/file1",
-                "multi/key1/file2",
-                "multi/key1/file1",
-            ).sort()
+            vec!("multi/key2/file1", "multi/key1/file2", "multi/key1/file1",)
+                .sort()
         );
 
         Ok(())

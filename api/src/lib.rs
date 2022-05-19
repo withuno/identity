@@ -105,27 +105,27 @@ impl<T> State<T>
 where
     T: Database,
 {
-    pub fn new(db: T, tok: T) -> Self {
-        Self { db, tok }
-    }
+    pub fn new(db: T, tok: T) -> Self { Self { db, tok } }
 }
 
 #[derive(PartialEq, Debug)]
-pub enum ApiError {
+pub enum ApiError
+{
     DecodeError(base64::DecodeError),
     BadRequest(String),
     NotFound,
     Unauthorized,
 }
 
-impl From<base64::DecodeError> for ApiError {
-    fn from(e: base64::DecodeError) -> Self {
-        ApiError::DecodeError(e)
-    }
+impl From<base64::DecodeError> for ApiError
+{
+    fn from(e: base64::DecodeError) -> Self { ApiError::DecodeError(e) }
 }
 
-impl error::Error for ApiError {
-    fn source(&self) -> Option<&(dyn error::Error + 'static)> {
+impl error::Error for ApiError
+{
+    fn source(&self) -> Option<&(dyn error::Error + 'static)>
+    {
         match *self {
             ApiError::DecodeError(ref s) => Some(s),
             ApiError::BadRequest(_) => None,
@@ -135,8 +135,10 @@ impl error::Error for ApiError {
     }
 }
 
-impl fmt::Display for ApiError {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+impl fmt::Display for ApiError
+{
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result
+    {
         match *self {
             ApiError::DecodeError(ref e) => write!(f, "decode error: {}", e),
             ApiError::BadRequest(ref msg) => write!(f, "bad request: {}", msg),
@@ -146,7 +148,8 @@ impl fmt::Display for ApiError {
     }
 }
 
-pub fn pubkey_from_b64(id: &str) -> anyhow::Result<uno::PublicKey, ApiError> {
+pub fn pubkey_from_b64(id: &str) -> anyhow::Result<uno::PublicKey, ApiError>
+{
     let v = base64::decode(id)?;
     let pk = uno::PublicKey::from_bytes(&v);
     if pk.is_err() {
@@ -155,9 +158,9 @@ pub fn pubkey_from_b64(id: &str) -> anyhow::Result<uno::PublicKey, ApiError> {
     Ok(pk.unwrap())
 }
 
-pub fn pubkey_from_url_b64(
-    id: &str,
-) -> anyhow::Result<uno::PublicKey, ApiError> {
+pub fn pubkey_from_url_b64(id: &str)
+-> anyhow::Result<uno::PublicKey, ApiError>
+{
     let v = base64::decode_config(id, base64::URL_SAFE)?;
     let pk = uno::PublicKey::from_bytes(&v);
     if pk.is_err() {
@@ -168,14 +171,16 @@ pub fn pubkey_from_url_b64(
 
 pub fn signature_from_b64(
     bytes: &str,
-) -> anyhow::Result<uno::Signature, ApiError> {
+) -> anyhow::Result<uno::Signature, ApiError>
+{
     let decoded_sig = base64::decode(bytes)?;
 
     uno::Signature::from_bytes(&decoded_sig)
         .map_err(|_| ApiError::BadRequest("bad signature".to_string()))
 }
 
-async fn health(_req: Request<()>) -> Result<Response> {
+async fn health(_req: Request<()>) -> Result<Response>
+{
     Ok(Response::new(StatusCode::NoContent))
 }
 
@@ -307,7 +312,8 @@ use vclock::VClock;
 /// together into one document so we don't need transactions.
 ///
 #[derive(Serialize, Deserialize)]
-struct Vault {
+struct Vault
+{
     data: Vec<u8>,
     vclock: VClock<String>,
 }
@@ -324,15 +330,13 @@ where
         Err(_) => {
             // check the v1 location, if found migrate the vault, if not 404
             let vb_old = db.get_version("v1", id).await.map_err(not_found)?;
-            let vault = Vault {
-                data: vb_old,
-                vclock: VClock::<String>::default(),
-            };
+            let vault =
+                Vault { data: vb_old, vclock: VClock::<String>::default() };
             let vb_new = serde_json::to_vec(&vault).map_err(server_err)?;
             db.put(&id, &vb_new).await.map_err(server_err)?;
 
             db.get(&id).await.map_err(not_found)?
-        }
+        },
     };
 
     let vault =
@@ -378,7 +382,7 @@ where
                 .body("missing vclock")
                 .build();
             return Ok(resp);
-        }
+        },
     };
 
     let vclock_new = parse_vclock(vclock_new_str).map_err(bad_request)?;
@@ -415,10 +419,7 @@ where
         return Ok(resp);
     }
 
-    let vault = Vault {
-        data: body.to_vec(),
-        vclock: vclock_new,
-    };
+    let vault = Vault { data: body.to_vec(), vclock: vclock_new };
     let vault_bytes = serde_json::to_vec(&vault).map_err(server_err)?;
 
     db.put(&id, &vault_bytes).await.map_err(server_err)?;
@@ -443,7 +444,8 @@ where
 ///
 pub fn parse_vclock(
     vc_str: &str,
-) -> std::result::Result<VClock<String>, anyhow::Error> {
+) -> std::result::Result<VClock<String>, anyhow::Error>
+{
     // TODO: write a serde_rfc8941 crate. For now, manually parse.
     //
     let items = vc_str.trim().split(",");
@@ -493,7 +495,8 @@ where
 }
 
 #[derive(Debug, PartialEq, Deserialize)]
-struct ServiceQuery {
+struct ServiceQuery
+{
     branch: String,
 }
 
@@ -575,8 +578,7 @@ where
     let sid = &req.ext::<SessionId>().unwrap().0;
 
     let json = db.get(sid).await.map_err(not_found)?;
-    let mut doc =
-        serde_json::from_slice::<Value>(&json).map_err(server_err)?;
+    let mut doc = serde_json::from_slice::<Value>(&json).map_err(server_err)?;
 
     let body_json =
         serde_json::from_slice::<Value>(&body).map_err(bad_request)?;

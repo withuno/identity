@@ -29,8 +29,10 @@ const PASS: &str = "uno shamir secret share";
 /// Group, and scheme information as well as the iteration exponent is encoded
 /// in each share so that shares can be recombined without additional context.
 ///
-pub fn split<'a>(data: &[u8], scheme: &[(u8, u8)])
--> Result<Vec<GroupShare>, Error>
+pub fn split<'a>(
+    data: &[u8],
+    scheme: &[(u8, u8)],
+) -> Result<Vec<GroupShare>, Error>
 {
     // We encrypt with a fixed password and a mere 10,000 iterations of pbkdf.
     // The security of each share is managed by our software eslewhere. Each
@@ -53,25 +55,29 @@ pub fn combine<'a>(shares: &[Vec<String>]) -> Result<Vec<u8>, Error>
 }
 
 #[cfg(test)]
-mod unit {
+mod unit
+{
     use super::*;
 
-    use rand::RngCore;
     use anyhow::Result;
+    use rand::RngCore;
 
     #[test]
-    pub fn s39_roundtrip() -> Result<()>  {
+    pub fn s39_roundtrip() -> Result<()>
+    {
         let mut data = [0u8; 32];
         rand::thread_rng().fill_bytes(&mut data);
 
         let groups = split(&data, &[(2, 3)])?;
-        let group = &groups[0]; 
+        let group = &groups[0];
 
-        let mnemonics1 = group.member_shares[..2].iter()
+        let mnemonics1 = group.member_shares[..2]
+            .iter()
             .map(|s| s.to_mnemonic())
             .collect::<Result<Vec<Vec<_>>, _>>()
             .map_err(|e| Error::from(e))?;
-        let mnemonics2 = group.member_shares[1..3].iter()
+        let mnemonics2 = group.member_shares[1..3]
+            .iter()
             .map(|s| s.to_mnemonic())
             .collect::<Result<Vec<Vec<_>>, _>>()
             .map_err(|e| Error::from(e))?;
