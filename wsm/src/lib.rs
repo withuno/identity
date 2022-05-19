@@ -1,3 +1,10 @@
+//
+// Copyright (C) 2021 WithUno, Inc.
+// All rights reserved.
+//
+// SPDX-License-Identifier: AGPL-3.0-only
+//
+
 use std::convert::TryFrom;
 use std::fmt::Debug;
 
@@ -229,7 +236,6 @@ pub fn wasm_get_public_key_url_encoded(seed: String) -> Option<String>
     }
 }
 
-#[wasm_bindgen]
 pub fn wasm_get_public_key(seed: String, url_encode: bool) -> Option<String>
 {
     let decoded_seed = match base64::decode(seed) {

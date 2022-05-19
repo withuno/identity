@@ -1,5 +1,7 @@
 //
-// Copyright 2021 WithUno, Inc.
+// Copyright (C) 2021 WithUno, Inc.
+// All rights reserved.
+//
 // SPDX-License-Identifier: AGPL-3.0-only
 //
 
@@ -46,7 +48,7 @@
 //! uno_get_msg_for_error.
 //! ```
 
-#![feature(vec_into_raw_parts, maybe_uninit_extra)]
+#![feature(vec_into_raw_parts)]
 
 
 use std::convert::TryFrom;

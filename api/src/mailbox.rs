@@ -1,3 +1,10 @@
+//
+// Copyright (C) 2021 WithUno, Inc.
+// All rights reserved.
+//
+// SPDX-License-Identifier: AGPL-3.0-only
+//
+
 pub use crate::store::Database;
 
 use anyhow::anyhow;

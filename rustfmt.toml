@@ -12,6 +12,7 @@ imports_indent = "Block"
 imports_layout = "Mixed"
 imports_granularity = "Preserve"
 indent_style = "Block"
+license_template_path = ".rustfmt.license-template"
 match_block_trailing_comma = true
 max_width = 80
 merge_derives = true
