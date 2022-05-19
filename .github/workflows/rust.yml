@@ -22,7 +22,8 @@ jobs:
       run: rustup +nightly component add rustfmt
     - name: Check
       run: cargo +nightly fmt --check --verbose
-    - name: Build
-      run: cargo +nightly build --verbose
     - name: Tests
       run: cargo +nightly test --verbose
+    - name: S3 Build
+      run: cargo +nightly build --package api --features s3 --verbose
+
