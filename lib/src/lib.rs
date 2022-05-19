@@ -13,9 +13,11 @@ pub const ID_LENGTH: usize = 32;
 #[derive(Debug, Copy, Clone)]
 pub struct Id(pub [u8; ID_LENGTH]);
 
-impl Id {
+impl Id
+{
     /// Generate a new uno ID.
-    pub fn new() -> Self {
+    pub fn new() -> Self
+    {
         let mut seed = [0u8; ID_LENGTH];
         use rand::RngCore;
         rand::thread_rng().fill_bytes(&mut seed);
@@ -27,19 +29,21 @@ use std::convert::TryFrom;
 use std::str;
 
 /// A group share is the result of running split on an uno id.
-/// You need a threshold number (currently 1) of reconstructed groups in order
-/// to be able to reconstruct the original uno id.
+/// You need a threshold number (currently 1) of reconstructed groups in
+/// order to be able to reconstruct the original uno id.
 pub use s39::GroupShare;
-/// A share is the individual element in a group share. Shares in a group are
-/// combined to reconstruct the group share. Then group shares are combined to
-/// reconstruct the original ID.
+/// A share is the individual element in a group share. Shares in a group
+/// are combined to reconstruct the group share. Then group shares are
+/// combined to reconstruct the original ID.
 pub use s39::Share;
 
 /// Build an uno identity from a byte slice.
-impl TryFrom<&[u8]> for Id {
+impl TryFrom<&[u8]> for Id
+{
     type Error = std::array::TryFromSliceError;
 
-    fn try_from(bytes: &[u8]) -> Result<Self, Self::Error> {
+    fn try_from(bytes: &[u8]) -> Result<Self, Self::Error>
+    {
         let array = <[u8; ID_LENGTH]>::try_from(bytes)?;
         Ok(Id(array))
     }
@@ -62,7 +66,8 @@ use strum_macros::IntoStaticStr;
 /// Keys are derived from Uno IDs depending on their usage. This corresponds
 /// to the context passed to the key derivation function.
 #[derive(IntoStaticStr)]
-enum Usage {
+enum Usage
+{
     #[strum(to_string = "uno seed identity signing keypair")]
     Signature,
     #[strum(to_string = "uno seed private symmetric encryption key")]
@@ -70,22 +75,22 @@ enum Usage {
 }
 
 /// Convert an uno Id into its public/private keypair representation.
-impl From<Id> for KeyPair {
-    fn from(id: Id) -> Self {
-        KeyPair::from(&id)
-    }
+impl From<Id> for KeyPair
+{
+    fn from(id: Id) -> Self { KeyPair::from(&id) }
 }
 
 /// Convert an uno ID into its symmetric encryption secret.
-impl From<Id> for SymmetricKey {
-    fn from(id: Id) -> Self {
-        SymmetricKey::from(&id)
-    }
+impl From<Id> for SymmetricKey
+{
+    fn from(id: Id) -> Self { SymmetricKey::from(&id) }
 }
 
 /// Convert an uno Id into its public/private keypair representation.
-impl From<&Id> for KeyPair {
-    fn from(id: &Id) -> Self {
+impl From<&Id> for KeyPair
+{
+    fn from(id: &Id) -> Self
+    {
         let ctx: &'static str = Usage::Signature.into();
         let mut secret = [0u8; djb::PRIVATE_KEY_LENGTH];
         blake3::derive_key(ctx, &id.0, &mut secret);
@@ -93,16 +98,15 @@ impl From<&Id> for KeyPair {
         // one so there's no point in propagating the error.
         let private = djb::PrivateKey::from_bytes(&secret).unwrap();
         let public: djb::PublicKey = (&private).into();
-        KeyPair {
-            secret: private,
-            public: public,
-        }
+        KeyPair { secret: private, public: public }
     }
 }
 
 /// Convert an uno ID into its symmetric encryption secret.
-impl From<&Id> for SymmetricKey {
-    fn from(id: &Id) -> Self {
+impl From<&Id> for SymmetricKey
+{
+    fn from(id: &Id) -> Self
+    {
         let ctx: &'static str = Usage::Encryption.into();
         let mut key = SymmetricKey::default();
         blake3::derive_key(ctx, &id.0, key.as_mut_slice());
@@ -114,13 +118,15 @@ impl From<&Id> for SymmetricKey {
 /// The scheme parameter is a list of tuples (t, n) like [(3, 5)] which means,
 /// "one group of five with a share threshold of 3". The threshold is the
 /// minimum number of shares needed to reconstitute the identity.
-pub fn split(id: Id, scheme: &[(u8, u8)]) -> Result<Vec<GroupShare>, Error> {
+pub fn split(id: Id, scheme: &[(u8, u8)]) -> Result<Vec<GroupShare>, Error>
+{
     let shares = s39::split(&id.0, scheme)?;
     Ok(shares)
 }
 
 /// Combine shards back into the original uno id.
-pub fn combine(shares: &[Vec<String>]) -> Result<Id, Error> {
+pub fn combine(shares: &[Vec<String>]) -> Result<Id, Error>
+{
     let bytes = s39::combine(shares)?;
     let id = Id::try_from(&bytes[..])?;
     Ok(id)
@@ -133,9 +139,11 @@ pub struct Mu(pub [u8; MU_LENGTH]);
 
 pub const MU_LENGTH: usize = 10;
 
-impl Mu {
+impl Mu
+{
     /// Generate new uno Mu entropy.
-    pub fn new() -> Self {
+    pub fn new() -> Self
+    {
         let mut seed = [0u8; MU_LENGTH];
         use rand::RngCore;
         rand::thread_rng().fill_bytes(&mut seed);
@@ -144,24 +152,27 @@ impl Mu {
 }
 
 /// Convert an uno ID into its symmetric encryption secret.
-impl From<Mu> for SymmetricKey {
-    fn from(mu: Mu) -> Self {
-        SymmetricKey::from(&mu)
-    }
+impl From<Mu> for SymmetricKey
+{
+    fn from(mu: Mu) -> Self { SymmetricKey::from(&mu) }
 }
 
-impl TryFrom<&[u8]> for Mu {
+impl TryFrom<&[u8]> for Mu
+{
     type Error = std::array::TryFromSliceError;
 
-    fn try_from(bytes: &[u8]) -> Result<Self, Self::Error> {
+    fn try_from(bytes: &[u8]) -> Result<Self, Self::Error>
+    {
         let array = <[u8; MU_LENGTH]>::try_from(bytes)?;
         Ok(Mu(array))
     }
 }
 
 /// Convert an uno Mu into its symmetric encryption secret.
-impl From<&Mu> for SymmetricKey {
-    fn from(mu: &Mu) -> Self {
+impl From<&Mu> for SymmetricKey
+{
+    fn from(mu: &Mu) -> Self
+    {
         let ctx = "uno recovery share secret";
         let mut key = SymmetricKey::default();
         blake3::derive_key(ctx, &mu.0, key.as_mut_slice());
@@ -173,18 +184,19 @@ impl From<&Mu> for SymmetricKey {
 /// shamir's sessions on the server.
 pub struct Session(pub [u8; 32]);
 
-impl TryFrom<Mu> for Session {
+impl TryFrom<Mu> for Session
+{
     type Error = Error;
 
-    fn try_from(mu: Mu) -> Result<Self, Self::Error> {
-        Session::try_from(&mu)
-    }
+    fn try_from(mu: Mu) -> Result<Self, Self::Error> { Session::try_from(&mu) }
 }
 
-impl TryFrom<&Mu> for Session {
+impl TryFrom<&Mu> for Session
+{
     type Error = Error;
 
-    fn try_from(mu: &Mu) -> Result<Self, Self::Error> {
+    fn try_from(mu: &Mu) -> Result<Self, Self::Error>
+    {
         let salt = b"uno shamir secret share session id";
 
         use argon2::{Algorithm, Argon2, Version};
@@ -196,7 +208,13 @@ impl TryFrom<&Mu> for Session {
         let ctx = Argon2::new(None, 3, 4096, 1, Version::V0x13)?;
 
         let mut out = [0u8; 32];
-        let _ = ctx.hash_password_into(Algorithm::Argon2d, &mu.0, salt, b"", &mut out)?;
+        let _ = ctx.hash_password_into(
+            Algorithm::Argon2d,
+            &mu.0,
+            salt,
+            b"",
+            &mut out,
+        )?;
 
         Ok(Session(out))
     }
@@ -204,7 +222,8 @@ impl TryFrom<&Mu> for Session {
 
 /// The additional data associated with an encrypt/decrypt (aead) operation.
 #[derive(Copy, Clone, Debug, Display, EnumString)]
-pub enum Binding<'a> {
+pub enum Binding<'a>
+{
     /// Vault data
     #[strum(serialize = "vault")]
     Vault,
@@ -228,8 +247,10 @@ pub enum Binding<'a> {
     None,
 }
 
-impl<'a> Binding<'a> {
-    pub fn context(self) -> &'a str {
+impl<'a> Binding<'a>
+{
+    pub fn context(self) -> &'a str
+    {
         match self {
             Binding::Vault => "authentication vault",
             Binding::Split => "uno ssss split",
@@ -242,28 +263,40 @@ impl<'a> Binding<'a> {
     }
 }
 
-pub fn encrypt(usage: Binding, key: SymmetricKey, data: &[u8]) -> Result<Vec<u8>, Error> {
+pub fn encrypt(
+    usage: Binding,
+    key: SymmetricKey,
+    data: &[u8],
+) -> Result<Vec<u8>, Error>
+{
     let ctx = usage.context();
     Ok(djb::encrypt(key, data, ctx.as_bytes())?)
 }
 
-pub fn decrypt(usage: Binding, key: SymmetricKey, data: &[u8]) -> Result<Vec<u8>, Error> {
+pub fn decrypt(
+    usage: Binding,
+    key: SymmetricKey,
+    data: &[u8],
+) -> Result<Vec<u8>, Error>
+{
     let ctx = usage.context();
     Ok(djb::decrypt(key, data, ctx.as_bytes())?)
 }
 
 #[cfg(test)]
-mod unit {
+mod unit
+{
     use super::*;
 
     #[test]
-    fn keypair_from_id() -> Result<(), Box<dyn std::error::Error>> {
+    fn keypair_from_id() -> Result<(), Box<dyn std::error::Error>>
+    {
         let bytes64 = "JAqq6Fa/tHQD2LRtyn5B/RgX0FzKpjikcgDPi5Rgxbo";
         let bytes = base64::decode(bytes64)?;
         let id = Id::try_from(&*bytes)?;
         let actual = KeyPair::from(&id);
-        let expected64 =
-            "18ORHYIJBf48uXH9tj3uSx/0/hK1EtIxB6aY/fedPHYdQFZwBfUaRtU33C/w7eeqC0G+vHbLq/nmFFZay2/8Vg==";
+        let expected64 = "18ORHYIJBf48uXH9tj3uSx/0/hK1EtIxB6aY/\
+                          fedPHYdQFZwBfUaRtU33C/w7eeqC0G+vHbLq/nmFFZay2/8Vg==";
 
         let expected = base64::decode(expected64)?;
         assert_eq!(expected, actual.to_bytes());
@@ -272,7 +305,8 @@ mod unit {
     }
 
     #[test]
-    fn encryption_from_id() -> Result<(), Box<dyn std::error::Error>> {
+    fn encryption_from_id() -> Result<(), Box<dyn std::error::Error>>
+    {
         let bytes64 = "JAqq6Fa/tHQD2LRtyn5B/RgX0FzKpjikcgDPi5Rgxbo";
         let bytes = base64::decode(bytes64)?;
         let id = Id::try_from(&*bytes)?;
@@ -286,7 +320,8 @@ mod unit {
     }
 
     #[test]
-    fn session_from_mu() -> Result<(), Box<dyn std::error::Error>> {
+    fn session_from_mu() -> Result<(), Box<dyn std::error::Error>>
+    {
         let bytes64 = "zrzOvM68zrzOvA"; // "μμμμμ".as_bytes();
         let bytes = base64::decode(bytes64)?;
         let mu = Mu::try_from(&*bytes)?;
@@ -303,14 +338,16 @@ mod unit {
     }
 
     #[test]
-    fn encryption_from_mu() -> Result<(), Box<dyn std::error::Error>> {
+    fn encryption_from_mu() -> Result<(), Box<dyn std::error::Error>>
+    {
         let bytes64 = "zrzOvM68zrzOvA"; // "μμμμμ".as_bytes();
         let bytes = base64::decode(bytes64)?;
         let mu = Mu::try_from(&*bytes)?;
         let actual = SymmetricKey::from(&mu);
         let expected = vec![
-            231, 65, 139, 157, 21, 173, 103, 71, 3, 93, 33, 90, 217, 249, 187, 37, 4, 1, 111, 216,
-            84, 125, 27, 119, 71, 92, 3, 52, 10, 37, 70, 116,
+            231, 65, 139, 157, 21, 173, 103, 71, 3, 93, 33, 90, 217, 249, 187,
+            37, 4, 1, 111, 216, 84, 125, 27, 119, 71, 92, 3, 52, 10, 37, 70,
+            116,
         ];
         assert_eq!(expected, actual.as_slice());
 

@@ -36,13 +36,10 @@ pub type Share = Vec<u8>;
 ///
 /// Group, and scheme information as well as the iteration exponent is encoded
 /// in each share so that shares can be recombined without additional context.
-pub fn split<'a>
-(
+pub fn split<'a>(
     data: &[u8],
     scheme: &[(usize, usize)],
-)
-->
-Result<Vec<Share>, Error>
+) -> Result<Vec<Share>, Error>
 {
     let secret = data.to_vec();
 
@@ -99,7 +96,8 @@ Result<Vec<Share>, Error>
 /// Combine shares from a previous split operation. An error is returned if the
 /// provided shares are not able to satisfy group threshold requirements, or if
 /// the digest does not match after recombination.
-pub fn combine<'a>(parts: &[Share]) -> Result<Vec<u8>, Error> {
+pub fn combine<'a>(parts: &[Share]) -> Result<Vec<u8>, Error>
+{
     if parts.len() < 2 {
         let msg =
             "less than two parts cannot be used to reconstruct the secret";
@@ -147,12 +145,14 @@ pub fn combine<'a>(parts: &[Share]) -> Result<Vec<u8>, Error> {
 }
 
 #[cfg(test)]
-mod unit {
+mod unit
+{
     use super::*;
     use rand::RngCore;
 
     #[test]
-    pub fn sss_roundtrip_internal() {
+    pub fn sss_roundtrip_internal()
+    {
         let mut data = [0u8; 32];
         rand::thread_rng().fill_bytes(&mut data);
 
@@ -168,9 +168,11 @@ mod unit {
 
 // https://github.com/hashicorp/vault/blob/v1.6.2/shamir/shamir_test.go
 #[cfg(test)]
-mod tests {
+mod tests
+{
     #[test]
-    fn split_invalid() {
+    fn split_invalid()
+    {
         assert!(crate::split("test".as_bytes(), &[(0, 0)]).is_err());
         assert!(crate::split("test".as_bytes(), &[(3, 2)]).is_err());
         assert!(crate::split("test".as_bytes(), &[(3, 1000)]).is_err());
@@ -180,12 +182,14 @@ mod tests {
     }
 
     #[test]
-    fn split_unsupported() {
+    fn split_unsupported()
+    {
         assert!(crate::split("test".as_bytes(), &[(2, 3), (3, 4)]).is_err());
     }
 
     #[test]
-    fn split() {
+    fn split()
+    {
         let secret: &[u8] = "test".as_bytes();
 
         let out = crate::split(secret, &[(3, 5)]).unwrap();
@@ -197,30 +201,38 @@ mod tests {
     }
 
     #[test]
-    fn combine_invalid() {
+    fn combine_invalid()
+    {
         assert!(crate::combine(&[vec![]]).is_err());
 
-        assert!(crate::combine(&vec![
-            "foo".as_bytes().to_vec(),
-            "ba".as_bytes().to_vec(),
-        ])
-        .is_err());
+        assert!(
+            crate::combine(&vec![
+                "foo".as_bytes().to_vec(),
+                "ba".as_bytes().to_vec(),
+            ])
+            .is_err()
+        );
 
-        assert!(crate::combine(&vec![
-            "f".as_bytes().to_vec(),
-            "b".as_bytes().to_vec()
-        ])
-        .is_err());
+        assert!(
+            crate::combine(&vec![
+                "f".as_bytes().to_vec(),
+                "b".as_bytes().to_vec()
+            ])
+            .is_err()
+        );
 
-        assert!(crate::combine(&vec![
-            "foo".as_bytes().to_vec(),
-            "foo".as_bytes().to_vec(),
-        ])
-        .is_err());
+        assert!(
+            crate::combine(&vec![
+                "foo".as_bytes().to_vec(),
+                "foo".as_bytes().to_vec(),
+            ])
+            .is_err()
+        );
     }
 
     #[test]
-    fn combine() {
+    fn combine()
+    {
         let secret = "test".as_bytes();
 
         let out = crate::split(&secret, &[(3, 5)]).unwrap();
@@ -250,7 +262,8 @@ mod tests {
     }
 
     #[test]
-    fn precomputed() {
+    fn precomputed()
+    {
         // precomputed split from the HashiCorp version.
         //
         // package main
@@ -281,9 +294,10 @@ mod tests {
         //
         // go run main.go
         // 2021/02/17 14:20:53 split:
-        // 2021/02/17 14:20:53 [[210 102 247 138 85 80 126] [107 177 243 90 138 28 140] [198 216 47 182 64 12 180]]
-        // 2021/02/17 14:20:53 combine (string):
-        // 2021/02/17 14:20:53 [115 101 99 114 101 116] secret
+        // 2021/02/17 14:20:53 [[210 102 247 138 85 80 126] [107 177 243 90 138
+        // 28 140] [198 216 47 182 64 12 180]] 2021/02/17 14:20:53
+        // combine (string): 2021/02/17 14:20:53 [115 101 99 114 101
+        // 116] secret
 
         let parts = vec![
             vec![210, 102, 247, 138, 85, 80, 126],

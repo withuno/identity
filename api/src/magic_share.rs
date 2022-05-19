@@ -11,20 +11,23 @@ const PREFIX_ONE_WEEK: &'static str = "1w";
 const PREFIX_ONE_MONTH: &'static str = "1m";
 
 #[derive(Serialize, Deserialize)]
-pub struct MagicShare {
+pub struct MagicShare
+{
     pub id: String,
     pub expires_at: DateTime<Utc>,
     pub schema_version: u64,
     pub encrypted_credential: String,
 }
 
-fn v0_from_json(json: &[u8]) -> Result<MagicShare> {
+fn v0_from_json(json: &[u8]) -> Result<MagicShare>
+{
     let m: MagicShare = serde_json::from_slice(json)?;
 
     Ok(m)
 }
 
-pub fn new_from_json(json: &[u8]) -> Result<MagicShare> {
+pub fn new_from_json(json: &[u8]) -> Result<MagicShare>
+{
     let v: Value = serde_json::from_slice(json)?;
 
     match v["schema_version"].as_u64() {
@@ -36,22 +39,24 @@ pub fn new_from_json(json: &[u8]) -> Result<MagicShare> {
     }
 }
 
-pub async fn find_by_id(db: &impl Database, id: &str) -> Result<MagicShare> {
+pub async fn find_by_id(db: &impl Database, id: &str) -> Result<MagicShare>
+{
     for x in &[PREFIX_ONE_DAY, PREFIX_ONE_WEEK, PREFIX_ONE_MONTH] {
         let key = format!("{}/{}", x, id);
         match get_share(db, &key).await {
-            Ok(v) => { return Ok(v); },
-            Err(_) => ()
+            Ok(v) => {
+                return Ok(v);
+            },
+            Err(_) => (),
         }
     }
 
     return Err(anyhow!("Not found"));
 }
 
-pub async fn get_share(
-    db: &impl Database,
-    location: &str,
-) -> Result<MagicShare> {
+pub async fn get_share(db: &impl Database, location: &str)
+-> Result<MagicShare>
+{
     let bytes = db.get(location).await?;
 
     let s: MagicShare = serde_json::from_slice(&bytes)?;
@@ -65,7 +70,8 @@ pub async fn get_share(
 pub async fn store_share(
     db: &impl Database,
     share: &MagicShare,
-) -> Result<String> {
+) -> Result<String>
+{
     match find_by_id(db, &share.id).await {
         Ok(_) => return Err(anyhow!("Item already exists")),
         _ => (),
@@ -90,11 +96,13 @@ pub async fn store_share(
 }
 
 #[cfg(test)]
-mod tests {
+mod tests
+{
     use super::*;
 
     #[test]
-    fn test_new_v0_from_json() {
+    fn test_new_v0_from_json()
+    {
         let bad_schema_version = "";
         assert!(new_from_json(bad_schema_version.as_bytes()).is_err());
 
@@ -120,7 +128,8 @@ mod tests {
 
     #[cfg(not(feature = "s3"))]
     #[async_std::test]
-    async fn test_share_roundtrip() {
+    async fn test_share_roundtrip()
+    {
         let dir = tempfile::TempDir::new().unwrap();
         let db = FileStore::new(dir.path(), "test", "v0").await.unwrap();
 
@@ -138,7 +147,8 @@ mod tests {
 
     #[cfg(not(feature = "s3"))]
     #[async_std::test]
-    async fn test_find_by_id() {
+    async fn test_find_by_id()
+    {
         let dir = tempfile::TempDir::new().unwrap();
         let db = FileStore::new(dir.path(), "test", "v0").await.unwrap();
 
@@ -181,7 +191,8 @@ mod tests {
 
     #[cfg(not(feature = "s3"))]
     #[async_std::test]
-    async fn test_no_duplicate_shares() {
+    async fn test_no_duplicate_shares()
+    {
         let dir = tempfile::TempDir::new().unwrap();
         let db = FileStore::new(dir.path(), "test", "v0").await.unwrap();
 
@@ -214,7 +225,8 @@ mod tests {
 
     #[cfg(not(feature = "s3"))]
     #[async_std::test]
-    async fn test_expiration_rounding() {
+    async fn test_expiration_rounding()
+    {
         let dir = tempfile::TempDir::new().unwrap();
         let db = FileStore::new(dir.path(), "test", "v0").await.unwrap();
 

@@ -8,26 +8,24 @@ use wasm_bindgen::prelude::*;
 use uno::Signer;
 
 #[derive(Debug)]
-pub enum Error {
+pub enum Error
+{
     Fatal(String),
 }
 
-impl From<argon2::Error> for Error {
-    fn from(e: argon2::Error) -> Self {
-        Error::Fatal(e.to_string())
-    }
+impl From<argon2::Error> for Error
+{
+    fn from(e: argon2::Error) -> Self { Error::Fatal(e.to_string()) }
 }
 
-impl From<base64::DecodeError> for Error {
-    fn from(e: base64::DecodeError) -> Self {
-        Error::Fatal(e.to_string())
-    }
+impl From<base64::DecodeError> for Error
+{
+    fn from(e: base64::DecodeError) -> Self { Error::Fatal(e.to_string()) }
 }
 
-impl From<uno::Error> for Error {
-    fn from(e: uno::Error) -> Self {
-        Error::Fatal(e.to_string())
-    }
+impl From<uno::Error> for Error
+{
+    fn from(e: uno::Error) -> Self { Error::Fatal(e.to_string()) }
 }
 
 fn argon_hash(
@@ -36,7 +34,8 @@ fn argon_hash(
     p: u32,
     salt: &[u8],
     body: &[u8],
-) -> Result<std::vec::Vec<u8>, Error> {
+) -> Result<std::vec::Vec<u8>, Error>
+{
     let params = Params::new(m_cost, t_cost, p, Some(32))?;
     let argon2 = Argon2::new(Algorithm::Argon2d, Version::V0x13, params);
 
@@ -47,7 +46,8 @@ fn argon_hash(
 }
 
 #[wasm_bindgen]
-pub fn wasm_sign_message(seed: String, message: String) -> Option<String> {
+pub fn wasm_sign_message(seed: String, message: String) -> Option<String>
+{
     let decoded_seed = match base64::decode(seed) {
         Ok(v) => v,
         Err(_) => return None,
@@ -76,7 +76,8 @@ pub fn wasm_auth_header(
     argon_m: u32,
     argon_t: u32,
     argon_p: u32,
-) -> Option<String> {
+) -> Option<String>
+{
     let body_hash = blake3::hash(body);
     let body_enc =
         base64::encode_config(body_hash.as_bytes(), base64::STANDARD_NO_PAD);
@@ -93,16 +94,16 @@ pub fn wasm_auth_header(
     ) {
         Ok(out) => {
             let hash = base64::encode_config(out, base64::STANDARD_NO_PAD);
-            let salthash =
-                base64::encode_config(salt, base64::STANDARD_NO_PAD);
+            let salthash = base64::encode_config(salt, base64::STANDARD_NO_PAD);
             Some(format!("{}${}", salthash, hash))
-        }
+        },
         Err(_) => None,
     }
 }
 
 #[wasm_bindgen]
-pub fn wasm_decrypt_share(share: String, seed: String) -> Option<String> {
+pub fn wasm_decrypt_share(share: String, seed: String) -> Option<String>
+{
     let decoded_share = match base64::decode(share) {
         Ok(v) => v,
         Err(_) => return None,
@@ -142,10 +143,8 @@ pub fn wasm_decrypt_share(share: String, seed: String) -> Option<String> {
 }
 
 #[wasm_bindgen]
-pub fn wasm_decrypt_magic_share(
-    share: String,
-    seed: String,
-) -> Option<String> {
+pub fn wasm_decrypt_magic_share(share: String, seed: String) -> Option<String>
+{
     let decoded_share = match base64::decode(share) {
         Ok(v) => v,
         Err(_) => return None,
@@ -177,7 +176,8 @@ pub fn wasm_decrypt_magic_share(
 }
 
 #[wasm_bindgen]
-pub fn wasm_decrypt_vault(vault: &[u8], seed: String) -> Option<String> {
+pub fn wasm_decrypt_vault(vault: &[u8], seed: String) -> Option<String>
+{
     let decoded_seed = match base64::decode(seed) {
         Ok(v) => v,
         Err(_) => return None,
@@ -203,7 +203,8 @@ pub fn wasm_decrypt_vault(vault: &[u8], seed: String) -> Option<String> {
 }
 
 #[wasm_bindgen]
-pub fn wasm_generate_session_id(seed: String) -> Option<String> {
+pub fn wasm_generate_session_id(seed: String) -> Option<String>
+{
     // assert len(seed) == 32
 
     let decoded_seed = match base64::decode(seed) {
@@ -220,7 +221,8 @@ pub fn wasm_generate_session_id(seed: String) -> Option<String> {
 }
 
 #[wasm_bindgen]
-pub fn wasm_get_public_key_url_encoded(seed: String) -> Option<String> {
+pub fn wasm_get_public_key_url_encoded(seed: String) -> Option<String>
+{
     match base64::decode_config(seed, base64::URL_SAFE_NO_PAD) {
         Ok(v) => wasm_get_public_key(base64::encode(v), true),
         Err(_) => return None,
@@ -228,7 +230,8 @@ pub fn wasm_get_public_key_url_encoded(seed: String) -> Option<String> {
 }
 
 #[wasm_bindgen]
-pub fn wasm_get_public_key(seed: String, url_encode: bool) -> Option<String> {
+pub fn wasm_get_public_key(seed: String, url_encode: bool) -> Option<String>
+{
     let decoded_seed = match base64::decode(seed) {
         Ok(v) => v,
         Err(_) => return None,
@@ -249,7 +252,7 @@ pub fn wasm_get_public_key(seed: String, url_encode: bool) -> Option<String> {
             }
 
             Some(base64::encode(v.public))
-        }
+        },
         Err(_) => None,
     }
 }

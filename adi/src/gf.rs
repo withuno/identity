@@ -12,11 +12,13 @@ use subtle::ConditionallySelectable;
 use subtle::ConstantTimeEq;
 
 #[derive(Debug)]
-pub struct Polynomial {
+pub struct Polynomial
+{
     pub coefficients: Vec<u8>,
 }
 
-pub fn make_polynomial(intercept: u8, degree: usize) -> Polynomial {
+pub fn make_polynomial(intercept: u8, degree: usize) -> Polynomial
+{
     let mut p = Polynomial {
         //coefficients: Vec::with_capacity(degree + 1),
         coefficients: vec![0u8; degree + 1],
@@ -29,7 +31,8 @@ pub fn make_polynomial(intercept: u8, degree: usize) -> Polynomial {
     p
 }
 
-pub fn interpolate_polynomial(x_samples: &[u8], y_samples: &[u8], x: u8) -> u8 {
+pub fn interpolate_polynomial(x_samples: &[u8], y_samples: &[u8], x: u8) -> u8
+{
     let limit = x_samples.len();
     let mut result = 0u8;
     let mut basis;
@@ -54,8 +57,10 @@ pub fn interpolate_polynomial(x_samples: &[u8], y_samples: &[u8], x: u8) -> u8 {
     result
 }
 
-impl Polynomial {
-    pub fn evaluate(&self, x: u8) -> u8 {
+impl Polynomial
+{
+    pub fn evaluate(&self, x: u8) -> u8
+    {
         if x == 0 {
             return self.coefficients[0];
         }
@@ -79,11 +84,10 @@ impl Polynomial {
     }
 }
 
-pub fn add(a: u8, b: u8) -> u8 {
-    a ^ b
-}
+pub fn add(a: u8, b: u8) -> u8 { a ^ b }
 
-pub fn div(a: u8, b: u8) -> u8 {
+pub fn div(a: u8, b: u8) -> u8
+{
     if b == 0 {
         panic!("divide by zero");
     }
@@ -101,7 +105,8 @@ pub fn div(a: u8, b: u8) -> u8 {
 
 // do i need to take/return a subtle::Choice here?
 // how do i avoid using `as usize` and `as i16`
-pub fn mult(a: u8, b: u8) -> u8 {
+pub fn mult(a: u8, b: u8) -> u8
+{
     let log_a: u8 = LOG_TABLE[a as usize];
     let log_b: u8 = LOG_TABLE[b as usize];
 
@@ -167,19 +172,21 @@ pub const EXP_TABLE: [u8; 256] = [
 ];
 
 
-
 #[cfg(test)]
-mod tests {
+mod tests
+{
     use super::*;
 
     #[test]
-    fn field_add() {
+    fn field_add()
+    {
         assert_eq!(add(16, 16), 0);
         assert_eq!(add(3, 4), 7);
     }
 
     #[test]
-    fn field_mult() {
+    fn field_mult()
+    {
         assert_eq!(mult(3, 7), 9);
         assert_eq!(mult(3, 0), 0);
         assert_eq!(mult(0, 3), 0);
@@ -187,25 +194,26 @@ mod tests {
 
     #[test]
     #[should_panic]
-    fn field_divide_by_zero() {
-        div(7, 0);
-    }
+    fn field_divide_by_zero() { div(7, 0); }
 
     #[test]
-    fn field_divide() {
+    fn field_divide()
+    {
         assert_eq!(div(0, 7), 0);
         assert_eq!(div(3, 3), 1);
         assert_eq!(div(6, 3), 2);
     }
 
     #[test]
-    fn polynomial_random() {
+    fn polynomial_random()
+    {
         let p = make_polynomial(42, 2);
         assert_eq!(p.coefficients[0], 42);
     }
 
     #[test]
-    fn polynomial_eval() {
+    fn polynomial_eval()
+    {
         let p = make_polynomial(42, 1);
 
         assert_eq!(p.evaluate(0), 42);
@@ -213,7 +221,8 @@ mod tests {
     }
 
     #[test]
-    fn polynomial_interpolate_rand() {
+    fn polynomial_interpolate_rand()
+    {
         let v: Vec<u8> = (0..=255).collect();
 
         for i in v {
@@ -229,7 +238,8 @@ mod tests {
     }
 
     #[test]
-    fn test_tables() {
+    fn test_tables()
+    {
         for i in 1..256 {
             let log_v: u8 = LOG_TABLE[i];
             let exp_v: u8 = EXP_TABLE[log_v as usize];

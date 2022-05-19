@@ -11,17 +11,15 @@ use std::fmt::Debug;
 use crate::store::Database;
 
 #[derive(Clone, Debug)]
-pub struct FileStore {
+pub struct FileStore
+{
     db: PathBuf,
     version: PathBuf,
 }
 
-impl FileStore {
-    pub async fn new<P, Q, R>(
-        root: P,
-        name: Q,
-        version: R,
-    ) -> Result<FileStore>
+impl FileStore
+{
+    pub async fn new<P, Q, R>(root: P, name: Q, version: R) -> Result<FileStore>
     where
         P: AsRef<Path>,
         Q: AsRef<Path>,
@@ -39,7 +37,8 @@ impl FileStore {
 }
 
 #[async_trait]
-impl Database for FileStore {
+impl Database for FileStore
+{
     async fn exists<P>(&self, file: P) -> Result<bool>
     where
         P: AsRef<Path> + Send,
@@ -154,19 +153,21 @@ impl Database for FileStore {
                 } else {
                     bail!(e)
                 }
-            }
+            },
         }
     }
 }
 
 #[cfg(test)]
 #[cfg(not(feature = "s3"))]
-mod tests {
+mod tests
+{
     use super::*;
     use tempfile::TempDir;
 
     #[async_std::test]
-    async fn store() -> Result<()> {
+    async fn store() -> Result<()>
+    {
         let dir = TempDir::new()?;
         let f = FileStore::new(dir.path(), "testdata", "v0").await?;
 

@@ -7,32 +7,37 @@ use futures::stream::StreamExt;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Serialize, Deserialize, PartialEq)]
-pub struct Mailbox {
+pub struct Mailbox
+{
     pub messages: Vec<MessageStored>,
 }
 
 #[derive(Debug, Serialize, Deserialize, PartialEq, Clone)]
-pub struct Payload {
+pub struct Payload
+{
     pub signature: String,
     #[serde(default)]
     pub share: String,
 }
 
 #[derive(Debug, Deserialize, Serialize)]
-pub struct MessageToDelete {
+pub struct MessageToDelete
+{
     pub from: String,
     pub id: u64,
 }
 
 #[derive(Debug, Serialize, Deserialize, PartialEq, Clone)]
-pub struct MessageRequest {
+pub struct MessageRequest
+{
     pub action: String,
     pub uuid: String,
     pub data: Payload,
 }
 
 #[derive(Debug, Serialize, Deserialize, PartialEq)]
-pub struct MessageStored {
+pub struct MessageStored
+{
     pub action: String,
     pub uuid: String,
     pub id: u64,
@@ -44,29 +49,33 @@ pub async fn delete_messages(
     store: &impl Database,
     owner: &str,
     messages: &Vec<MessageToDelete>,
-) -> Result<usize> {
+) -> Result<usize>
+{
     let results = stream::iter(messages)
         .filter_map(|m| async move {
             let dest = format!("{}/{}/{}", owner, m.from, m.id);
             // only count deletes that are Ok
             store.del(&dest).await.ok()
         })
-        .collect::<Vec<_>>().await;
+        .collect::<Vec<_>>()
+        .await;
 
     Ok(results.len())
 }
 
-pub async fn get_messages(
-    store: &impl Database,
-    owner: &str,
-) -> Result<Mailbox> {
+pub async fn get_messages(store: &impl Database, owner: &str)
+-> Result<Mailbox>
+{
     // LOCK
     let m_ids = store.list(owner).await?;
     let messages = stream::iter(m_ids)
         .filter_map(|id| async move {
-            store.get(&id).await
-                .and_then(|m| serde_json::from_slice(&m)
-                    .map_err(|e| anyhow!(e)))
+            store
+                .get(&id)
+                .await
+                .and_then(|m| {
+                    serde_json::from_slice(&m).map_err(|e| anyhow!(e))
+                })
                 .ok() // convert to option
         })
         .collect::<Vec<_>>()
@@ -81,7 +90,8 @@ pub async fn post_message(
     recipient: &str,
     sender: &str,
     message: &MessageRequest,
-) -> Result<MessageStored> {
+) -> Result<MessageStored>
+{
     let prefix = format!("{}/{}", recipient, sender);
 
     // LOCK
@@ -121,18 +131,21 @@ pub async fn post_message(
 }
 
 #[cfg(test)]
-mod tests {
+mod tests
+{
     use super::*;
 
     #[cfg(feature = "s3")]
     use crate::store::S3Store;
 
     #[cfg(feature = "s3")]
-    async fn new_store() -> Result<S3Store> {
+    async fn new_store() -> Result<S3Store>
+    {
         use rand::distributions::Alphanumeric;
         use rand::Rng;
 
-        fn tmpname(rand_len: usize) -> String {
+        fn tmpname(rand_len: usize) -> String
+        {
             let mut buf = String::with_capacity(rand_len);
 
             // Push each character in one-by-one. Unfortunately, this is the
@@ -156,7 +169,8 @@ mod tests {
             "minioadmin",
             &tmpname(32),
             "v0",
-        ).await?;
+        )
+        .await?;
 
         let _ = store.create_bucket_if_not_exists().await?;
 
@@ -167,14 +181,16 @@ mod tests {
     use crate::store::FileStore;
 
     #[cfg(not(feature = "s3"))]
-    async fn new_store() -> Result<FileStore> {
+    async fn new_store() -> Result<FileStore>
+    {
         let dir = tempfile::TempDir::new()?;
 
         Ok(FileStore::new(dir.path(), "test", "v0").await?)
     }
 
     #[async_std::test]
-    async fn message_uuid() -> Result<()> {
+    async fn message_uuid() -> Result<()>
+    {
         let store = new_store().await?;
         let owner1 = "owner1".to_string();
         let sender1 = "sender1".to_string();
@@ -197,7 +213,8 @@ mod tests {
     }
 
     #[async_std::test]
-    async fn mailbox_messages() -> Result<()> {
+    async fn mailbox_messages() -> Result<()>
+    {
         let store = new_store().await?;
         let owner1 = "owner1".to_string();
         let owner2 = "owner2".to_string();
@@ -233,20 +250,11 @@ mod tests {
         let g1 = get_messages(&store, &owner1).await?;
         assert_eq!(g1.messages.len(), 3);
 
-        let num_deleted = delete_messages(
-            &store,
-            &owner1,
-            &vec![
-                MessageToDelete {
-                    from: sender1,
-                    id: r2.id,
-                },
-                MessageToDelete {
-                    from: sender2,
-                    id: r3.id,
-                },
-            ],
-        ).await?;
+        let num_deleted = delete_messages(&store, &owner1, &vec![
+            MessageToDelete { from: sender1, id: r2.id },
+            MessageToDelete { from: sender2, id: r3.id },
+        ])
+        .await?;
 
         assert_eq!(num_deleted, 2);
 
@@ -259,7 +267,8 @@ mod tests {
     }
 
     #[test]
-    fn ios_deserialize() -> Result<()> {
+    fn ios_deserialize() -> Result<()>
+    {
         let s1 = r#"{"data":{"share":"IKlx5OuP22Xux5JSOeekYH+zLmhiemgHF25QV4yxK/Cq8VlYZa41qWElDD+Ue9tdzdm23j78MpfCTlLCew==","signature":"UEq/S7j5cXAuEo7K5LVEiMGdWbLwqQxxQNKVlXtgLbB8ecY4+u3YF3S\/uMhohZx5pmKJ6qWZccoj7+9dAqA/CQ=="},"uuid":"not_from_ios","action":"share-update","from":"DkxRk21yuqwA2Uf1P7At08OD8434fwEnAc9-Ckmve20"}"#;
         let s2 = r#"{"data":{"signature":"UEq/S7j5cXAuEo7K5LVEiMGdWbLwqQxxQNKVlXtgLbB8ecY4+u3YF3S\/uMhohZx5pmKJ6qWZccoj7+9dAqA/CQ=="},"uuid":"not_from_ios","action":"share-update","from":"DkxRk21yuqwA2Uf1P7At08OD8434fwEnAc9-Ckmve20"}"#;
 
