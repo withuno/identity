@@ -50,7 +50,7 @@
 //!
 
 
-#![feature(vec_into_raw_parts, maybe_uninit_extra)]
+#![feature(vec_into_raw_parts)]
 
 
 use std::convert::TryFrom; 
