@@ -3,7 +3,7 @@ name = "uno"
 version = "0.1.0"
 authors = ["David Cowden <david@withuno.com>"]
 license = "AGPL-3.0-only"
-edition = "2018"
+edition = "2021"
 
 [dependencies]
 adi = { path = "../adi" }

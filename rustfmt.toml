@@ -1,7 +1,7 @@
 blank_lines_lower_bound = 0
 blank_lines_upper_bound = 2
 brace_style = "AlwaysNextLine"
-control_brace_style = "ClosingNextLine"
+#control_brace_style = "ClosingNextLine"
 fn_single_line = true
 format_strings = true
 license_template_path = ".rustfmt.license-template"
