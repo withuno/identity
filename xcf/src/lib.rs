@@ -7,6 +7,4 @@
 
 ///
 /// Reexport everything from the ffi crate.
-///
 pub use ffi::*;
-

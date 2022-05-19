@@ -10,13 +10,13 @@
 
 use anyhow::Context;
 use anyhow::Result;
-use anyhow::{anyhow, bail,};
+use anyhow::{anyhow, bail};
 
 use rand::RngCore;
 
-use surf::{Request, Client, Response,};
 use surf::middleware::{Middleware, Next};
 use surf::Url;
+use surf::{Client, Request, Response};
 
 use uno::Binding;
 use uno::Signer;
@@ -26,7 +26,7 @@ use std::convert::TryFrom;
 use std::ffi::OsString;
 use std::path::Path;
 
-use serde::{Serialize, Deserialize,};
+use serde::{Deserialize, Serialize};
 
 use uuid::Uuid;
 
@@ -68,8 +68,8 @@ pub fn load_config(path: &Path) -> Result<Config>
 {
     let file = std::fs::File::open(path)
         .context("Error loading config. Please run `uno init` first.")?;
-    let config: Config = ron::de::from_reader(file)
-        .context("Error parsing config.")?;
+    let config: Config =
+        ron::de::from_reader(file).context("Error parsing config.")?;
 
     Ok(config)
 }
@@ -78,7 +78,6 @@ pub fn load_config(path: &Path) -> Result<Config>
 ///
 /// Generate a new config including new client UUID and vclock. If an existing
 /// seed is found, it will be reused. Any existing vclock will be clobbered.
-///
 pub fn gen_config(path: &Path, api: String) -> Result<Config>
 {
     let mut config = Config::default();
@@ -94,7 +93,9 @@ pub fn gen_config(path: &Path, api: String) -> Result<Config>
             Ok(old) => config.uuid = old.uuid,
             Err(_) => {},
         },
-        Err(_) => { gen_seed(&config)?; },
+        Err(_) => {
+            gen_seed(&config)?;
+        },
     };
 
     // clobber the vclock. we'll get a new one from the server when we need it
@@ -111,11 +112,10 @@ pub fn gen_config(path: &Path, api: String) -> Result<Config>
 pub fn load_seed(config: &Config) -> Result<uno::Id>
 {
     let path = std::path::Path::new(&config.seed_file);
-    let bytes = std::fs::read(path)
-        .with_context(|| {
-            let s = config.seed_file.to_string_lossy();
-            format!("error reading seed_file: {}", s)
-        })?;
+    let bytes = std::fs::read(path).with_context(|| {
+        let s = config.seed_file.to_string_lossy();
+        format!("error reading seed_file: {}", s)
+    })?;
 
     Ok(uno::Id::try_from(&bytes[..])?)
 }
@@ -159,8 +159,10 @@ fn write_vclock(config: &Config, c: VClock<String>) -> Result<()>
     Ok(())
 }
 
-fn merge_and_save_vclock(config: &Config, theirs: VClock<String>)
--> Result<VClock<String>>
+fn merge_and_save_vclock(
+    config: &Config,
+    theirs: VClock<String>,
+) -> Result<VClock<String>>
 {
     let ours = load_vclock(config)?;
     let new = ours.merge(&theirs);
@@ -173,11 +175,10 @@ fn merge_and_save_vclock(config: &Config, theirs: VClock<String>)
 pub fn load_vclock(config: &Config) -> Result<VClock<String>>
 {
     let path = std::path::Path::new(&config.vclock_file);
-    let bytes = std::fs::read(path)
-        .with_context(|| {
-            let s = config.seed_file.to_string_lossy();
-            format!("error reading seed_file: {}", s)
-        })?;
+    let bytes = std::fs::read(path).with_context(|| {
+        let s = config.seed_file.to_string_lossy();
+        format!("error reading seed_file: {}", s)
+    })?;
 
     ron::de::from_bytes(&bytes).map_err(|e| anyhow!(e))
 }
@@ -188,8 +189,7 @@ pub fn get_vault(cfg: &Config, host: &String, id: uno::Id) -> Result<String>
     let sym = uno::SymmetricKey::from(&id);
 
     let url = vault_url_from_key(&host, &key)?;
-    let req = surf::get(url.as_str())
-        .build();
+    let req = surf::get(url.as_str()).build();
 
     let mut res = async_std::task::block_on(do_http_signed_vc(req, &id))
         .map_err(|e| anyhow!("{}", e))?;
@@ -209,8 +209,12 @@ pub fn get_vault(cfg: &Config, host: &String, id: uno::Id) -> Result<String>
     Ok(String::from_utf8(vault)?)
 }
 
-pub fn put_vault(cfg: &Config, host: &String, id: uno::Id, data: &[u8])
--> Result<String>
+pub fn put_vault(
+    cfg: &Config,
+    host: &String,
+    id: uno::Id,
+    data: &[u8],
+) -> Result<String>
 {
     let key = uno::KeyPair::from(&id);
     let sym = uno::SymmetricKey::from(&id);
@@ -259,8 +263,7 @@ pub fn get_ssss(host: &String, mu: uno::Mu) -> Result<String>
     let session = uno::Session::try_from(&mu)?;
     let sym = uno::SymmetricKey::from(&mu);
     let url = ssss_url_from_session(&host, &session)?;
-    let req = surf::get(url.as_str())
-        .build();
+    let req = surf::get(url.as_str()).build();
 
     let data = async_std::task::block_on(do_http_simple(req))
         .map_err(|e| anyhow!("{}", e))?;
@@ -270,9 +273,9 @@ pub fn get_ssss(host: &String, mu: uno::Mu) -> Result<String>
         Inference::Unknown => {
             // The data represents a "complete" split or combine session. Try
             // both and see which one works.
-            let mut
-                r = decrypt_share(Binding::Split, sym, &data);
-            if r.is_err() { // TODO if let Err(aead::Error) = r
+            let mut r = decrypt_share(Binding::Split, sym, &data);
+            if r.is_err() {
+                // TODO if let Err(aead::Error) = r
                 r = decrypt_share(Binding::Combine, sym, &data);
             }
             Ok(r?)
@@ -291,12 +294,10 @@ pub fn put_ssss(host: &String, mu: uno::Mu, data: &[u8]) -> Result<String>
         Inference::Exact(b) => b,
         Inference::Unknown => Binding::None,
     };
-    let body = encrypt_share(usage, sym, data)
-        .context("cannot encrypt share")?;
+    let body =
+        encrypt_share(usage, sym, data).context("cannot encrypt share")?;
     let url = ssss_url_from_session(&host, &session)?;
-    let req = surf::put(url.as_str())
-        .body(body)
-        .build();
+    let req = surf::put(url.as_str()).body(body).build();
 
     let blob = async_std::task::block_on(do_http_simple(req))
         .map_err(|e| anyhow!("{}", e))?;
@@ -315,12 +316,10 @@ pub fn patch_ssss(host: &String, mu: uno::Mu, data: &[u8]) -> Result<String>
         // While this can happen on PUT, it shouldn't on PATCH.
         Inference::Unknown => Binding::None,
     };
-    let body = encrypt_share(usage, sym, data)
-        .context("cannot encrypt share")?;
+    let body =
+        encrypt_share(usage, sym, data).context("cannot encrypt share")?;
     let url = ssss_url_from_session(&host, &session)?;
-    let req = surf::patch(url.as_str())
-        .body(body)
-        .build();
+    let req = surf::patch(url.as_str()).body(body).build();
 
     let blob = async_std::task::block_on(do_http_simple(req))
         .map_err(|e| anyhow!("{}", e))?;
@@ -345,8 +344,7 @@ use serde_json::Value;
 // https://www.notion.so/withuno/Shamir-Secret-Sharing-Session-de9d541155764826b9c9519a486a36d1
 fn infer_binding(data: &[u8]) -> Result<Inference>
 {
-    let json: Value = serde_json::from_slice(data)
-        .context("invalid json")?;
+    let json: Value = serde_json::from_slice(data).context("invalid json")?;
     let map = match json {
         Value::Object(m) => m,
         _ => bail!("not a valid session"),
@@ -380,11 +378,15 @@ fn infer_binding(data: &[u8]) -> Result<Inference>
     Ok(Inference::Unknown)
 }
 
-fn encrypt_share(usage: Binding, key: uno::SymmetricKey, data: &[u8])
--> Result<Vec<u8>>
+fn encrypt_share(
+    usage: Binding,
+    key: uno::SymmetricKey,
+    data: &[u8],
+) -> Result<Vec<u8>>
 {
     let mut json: Value = serde_json::from_slice(&data)?;
-    let obj = json.as_object_mut()
+    let obj = json
+        .as_object_mut()
         .ok_or(anyhow!("data is not a valid json object"))?;
 
     if let Some(Value::String(s)) = obj.get(SHARE) {
@@ -398,11 +400,15 @@ fn encrypt_share(usage: Binding, key: uno::SymmetricKey, data: &[u8])
     Ok(serde_json::to_vec(&obj)?)
 }
 
-fn decrypt_share(usage: Binding, key: uno::SymmetricKey, data: &[u8])
--> Result<Vec<u8>>
+fn decrypt_share(
+    usage: Binding,
+    key: uno::SymmetricKey,
+    data: &[u8],
+) -> Result<Vec<u8>>
 {
     let mut json: Value = serde_json::from_slice(data)?;
-    let obj = json.as_object_mut()
+    let obj = json
+        .as_object_mut()
         .ok_or(anyhow!("data is not a valid json object"))?;
 
     if let Some(Value::String(s)) = obj.get(SHARE) {
@@ -416,7 +422,8 @@ fn decrypt_share(usage: Binding, key: uno::SymmetricKey, data: &[u8])
     Ok(serde_json::to_vec(&obj)?)
 }
 
-fn ssss_url_from_session(endpoint: &str, session: &uno::Session) -> Result<Url>
+fn ssss_url_from_session(endpoint: &str, session: &uno::Session)
+-> Result<Url>
 {
     let host = Url::parse(&endpoint)?;
     let base = host.join("v2/ssss/")?;
@@ -428,18 +435,15 @@ fn ssss_url_from_session(endpoint: &str, session: &uno::Session) -> Result<Url>
 
 async fn do_http_simple(req: surf::Request) -> Result<Vec<u8>>
 {
-    let client = surf::client()
-        .with(surf::middleware::Logger::new());
+    let client = surf::client().with(surf::middleware::Logger::new());
 
-    let mut res = client.send(req).await
-        .map_err(|e| anyhow!("{}", e))?;
+    let mut res = client.send(req).await.map_err(|e| anyhow!("{}", e))?;
 
     let status = res.status();
     if status != 200 {
         bail!("server returned: {}", status);
     }
-    let body = res.body_bytes().await
-        .map_err(|e| anyhow!("{}", e))?;
+    let body = res.body_bytes().await.map_err(|e| anyhow!("{}", e))?;
 
     Ok(body)
 }
@@ -448,21 +452,18 @@ async fn do_http_simple(req: surf::Request) -> Result<Vec<u8>>
 async fn do_http_signed(req: surf::Request, id: &uno::Id) -> Result<Vec<u8>>
 {
     let client = surf::client()
-        .with(AuthClient{ id: uno::Id(id.0) })
+        .with(AuthClient { id: uno::Id(id.0) })
         .with(surf::middleware::Logger::new());
 
-    let mut res = client.send(req).await
-        .map_err(|e| anyhow!("{}", e))?;
+    let mut res = client.send(req).await.map_err(|e| anyhow!("{}", e))?;
 
     let status = res.status();
 
     if status != 200 {
-        let msg = res.body_string().await
-            .map_err(|e| anyhow!("{}", e))?;
+        let msg = res.body_string().await.map_err(|e| anyhow!("{}", e))?;
         bail!("server returned: {}\n{}", status, msg);
     }
-    let body = res.body_bytes().await
-        .map_err(|e| anyhow!("{}", e))?;
+    let body = res.body_bytes().await.map_err(|e| anyhow!("{}", e))?;
 
     Ok(body)
 }
@@ -471,32 +472,35 @@ async fn do_http_signed_vc(req: surf::Request, id: &uno::Id)
 -> Result<Response>
 {
     let client = surf::client()
-        .with(AuthClient{ id: uno::Id(id.0) })
+        .with(AuthClient { id: uno::Id(id.0) })
         .with(surf::middleware::Logger::new());
 
-    let mut res = client.send(req).await
-        .map_err(|e| anyhow!("{}", e))?;
+    let mut res = client.send(req).await.map_err(|e| anyhow!("{}", e))?;
 
     let status = res.status();
 
     if status != 200 && status != 409 {
-        let msg = res.body_string().await
-            .map_err(|e| anyhow!("{}", e))?;
+        let msg = res.body_string().await.map_err(|e| anyhow!("{}", e))?;
         bail!("server returned: {}\n{}", status, msg);
     }
 
     Ok(res)
 }
 
-struct AuthClient {
+struct AuthClient
+{
     id: uno::Id,
 }
 
 #[surf::utils::async_trait]
 impl Middleware for AuthClient
 {
-    async fn handle(&self, mut req: Request, cli: Client, next: Next<'_>)
-    -> surf::Result<Response>
+    async fn handle(
+        &self,
+        mut req: Request,
+        cli: Client,
+        next: Next<'_>,
+    ) -> surf::Result<Response>
     {
         let mut req_c = req.clone();
         // copy the request and body bytes in case we have to redo it
@@ -514,18 +518,23 @@ impl Middleware for AuthClient
                 res = next.run(req_c, cli).await?;
             }
         }
-        Ok(res) 
+        Ok(res)
     }
 }
 
 use uno::KeyPair;
 
-/// Sign a request using the www-authenticate info specfied in the provided 
+/// Sign a request using the www-authenticate info specfied in the provided
 /// www-authenticate header. Consume body and attach it to the request (the
 /// body is required independent because the request signature contains the
 /// hash of the body bytes, so it is up to the caller how to manage the body
 /// bytes memory).
-fn sign(req: &mut Request, body: Vec<u8>, header: &str, id: &uno::Id) -> Result<()>
+fn sign(
+    req: &mut Request,
+    body: Vec<u8>,
+    header: &str,
+    id: &uno::Id,
+) -> Result<()>
 {
     let www_auth = parse_www_auth(header)?;
     let n64 = &www_auth.params["nonce"];
@@ -554,7 +563,8 @@ fn sign(req: &mut Request, body: Vec<u8>, header: &str, id: &uno::Id) -> Result<
 
     let salt = argon2::password_hash::Salt::new(&s64)
         .map_err(|_| anyhow!("bad salt"))?;
-    let pow = alg.hash_password(cbytes, Some(alg_id), params, salt)
+    let pow = alg
+        .hash_password(cbytes, Some(alg_id), params, salt)
         .map_err(|_| anyhow!("hash generation failed"))?;
     let response = format!("{}${}", s64, pow.hash.unwrap());
 
@@ -595,9 +605,9 @@ fn parse_www_auth(header: &str) -> anyhow::Result<WwwAuthTemp>
         let kv: Vec<&str> = i.trim().splitn(2, "=").collect();
         map.insert(kv[0].into(), kv[1].into());
     }
-    let keys = ["nonce", "algorithm", "actions",];
+    let keys = ["nonce", "algorithm", "actions"];
     if keys.iter().fold(true, |a, k| a && map.contains_key(&k.to_string())) {
-        Ok(WwwAuthTemp{params: map,})
+        Ok(WwwAuthTemp { params: map })
     } else {
         Err(anyhow!("invalid www-auth"))
     }
@@ -609,32 +619,22 @@ mod unit
 {
     use super::*;
 
-    use uno::{Id, Mu, KeyPair, Session,};
+    use uno::{Id, KeyPair, Mu, Session};
 
     #[test]
-    fn get_vault()
-    {
-    }
+    fn get_vault() {}
 
     #[test]
-    fn put_vault()
-    {
-    }
+    fn put_vault() {}
 
     #[test]
-    fn get_ssss()
-    {
-    }
+    fn get_ssss() {}
 
     #[test]
-    fn put_ssss()
-    {
-    }
+    fn put_ssss() {}
 
     #[test]
-    fn patch_ssss()
-    {
-    }
+    fn patch_ssss() {}
 
     #[test]
     fn url_from_key() -> Result<()>

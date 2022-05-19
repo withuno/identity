@@ -13,7 +13,6 @@ use tide::{Request, Response, StatusCode};
 /// Returns Ok(orig req) if further processing of the request is authorized. If
 /// the request is not authorized an Err(res) is returned and the enclosed
 /// Response should be relayed to the client.
-///
 pub async fn check<T>(req: &mut Request<State<T>>) -> Result<(), Response>
 where
     T: Database + 'static,
@@ -50,11 +49,11 @@ where
                             let _ = req.state().tok.del(&url_nonce).await;
                             // allow the request
                             return Ok(());
-                        }
+                        },
                     }
-                }
+                },
             }
-        }
+        },
     };
 
     // Otherwise, the request is not authorized. Generate a token and add the
@@ -66,10 +65,10 @@ where
 // TODO: use this when parsing !!!
 /// Clients are required to privide authorization in the form of a signed
 /// response to a challenge. In the authorization form,
-///
 #[allow(dead_code)]
 #[derive(Debug)]
-struct Authorization {
+struct Authorization
+{
     /// base64 encoded public key of the person sending the request
     identity: String,
     /// base64 encoded challenge nonce bytes, issued by the server
@@ -84,7 +83,8 @@ use std::collections::HashMap;
 
 // Using this for now until we get back around to parsing the Authorization
 // header into the above structure.
-struct AuthTemp {
+struct AuthTemp
+{
     params: HashMap<String, String>,
 }
 
@@ -103,15 +103,15 @@ struct AuthTemp {
 /// Note: the response contains both the salt and the hash separated by `$`.
 ///       The client provides their own salt (helps mitigate chosen plaintext
 ///       attacks).
-///
-fn parse_auth(header: &str) -> Result<AuthTemp, Response> {
+fn parse_auth(header: &str) -> Result<AuthTemp, Response>
+{
     let items = match header.strip_prefix("tuned-digest-signature") {
         Some(s) => s.trim().split(';'),
         None => {
             return Err(Response::builder(StatusCode::BadRequest)
                 .body(r#"{"message": "unrecognized auth scheme"}"#)
                 .build());
-        }
+        },
     };
 
     // The defualt hasher uses entropy to achieve collision resistance. We do
@@ -125,10 +125,7 @@ fn parse_auth(header: &str) -> Result<AuthTemp, Response> {
 
     // require the following keys to have been privided by the client:
     let keys = ["identity", "nonce", "response", "signature"];
-    if keys
-        .iter()
-        .fold(true, |a, k| a && map.contains_key(&k.to_string()))
-    {
+    if keys.iter().fold(true, |a, k| a && map.contains_key(&k.to_string())) {
         Ok(AuthTemp { params: map })
     } else {
         let fs = keys.join(",");
@@ -148,9 +145,9 @@ use serde::{Deserialize, Serialize};
 /// challenge, the *action* of the request is checked against the allow list
 /// associated with the nonce. Together, the nonce data plus allow list and
 /// argon2 tuning parameters forms the token.
-///
 #[derive(Serialize, Deserialize, Debug)]
-pub struct Token {
+pub struct Token
+{
     /// A list of allowed actions for the associated argon2 tuning params.
     /// Available actions are:
     ///
@@ -160,19 +157,18 @@ pub struct Token {
     ///
     /// The debug and proxy actions are not used because our api does not
     /// service the trace or connect http methods.
-    ///
     pub allow: Vec<String>,
 
     /// The encoded form of the argon2 tuning parameters (the enture encoded
     /// hash of some data minus the actual hash).
-    ///
     pub argon: String,
 }
 
 const NO_CREATE: [&str; 5] = ["read", "update", "delete", "debug", "proxy"];
 const CREATE: [&str; 1] = ["create"];
 
-fn parse_token(data: &[u8]) -> Result<Token, Response> {
+fn parse_token(data: &[u8]) -> Result<Token, Response>
+{
     let json = std::str::from_utf8(data)
         .map_err(|_| Response::new(StatusCode::InternalServerError))?;
     let toky = serde_json::from_str::<Token>(json)
@@ -186,7 +182,6 @@ use http_types::Method;
 /// Compute the required token scope for the given request. If a request is
 /// determied to be e.g. a "create" request, then the token associated with the
 /// nonce must allow "create".
-///
 async fn get_req_scope<T>(
     req: &Request<State<T>>,
 ) -> Result<&'static str, StatusCode>
@@ -204,14 +199,10 @@ where
                 Err(e) => {
                     println!("db error: {:?}", e);
                     return Err(StatusCode::InternalServerError);
-                }
+                },
             };
-            if exists {
-                "update"
-            } else {
-                "create"
-            }
-        }
+            if exists { "update" } else { "create" }
+        },
         Method::Trace => "debug",
         Method::Connect => "proxy",
         // http_types 2.11 added a bunch of new methods which we're probably
@@ -243,7 +234,6 @@ where
 /// Returns Ok(Ok(req)) on success or Ok(Err(msg)) if the verification fails.
 /// Returns Err(Response) if there was an error while attempting to perform the
 /// verification.
-///
 async fn verify_challenge<T>(
     token: Token,
     req: &mut Request<State<T>>,
@@ -302,7 +292,7 @@ where
     match alg.verify_password(challenge.as_bytes(), &hash) {
         Err(Error::Password) => {
             return Ok(Err("challenge verification failed"));
-        }
+        },
         Err(e) => {
             // todo: make sure all these errors are okay to expose and do
             // constitute an issue with the request as provided by the client.
@@ -310,8 +300,8 @@ where
                 .body(format!(r#"{{"message": "{}"}}"#, e))
                 .into();
             return Err(res);
-        }
-        Ok(()) => {} // success
+        },
+        Ok(()) => {}, // success
     };
 
     // 3.
@@ -344,7 +334,6 @@ pub struct UserId(pub uno::PublicKey);
 
 /// Create an unauthorized response including the appropriate WWW-Authenticate
 /// header for the provided request.
-///
 async fn unauthorized<T>(req: &Request<State<T>>, reason: &str) -> Response
 where
     T: Database + 'static,
@@ -372,7 +361,7 @@ where
             params.push('=');
             params.push_str(&token.allow.join(","));
             params
-        }
+        },
         Err(_) => return Response::new(StatusCode::InternalServerError),
     };
 
@@ -447,7 +436,6 @@ use crate::store::Database;
 
 /// Generate a nonce, store the token in the database, and return a base64 url
 /// safe encoded string representing the nonce bytes.
-///
 async fn gen_nonce<T>(
     actions: Vec<String>,
     token_db: T,
@@ -463,10 +451,7 @@ where
         true => CREATE_PARAMS,
         false => ACCESS_PARAMS,
     };
-    let token = Token {
-        allow: actions,
-        argon: params.to_string(),
-    };
+    let token = Token { allow: actions, argon: params.to_string() };
     let data = serde_json::to_string(&token)?;
     let _ = token_db.put(&id, data.as_bytes()).await?;
     Ok((nonce, token))
