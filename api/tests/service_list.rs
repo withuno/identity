@@ -1,5 +1,11 @@
-#[cfg(test)]
+//
+// Copyright (C) 2021 WithUno, Inc.
+// All rights reserved.
+//
+// SPDX-License-Identifier: AGPL-3.0-only
+//
 
+#[cfg(test)]
 use serde_json::{Result, Value};
 use std::fs;
 

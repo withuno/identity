@@ -1,4 +1,11 @@
-use anyhow::{anyhow, bail, Context, ensure, Result};
+//
+// Copyright (C) 2021 WithUno, Inc.
+// All rights reserved.
+//
+// SPDX-License-Identifier: AGPL-3.0-only
+//
+
+use anyhow::{anyhow, bail, ensure, Context, Result};
 
 use async_trait::async_trait;
 use async_std::path::Path;
