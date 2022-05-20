@@ -73,6 +73,7 @@ pub async fn find_by_id(db: &impl Database, id: &str) -> Result<MagicShare> {
     for x in &[PREFIX_ONE_DAY, PREFIX_ONE_WEEK, PREFIX_ONE_MONTH] {
         let key = format!("{}/{}", x, id);
         if let Ok(v) = get_share(db, &key).await {
+            // XXX: handle the other error types here?
             return Ok(v);
         }
     }
