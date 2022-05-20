@@ -745,7 +745,7 @@ where
 {
     Box::pin(async {
         let p = req.param("id").map_err(bad_request)?;
-        let vid = ShareId(String::from(p));
+        let sid = ShareId(String::from(p));
         req.set_ext(vid);
         Ok(next.run(req).await)
     })
