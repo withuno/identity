@@ -1450,8 +1450,10 @@ mod requests
         let base = Url::parse("https://example.com/shares/")?;
         let url = base.join(&sid)?;
 
+        //XXX: won't work after the year 2120!
+        let j = json!({"id": sid, "schema_version": 0, "expires_at": "2120-03-12T13:37:27+00:00", "encrypted_credential": "1234"});
         let post: Request =
-            surf::post(url.to_string()).body(json!({"id": sid, "schema_version": 0, "expires_at": "21000518T155434Z", "encrypted_credential": "1234"})).into();
+            surf::post(url.to_string()).body(j).into();
 
         let res1: Response = api
             .respond(post)
