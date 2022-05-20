@@ -12,12 +12,15 @@ use anyhow::Context;
 use anyhow::Result;
 use anyhow::{anyhow, bail};
 
+use chrono::{Utc, Duration};
+
 use rand::RngCore;
 
 use surf::middleware::{Middleware, Next};
 use surf::Url;
 use surf::{Client, Request, Response};
 
+use uno::MagicShare;
 use uno::Binding;
 use uno::Signer;
 
@@ -39,14 +42,6 @@ pub struct Config
     pub api_host: String,
     pub seed_file: OsString,
     pub vclock_file: OsString,
-}
-
-///XXX: this should likely go in uno/lib instead.
-#[derive(Serialize, Deserialize)]
-struct MagicShareEnvelope
-{
-    pub schema_version: u16,
-    pub encrypted_credential: String,
 }
 
 impl Default for Config
@@ -273,7 +268,7 @@ pub fn get_share(host: &str, seed: uno::Id) -> Result<String>
     let result = async_std::task::block_on(do_http_simple(req))
         .map_err(|e| anyhow!("{}", e))?;
 
-    let v: MagicShareEnvelope = serde_json::from_slice(&result)?;
+    let v: MagicShare = serde_json::from_slice(&result)?;
     let decoded_encrypted_credential = base64::decode(v.encrypted_credential)?;
 
     let decryption_key = uno::SymmetricKey::from(&seed);
@@ -300,20 +295,22 @@ pub fn post_share(
     let encryption_key = uno::SymmetricKey::from(&entropy);
     let encrypted = uno::encrypt(Binding::MagicShare, encryption_key, data)?;
 
-    let envelope = MagicShareEnvelope {
+    let keypair = uno::KeyPair::from(&entropy);
+
+    let expires_in = expire_seconds.parse::<i64>().unwrap();
+    let expires_at = Utc::now() + Duration::seconds(expires_in);
+
+    let envelope = MagicShare {
+        id: base64::encode_config(keypair.public, base64::URL_SAFE_NO_PAD),
         schema_version: 0,
+        expires_at: expires_at,
         encrypted_credential: base64::encode(encrypted),
     };
-
-    let keypair = uno::KeyPair::from(&entropy);
 
     let url = share_url_from_public_key(&host, &keypair.public)?;
     let json_envelope = serde_json::to_string(&envelope)?;
 
-    let req = surf::post(url.as_str())
-        .header("expires-in-seconds", expire_seconds)
-        .body(json_envelope)
-        .build();
+    let req = surf::post(url.as_str()).body(json_envelope).build();
 
     async_std::task::block_on(do_http_simple(req))
         .map_err(|e| anyhow!("{}", e))?;

@@ -9,8 +9,9 @@ pub use crate::store::Database;
 
 use std::result;
 
-use chrono::{DateTime, Duration, Utc};
-use serde::{Deserialize, Serialize};
+use uno::MagicShare;
+
+use chrono::{Duration, Utc};
 use serde_json::{Error as SerdeError, Value};
 
 use thiserror::Error;
@@ -41,15 +42,6 @@ pub enum MagicShareError
 }
 
 type Result<T> = result::Result<T, MagicShareError>;
-
-#[derive(Serialize, Deserialize)]
-pub struct MagicShare
-{
-    pub id: String,
-    pub expires_at: DateTime<Utc>,
-    pub schema_version: u64,
-    pub encrypted_credential: String,
-}
 
 fn v0_from_json(json: &[u8]) -> Result<MagicShare>
 {
