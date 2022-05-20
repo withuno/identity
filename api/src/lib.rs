@@ -739,6 +739,23 @@ where
     })
 }
 
+// Extract the ShareId from the url parameter for convenience.
+//
+fn ensure_share_id<'a, T>(
+    mut req: Request<State<T>>,
+    next: Next<'a, State<T>>,
+) -> Pin<Box<dyn Future<Output = Result> + Send + 'a>>
+where
+    T: Database + 'static,
+{
+    Box::pin(async {
+        let p = req.param("id").map_err(bad_request)?;
+        let sid = ShareId(String::from(p));
+        req.set_ext(vid);
+        Ok(next.run(req).await)
+    })
+}
+
 pub fn build_routes<T>(
     token_db: T,
     vault_db: T,
