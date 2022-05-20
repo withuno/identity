@@ -27,6 +27,18 @@ impl Id
     }
 }
 
+use serde::{Deserialize, Serialize};
+use chrono::{DateTime, Utc};
+
+#[derive(Serialize, Deserialize)]
+pub struct MagicShare
+{
+    pub id: String,
+    pub expires_at: DateTime<Utc>,
+    pub schema_version: u64,
+    pub encrypted_credential: String,
+}
+
 use std::convert::TryFrom;
 use std::str;
 
