@@ -12,11 +12,8 @@ use std::fmt::{Debug, Display};
 pub mod store;
 pub use store::Database;
 
-pub mod mailbox;
-// most of this is only used in tests, can you export there?
-pub use crate::mailbox::{MessageRequest, MessageToDelete};
-
 pub mod magic_share;
+pub mod mailbox;
 
 use anyhow::bail;
 
@@ -215,7 +212,7 @@ where
     let db = &req.state().db.clone();
     let id = &req.ext::<MailboxId>().unwrap().0;
 
-    let m: Vec<MessageToDelete> = match serde_json::from_slice(&body) {
+    let m: Vec<mailbox::MessageToDelete> = match serde_json::from_slice(&body) {
         Ok(ms) => ms,
         Err(_) => return Ok(StatusCode::BadRequest.into()),
     };
@@ -236,7 +233,7 @@ where
 
     let signerb64 = base64::encode(signer);
 
-    let m: MessageRequest = match serde_json::from_slice(&body) {
+    let m: mailbox::MessageRequest = match serde_json::from_slice(&body) {
         Ok(m) => m,
         Err(_) => return Ok(StatusCode::BadRequest.into()),
     };
@@ -271,7 +268,13 @@ where
     let db = &req.state().db;
     let id = &req.ext::<ShareId>().unwrap().0;
 
-    let share = magic_share::find_by_id(db, &id).await.map_err(not_found)?;
+    let share = match magic_share::find_by_id(db, &id).await {
+        Ok(v) => v,
+        Err(e) => {
+            println!("{:?}", e);
+            return Err(server_err("error"));
+        },
+    };
 
     let j = serde_json::to_string(&share)?;
     Ok(Response::builder(StatusCode::Ok)
@@ -287,7 +290,8 @@ where
     let body = &req.body_bytes().await.map_err(server_err)?;
     let db = &req.state().db;
 
-    let m = magic_share::new_from_json(&body)?;
+    let m = magic_share::new_from_json(&body).map_err(magic_share_err)?;
+
     magic_share::store_share(db, &m).await?;
 
     Ok(StatusCode::Created)
@@ -625,6 +629,34 @@ where
     let _ = db.del(sid).await.map_err(server_err)?;
 
     Ok(StatusCode::NoContent)
+}
+
+fn magic_share_err(e: magic_share::MagicShareError) -> Error
+{
+    //XXX: if DEBUG
+    println!("{:?}", e);
+
+    match e {
+        magic_share::MagicShareError::Serde { source: _ } => {
+            Error::from_str(StatusCode::BadRequest, "bad request")
+        },
+        magic_share::MagicShareError::Duplicate => {
+            Error::from_str(StatusCode::Conflict, "duplicate entry")
+        },
+        magic_share::MagicShareError::Expired => {
+            Error::from_str(StatusCode::NotFound, "not found")
+        },
+        magic_share::MagicShareError::Schema => {
+            Error::from_str(StatusCode::BadRequest, "bad request")
+        },
+        magic_share::MagicShareError::NotFound => {
+            Error::from_str(StatusCode::NotFound, "not found")
+        },
+        _ => Error::from_str(
+            StatusCode::InternalServerError,
+            "internal server error",
+        ),
+    }
 }
 
 fn bad_request<M>(msg: M) -> Error
