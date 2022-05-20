@@ -7,15 +7,40 @@
 
 pub use crate::store::Database;
 
+use std::result;
+
 use chrono::{DateTime, Duration, Utc};
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
+use serde_json::{Error as SerdeError, Value};
 
-use anyhow::{anyhow, Result};
+use thiserror::Error;
 
 const PREFIX_ONE_DAY: &'static str = "1d";
 const PREFIX_ONE_WEEK: &'static str = "1w";
 const PREFIX_ONE_MONTH: &'static str = "1m";
+
+#[derive(Error, Debug)]
+pub enum MagicShareError
+{
+    #[error("Serde error")]
+    Serde
+    {
+        #[from]
+        source: SerdeError,
+    },
+    #[error("Duplicate")]
+    Duplicate,
+    #[error("Expired")]
+    Expired,
+    #[error("Not found")]
+    NotFound,
+    #[error("Unsupported schema version")]
+    Schema,
+    #[error("Unknown magic share error")]
+    Unknown,
+}
+
+type Result<T> = result::Result<T, MagicShareError>;
 
 #[derive(Serialize, Deserialize)]
 pub struct MagicShare
@@ -28,50 +53,59 @@ pub struct MagicShare
 
 fn v0_from_json(json: &[u8]) -> Result<MagicShare>
 {
-    let m: MagicShare = serde_json::from_slice(json)?;
-
-    Ok(m)
+    match serde_json::from_slice::<MagicShare>(json) {
+        Ok(v) => Ok(v),
+        Err(e) => Err(MagicShareError::Serde { source: e }),
+    }
 }
 
 pub fn new_from_json(json: &[u8]) -> Result<MagicShare>
 {
-    let v: Value = serde_json::from_slice(json)?;
+    let v: Value = match serde_json::from_slice(json) {
+        Ok(s) => s,
+        Err(e) => return Err(MagicShareError::Serde { source: e }),
+    };
 
-    match v["schema_version"].as_u64() {
-        Some(s) => match s {
-            0 => v0_from_json(json),
-            _ => Err(anyhow!("Unsupported schema version")),
-        },
-        None => Err(anyhow!("Bad schema version")),
+    if let Some(s) = v["schema_version"].as_u64() {
+        match s {
+            0 => return v0_from_json(json),
+            _ => return Err(MagicShareError::Schema),
+        };
     }
+
+    //XXX: this could be a separate error?
+    Err(MagicShareError::Schema)
 }
 
 pub async fn find_by_id(db: &impl Database, id: &str) -> Result<MagicShare>
 {
     for x in &[PREFIX_ONE_DAY, PREFIX_ONE_WEEK, PREFIX_ONE_MONTH] {
         let key = format!("{}/{}", x, id);
-        match get_share(db, &key).await {
-            Ok(v) => {
-                return Ok(v);
-            },
-            Err(_) => (),
+        if let Ok(v) = get_share(db, &key).await {
+            return Ok(v);
         }
     }
 
-    return Err(anyhow!("Not found"));
+    Err(MagicShareError::NotFound)
 }
 
 pub async fn get_share(db: &impl Database, location: &str)
 -> Result<MagicShare>
 {
-    let bytes = db.get(location).await?;
+    if let Ok(bytes) = db.get(location).await {
+        match serde_json::from_slice::<MagicShare>(&bytes) {
+            Ok(m) => {
+                if Utc::now() > m.expires_at {
+                    return Err(MagicShareError::Expired);
+                }
 
-    let s: MagicShare = serde_json::from_slice(&bytes)?;
-    if Utc::now() > s.expires_at {
-        return Err(anyhow!("Expired"));
+                return Ok(m);
+            },
+            Err(e) => return Err(MagicShareError::Serde { source: e }),
+        }
     }
 
-    Ok(s)
+    Err(MagicShareError::NotFound)
 }
 
 pub async fn store_share(
@@ -79,10 +113,9 @@ pub async fn store_share(
     share: &MagicShare,
 ) -> Result<String>
 {
-    match find_by_id(db, &share.id).await {
-        Ok(_) => return Err(anyhow!("Item already exists")),
-        _ => (),
-    };
+    if find_by_id(db, &share.id).await.is_ok() {
+        return Err(MagicShareError::Duplicate);
+    }
 
     let diff = share.expires_at - Utc::now();
     let expiration_prefix = if diff < Duration::days(1) {
@@ -94,11 +127,14 @@ pub async fn store_share(
     };
 
     let key = format!("{}/{}", expiration_prefix, share.id);
-    let bytes = serde_json::to_vec(&share)?;
+    let bytes = match serde_json::to_vec(&share) {
+        Ok(b) => b,
+        Err(e) => return Err(MagicShareError::Serde { source: e }),
+    };
 
     match db.put(&key, &bytes).await {
         Ok(_) => Ok(key.to_string()),
-        Err(e) => Err(anyhow!(e)),
+        Err(_) => Err(MagicShareError::Unknown),
     }
 }
 
