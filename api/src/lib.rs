@@ -703,6 +703,7 @@ where
 
 struct VaultId(String);
 struct MailboxId(String);
+struct ShareId(String);
 
 // Extract the MailboxId from the url parameter for conveniennce.
 //
@@ -762,6 +763,7 @@ pub fn build_routes<T>(
     service_db: T,
     session_db: T,
     mailbox_db: T,
+    share_db: T,
 ) -> anyhow::Result<tide::Server<()>>
 where
     T: Database + 'static,

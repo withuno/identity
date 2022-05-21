@@ -166,7 +166,7 @@ pub fn wasm_decrypt_magic_share(share: &[u8], seed: String) -> Option<String>
     let key = uno::SymmetricKey::from(&id);
     let ctx = uno::Binding::MagicShare;
 
-    let decrypted_share = match uno::decrypt(ctx, key, &decoded_share) {
+    let decrypted_share = match uno::decrypt(ctx, key, &share) {
         Ok(v) => v,
         Err(_) => return None,
     };

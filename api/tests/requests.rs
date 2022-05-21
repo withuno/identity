@@ -57,6 +57,7 @@ mod requests
         sessions: T,
         mailboxes: T,
         objects: T,
+        shares: T,
     }
 
     #[cfg(not(feature = "s3"))]
@@ -73,6 +74,7 @@ mod requests
             services: FileStore::new(dir.path(), "serv", "v0").await?,
             sessions: FileStore::new(dir.path(), "sess", "v0").await?,
             mailboxes: FileStore::new(dir.path(), "mbxs", "v0").await?,
+            shares: FileStore::new(dir.path(), "shrs", "v0").await?,
         };
         // we don't include objects db here because its only used in tests
         // todo: I don't understand this comment ^
@@ -82,6 +84,7 @@ mod requests
             dbs.services.clone(),
             dbs.sessions.clone(),
             dbs.mailboxes.clone(),
+            dbs.shares.clone(),
         )?;
         Ok((api, dbs))
     }
@@ -171,6 +174,15 @@ mod requests
                 "v0",
             )
             .await?,
+            shares: S3Store::new(
+                "http://localhost:9000",
+                "minio",
+                "minioadmin",
+                "minioadmin",
+                &tmpname(32),
+                "v0",
+            )
+            .await?,
         };
 
         dbs.objects.create_bucket_if_not_exists().await?;
@@ -179,6 +191,7 @@ mod requests
         dbs.services.create_bucket_if_not_exists().await?;
         dbs.sessions.create_bucket_if_not_exists().await?;
         dbs.mailboxes.create_bucket_if_not_exists().await?;
+        dbs.shares.create_bucket_if_not_exists().await?;
 
         dbs.objects.empty_bucket().await?;
         dbs.tokens.empty_bucket().await?;
@@ -186,6 +199,7 @@ mod requests
         dbs.services.empty_bucket().await?;
         dbs.sessions.empty_bucket().await?;
         dbs.mailboxes.empty_bucket().await?;
+        dbs.shares.empty_bucket().await?;
 
         Ok(dbs)
     }
@@ -201,6 +215,7 @@ mod requests
             dbs.services.clone(),
             dbs.sessions.clone(),
             dbs.mailboxes.clone(),
+            dbs.shares.clone(),
         )?;
         Ok((api, dbs))
     }

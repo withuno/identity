@@ -294,9 +294,8 @@ pub fn post_share(host: &str, _id: uno::Id, expire_seconds: &str, data: &[u8]) -
 
     let req = surf::post(url.as_str()).body(json_envelope).build();
 
-    let result =
-        async_std::task::block_on(do_http_simple(req))
-            .map_err(|e| anyhow!("{}", e))?;
+    async_std::task::block_on(do_http_simple(req))
+        .map_err(|e| anyhow!("{}", e))?;
 
     Ok(format!(
         "share created at {} with entropy {}",

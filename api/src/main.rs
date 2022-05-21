@@ -54,8 +54,9 @@ async fn main() -> Result<()>
     let srv2 = make_db("services", "").await?; // not (yet) versioned
     let ses2 = make_db("sessions", "v2").await?;
     let mbx2 = make_db("mailboxes", "v2").await?;
+    let shr2 = make_db("shares", "v2").await?;
 
-    let api_v2 = api::build_routes(tok2, vau2, srv2, ses2, mbx2)?;
+    let api_v2 = api::build_routes(tok2, vau2, srv2, ses2, mbx2, shr2)?;
 
     let mut srv = tide::new();
 
