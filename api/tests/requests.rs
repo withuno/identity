@@ -1455,7 +1455,8 @@ mod requests
     }
 
     #[async_std::test]
-    async fn share_roundtrip() -> Result<()> {
+    async fn share_roundtrip() -> Result<()>
+    {
         let (api, _) = setup_tmp_api().await?;
 
         let id = Id([0u8; ID_LENGTH]);
@@ -1467,21 +1468,16 @@ mod requests
 
         //XXX: won't work after the year 2120!
         let j = json!({"id": sid, "schema_version": 0, "expires_at": "2120-03-12T13:37:27+00:00", "encrypted_credential": "1234"});
-        let post: Request =
-            surf::post(url.to_string()).body(j).into();
+        let post: Request = surf::post(url.to_string()).body(j).into();
 
-        let res1: Response = api
-            .respond(post)
-            .await
-            .map_err(|_| anyhow!("request failed"))?;
+        let res1: Response =
+            api.respond(post).await.map_err(|_| anyhow!("request failed"))?;
 
         assert_eq!(StatusCode::Created, res1.status());
 
         let get: Request = surf::get(url.to_string()).into();
-        let res2: Response = api
-            .respond(get)
-            .await
-            .map_err(|_| anyhow!("request failed"))?;
+        let res2: Response =
+            api.respond(get).await.map_err(|_| anyhow!("request failed"))?;
 
         assert_eq!(StatusCode::Ok, res2.status());
 
@@ -1489,7 +1485,8 @@ mod requests
     }
 
     #[async_std::test]
-    async fn service_list_get() -> Result<()> {
+    async fn service_list_get() -> Result<()>
+    {
         let (api, dbs) = setup_tmp_api().await?;
 
         let id = Id([0u8; ID_LENGTH]); // use the zero id

@@ -56,11 +56,7 @@ pub trait Database: Send + Sync + Clone + Debug
         P: AsRef<Path> + Send,
         Q: AsRef<Path> + Send;
 
-    async fn get_version<P, Q>(
-        &self,
-        version: Q,
-        object: P
-    ) -> Result<Vec<u8>>
+    async fn get_version<P, Q>(&self, version: Q, object: P) -> Result<Vec<u8>>
     where
         P: AsRef<Path> + Send,
         Q: AsRef<Path> + Send;

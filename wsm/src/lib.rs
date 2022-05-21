@@ -223,7 +223,8 @@ pub fn wasm_generate_session_id(seed: String) -> Option<String>
 }
 
 #[wasm_bindgen]
-pub fn wasm_get_public_key_url_encoded(seed: String) -> Option<String> {
+pub fn wasm_get_public_key_url_encoded(seed: String) -> Option<String>
+{
     match base64::decode_config(seed, base64::URL_SAFE_NO_PAD) {
         Ok(v) => wasm_get_public_key(base64::encode(v), true),
         Err(_) => return None,

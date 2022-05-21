@@ -1,3 +1,10 @@
+//
+// Copyright (C) 2021 WithUno, Inc.
+// All rights reserved.
+//
+// SPDX-License-Identifier: AGPL-3.0-only
+//
+
 pub use crate::store::Database;
 
 use std::result;
@@ -62,7 +69,8 @@ pub fn new_from_json(json: &[u8]) -> Result<MagicShare>
     Err(MagicShareError::Schema)
 }
 
-pub async fn find_by_id(db: &impl Database, id: &str) -> Result<MagicShare> {
+pub async fn find_by_id(db: &impl Database, id: &str) -> Result<MagicShare>
+{
     for x in &[PREFIX_ONE_DAY, PREFIX_ONE_WEEK, PREFIX_ONE_MONTH] {
         let key = format!("{}/{}", x, id);
         if let Ok(v) = get_share(db, &key).await {
@@ -74,10 +82,8 @@ pub async fn find_by_id(db: &impl Database, id: &str) -> Result<MagicShare> {
     Err(MagicShareError::NotFound)
 }
 
-pub async fn get_share(
-    db: &impl Database,
-    location: &str,
-) -> Result<MagicShare>
+pub async fn get_share(db: &impl Database, location: &str)
+-> Result<MagicShare>
 {
     if let Ok(bytes) = db.get(location).await {
         match serde_json::from_slice::<MagicShare>(&bytes) {
@@ -126,11 +132,13 @@ pub async fn store_share(
 }
 
 #[cfg(test)]
-mod tests {
+mod tests
+{
     use super::*;
 
     #[test]
-    fn test_new_v0_from_json() {
+    fn test_new_v0_from_json()
+    {
         let bad_schema_version = "";
         assert!(new_from_json(bad_schema_version.as_bytes()).is_err());
 
@@ -156,7 +164,8 @@ mod tests {
 
     #[cfg(not(feature = "s3"))]
     #[async_std::test]
-    async fn test_share_roundtrip() {
+    async fn test_share_roundtrip()
+    {
         let dir = tempfile::TempDir::new().unwrap();
         let db = FileStore::new(dir.path(), "test", "v0").await.unwrap();
 
@@ -174,7 +183,8 @@ mod tests {
 
     #[cfg(not(feature = "s3"))]
     #[async_std::test]
-    async fn test_find_by_id() {
+    async fn test_find_by_id()
+    {
         let dir = tempfile::TempDir::new().unwrap();
         let db = FileStore::new(dir.path(), "test", "v0").await.unwrap();
 
@@ -217,7 +227,8 @@ mod tests {
 
     #[cfg(not(feature = "s3"))]
     #[async_std::test]
-    async fn test_no_duplicate_shares() {
+    async fn test_no_duplicate_shares()
+    {
         let dir = tempfile::TempDir::new().unwrap();
         let db = FileStore::new(dir.path(), "test", "v0").await.unwrap();
 
@@ -250,7 +261,8 @@ mod tests {
 
     #[cfg(not(feature = "s3"))]
     #[async_std::test]
-    async fn test_expiration_rounding() {
+    async fn test_expiration_rounding()
+    {
         let dir = tempfile::TempDir::new().unwrap();
         let db = FileStore::new(dir.path(), "test", "v0").await.unwrap();
 
