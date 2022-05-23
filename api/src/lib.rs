@@ -275,7 +275,7 @@ where
     let share = match magic_share::find_by_id(db, &id).await {
         Ok(v) => v,
         Err(e) => {
-            println!("{:?}", e);
+            tide::log::info!("fetch_share/find_by_id {:?}", &e);
             return Err(server_err("error"));
         },
     };
@@ -294,7 +294,10 @@ where
     let body = &req.body_bytes().await.map_err(server_err)?;
     let db = &req.state().db;
 
-    let m = magic_share::new_from_json(&body).map_err(magic_share_err)?;
+    let m = magic_share::new_from_json(&body).map_err(|e| {
+        tide::log::info!("store_share/new_from_json {:?}", &e);
+        magic_share_err(e)
+    })?;
 
     magic_share::store_share(db, &m).await?;
 
@@ -639,9 +642,6 @@ where
 
 fn magic_share_err(e: magic_share::MagicShareError) -> Error
 {
-    //XXX: if DEBUG
-    println!("{:?}", e);
-
     match e {
         magic_share::MagicShareError::Serde { source: _ } => {
             Error::from_str(StatusCode::BadRequest, "bad request")
