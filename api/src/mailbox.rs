@@ -37,9 +37,18 @@ pub struct MessageToDelete
 #[derive(Debug, Serialize, Deserialize, PartialEq, Clone)]
 pub struct MessageRequest
 {
+    pub sender: Option<Sender>,
     pub action: String,
     pub uuid: String,
     pub data: Payload,
+}
+
+#[derive(Debug, Serialize, Deserialize, PartialEq, Clone)]
+pub struct Sender
+{
+    pub signing_key: String,
+    pub encryption_key: String,
+    pub cid: String,
 }
 
 #[derive(Debug, Serialize, Deserialize, PartialEq)]
@@ -49,6 +58,7 @@ pub struct MessageStored
     pub uuid: String,
     pub id: u64,
     pub from: String,
+    pub sender: Option<Sender>,
     pub data: Payload,
 }
 
@@ -121,6 +131,7 @@ pub async fn post_message(
     let m = MessageStored {
         id: next_id,
         from: sender.to_string(),
+        sender: message.sender.clone(),
         uuid: message.uuid.clone(),
         action: message.action.clone(),
         data: message.data.clone(),
@@ -203,6 +214,7 @@ mod tests
         let sender1 = "sender1".to_string();
 
         let any_message = MessageRequest {
+            sender: None,
             uuid: "1111-2222".to_string(),
             action: "packed".to_string(),
             data: Payload {
@@ -230,6 +242,7 @@ mod tests
         let sender2 = "sender2".to_string();
 
         let any_message = MessageRequest {
+            sender: None,
             uuid: "11111".to_string(),
             action: "packed".to_string(),
             data: Payload {

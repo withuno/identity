@@ -914,6 +914,7 @@ mod requests
         // 3. post to someone's mailbox
         //
         let body = MessageRequest {
+            sender: None,
             uuid: "1111".to_string(),
             action: "packed".to_string(),
             data: Payload {
@@ -967,6 +968,7 @@ mod requests
         // 2. post a new message and check the stored message
         //
         let req_body2 = MessageRequest {
+            sender: None,
             uuid: "1111".to_string(),
             action: "packed".to_string(),
             data: Payload {
@@ -984,6 +986,7 @@ mod requests
             uuid: "1111".to_string(),
             action: "packed".to_string(),
             from: sender_pk_b64.clone(),
+            sender: None,
             data: Payload {
                 signature: "signature".to_string(),
                 share: "share".to_string(),
@@ -998,6 +1001,7 @@ mod requests
         // 3. post message 2 and ensure the resulting id has been incremented
         //
         let req_body3 = MessageRequest {
+            sender: None,
             uuid: "2222".to_string(),
             action: "packed".to_string(),
             data: Payload {
@@ -1015,6 +1019,7 @@ mod requests
             uuid: "2222".to_string(),
             action: "packed".to_string(),
             from: sender_pk_b64.clone(),
+            sender: None,
             data: Payload {
                 signature: "signature".to_string(),
                 share: "share".to_string(),
