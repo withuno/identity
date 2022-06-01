@@ -9,7 +9,7 @@
 mod requests
 {
     use api::mailbox::{
-        Mailbox, MessageRequest, MessageStored, MessageToDelete, Payload,
+        Mailbox, MessageRequest, MessageStored, MessageToDelete,
     };
     use api::{add_auth_info, build_routes, signed_pow_auth};
 
@@ -896,13 +896,11 @@ mod requests
 
         let sender_id = Id([1u8; ID_LENGTH]);
 
-
         // 1. get your own mailbox
         //
         let req1 = surf::get(&url).build();
         let res1 = mb_do_req(&api, &dbs, &recipient_id, req1).await?;
         assert_eq!(res1.status(), StatusCode::Ok);
-
 
         // 2. get someone else's mailbox
         //
@@ -910,29 +908,22 @@ mod requests
         let res2 = mb_do_req(&api, &dbs, &sender_id, req2).await?;
         assert_eq!(res2.status(), StatusCode::Forbidden);
 
-
         // 3. post to someone's mailbox
         //
         let body = MessageRequest {
-            sender: None,
             uuid: "1111".to_string(),
             action: "packed".to_string(),
-            data: Payload {
-                signature: "signature".to_string(),
-                share: "share".to_string(),
-            },
+            data: json!("message data is opaque"),
         };
         let req3 = surf::post(&url).body(serde_json::to_string(&body)?).build();
         let res3 = mb_do_req(&api, &dbs, &sender_id, req3).await?;
         assert_eq!(res3.status(), StatusCode::Created);
-
 
         // 4 delete someone else's message (even if you created it)
         //
         let req4 = surf::delete(&url).build();
         let res4 = mb_do_req(&api, &dbs, &sender_id, req4).await?;
         assert_eq!(res4.status(), StatusCode::Forbidden);
-
 
         Ok(())
     }
@@ -953,7 +944,6 @@ mod requests
             base64::encode_config(recipient_pk, base64::URL_SAFE_NO_PAD);
         let url = format!("https://example.com/mailboxes/{}", urlenc_rec_pk);
 
-
         // 1. get empty mailbox
         //
         let req1 = surf::get(&url).build();
@@ -964,17 +954,12 @@ mod requests
         let body1: Mailbox = serde_json::from_slice(&bytes1)?;
         assert_eq!(body1, Mailbox { messages: vec!() });
 
-
         // 2. post a new message and check the stored message
         //
         let req_body2 = MessageRequest {
-            sender: None,
             uuid: "1111".to_string(),
             action: "packed".to_string(),
-            data: Payload {
-                signature: "signature".to_string(),
-                share: "share".to_string(),
-            },
+            data: json!({"info": "message data is opaque"}),
         };
         let req2 =
             surf::post(&url).body(serde_json::to_string(&req_body2)?).build();
@@ -986,28 +971,19 @@ mod requests
             uuid: "1111".to_string(),
             action: "packed".to_string(),
             from: sender_pk_b64.clone(),
-            sender: None,
-            data: Payload {
-                signature: "signature".to_string(),
-                share: "share".to_string(),
-            },
+            data: json!({"info": "message data is opaque"}),
         };
         let bytes2 =
             res2.take_body().into_bytes().await.map_err(|e| anyhow!(e))?;
         let body2: MessageStored = serde_json::from_slice(&bytes2)?;
         assert_eq!(body2, expected2);
 
-
         // 3. post message 2 and ensure the resulting id has been incremented
         //
         let req_body3 = MessageRequest {
-            sender: None,
             uuid: "2222".to_string(),
             action: "packed".to_string(),
-            data: Payload {
-                signature: "signature".to_string(),
-                share: "share".to_string(),
-            },
+            data: json!(42),
         };
         let req3 =
             surf::post(&url).body(serde_json::to_string(&req_body3)?).build();
@@ -1019,17 +995,12 @@ mod requests
             uuid: "2222".to_string(),
             action: "packed".to_string(),
             from: sender_pk_b64.clone(),
-            sender: None,
-            data: Payload {
-                signature: "signature".to_string(),
-                share: "share".to_string(),
-            },
+            data: json!(42),
         };
         let bytes3 =
             res3.take_body().into_bytes().await.map_err(|e| anyhow!(e))?;
         let body3: MessageStored = serde_json::from_slice(&bytes3)?;
         assert_eq!(body3, expected);
-
 
         // 4. delete both messages
         //
@@ -1043,7 +1014,6 @@ mod requests
         let res4 = mb_do_req(&api, &dbs, &recipient_id, req4).await?;
         assert_eq!(res4.status(), StatusCode::NoContent);
 
-
         // 5. mailbox should once again be empty
         //
         let req5 = surf::get(&url).build();
@@ -1053,7 +1023,6 @@ mod requests
             res5.take_body().into_bytes().await.map_err(|e| anyhow!(e))?;
         let body5: Mailbox = serde_json::from_slice(&bytes5)?;
         assert_eq!(body5, Mailbox { messages: vec!() });
-
 
         Ok(())
     }
@@ -1365,7 +1334,6 @@ mod requests
 
         assert_eq!(StatusCode::BadRequest, res9.status());
 
-
         Ok(())
     }
 
@@ -1574,10 +1542,8 @@ mod requests
             .map_err(|_| anyhow!("body read failed"))?;
         assert_eq!(&expected_body2.as_bytes(), &actual_body2);
 
-
         Ok(())
     }
-
 
     #[allow(dead_code)]
     fn print_body(res: &mut Response) -> Result<()>

@@ -12,19 +12,12 @@ use anyhow::Result;
 use futures::stream;
 use futures::stream::StreamExt;
 use serde::{Deserialize, Serialize};
+use serde_json::value::Value;
 
 #[derive(Debug, Serialize, Deserialize, PartialEq)]
 pub struct Mailbox
 {
     pub messages: Vec<MessageStored>,
-}
-
-#[derive(Debug, Serialize, Deserialize, PartialEq, Clone)]
-pub struct Payload
-{
-    pub signature: String,
-    #[serde(default)]
-    pub share: String,
 }
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -37,18 +30,9 @@ pub struct MessageToDelete
 #[derive(Debug, Serialize, Deserialize, PartialEq, Clone)]
 pub struct MessageRequest
 {
-    pub sender: Option<Sender>,
     pub action: String,
     pub uuid: String,
-    pub data: Payload,
-}
-
-#[derive(Debug, Serialize, Deserialize, PartialEq, Clone)]
-pub struct Sender
-{
-    pub signing_key: String,
-    pub encryption_key: String,
-    pub cid: String,
+    pub data: Value,
 }
 
 #[derive(Debug, Serialize, Deserialize, PartialEq)]
@@ -58,8 +42,7 @@ pub struct MessageStored
     pub uuid: String,
     pub id: u64,
     pub from: String,
-    pub sender: Option<Sender>,
-    pub data: Payload,
+    pub data: Value,
 }
 
 pub async fn delete_messages(
@@ -131,7 +114,6 @@ pub async fn post_message(
     let m = MessageStored {
         id: next_id,
         from: sender.to_string(),
-        sender: message.sender.clone(),
         uuid: message.uuid.clone(),
         action: message.action.clone(),
         data: message.data.clone(),
@@ -152,6 +134,8 @@ pub async fn post_message(
 mod tests
 {
     use super::*;
+
+    use serde_json::json;
 
     #[cfg(feature = "s3")]
     use crate::store::S3Store;
@@ -214,13 +198,9 @@ mod tests
         let sender1 = "sender1".to_string();
 
         let any_message = MessageRequest {
-            sender: None,
             uuid: "1111-2222".to_string(),
             action: "packed".to_string(),
-            data: Payload {
-                signature: "signature".to_string(),
-                share: "share".to_string(),
-            },
+            data: json!("message data is opaque"),
         };
 
         let _ = post_message(&store, &owner1, &sender1, &any_message).await?;
@@ -242,13 +222,9 @@ mod tests
         let sender2 = "sender2".to_string();
 
         let any_message = MessageRequest {
-            sender: None,
             uuid: "11111".to_string(),
             action: "packed".to_string(),
-            data: Payload {
-                signature: "signature".to_string(),
-                share: "share".to_string(),
-            },
+            data: json!({"info": "message data is opaque"}),
         };
 
         let r1 = post_message(&store, &owner1, &sender1, &any_message).await?;
