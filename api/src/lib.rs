@@ -73,6 +73,23 @@ where
     })
 }
 
+/// On the way out, attach a client-based proof of work to all responses.
+///
+pub fn add_client_auto_info<'a, T>(
+    req: Request<State<T>>,
+    next: Next<'a, State<T>>,
+) -> Pin<Box<dyn Future<Output = Result> + Send + 'a>>
+where
+    T: Database + 'static,
+{
+   Box::pin(async {
+       let tok = req.state().tok.clone();
+       let out = next.run(req).await;
+       let resp = auth::add_client_info(out, tok).await;
+       Ok(resp)
+   })
+}
+
 /// On the way out, attach auth_info to all responses.
 ///
 pub fn add_auth_info<'a, T>(
@@ -210,7 +227,7 @@ where
 
 async fn delete_messages<T>(mut req: Request<State<T>>) -> Result
 where
-    T: Database + 'static,
+    T: Database,
 {
     let body = req.body_bytes().await?;
     let db = &req.state().db.clone();
@@ -227,7 +244,7 @@ where
 
 async fn post_mailbox<T>(mut req: Request<State<T>>) -> Result
 where
-    T: Database + 'static,
+    T: Database,
 {
     let body = req.body_bytes().await?;
 
@@ -250,7 +267,7 @@ where
 
 async fn fetch_mailbox<T>(req: Request<State<T>>) -> Result
 where
-    T: Database + 'static,
+    T: Database,
 {
     let db = &req.state().db;
     let id = &req.ext::<MailboxId>().unwrap().0;
@@ -267,7 +284,7 @@ where
 
 async fn fetch_share<T>(req: Request<State<T>>) -> Result
 where
-    T: Database + 'static,
+    T: Database,
 {
     let db = &req.state().db;
     let id = &req.ext::<ShareId>().unwrap().0;
@@ -289,7 +306,7 @@ where
 
 async fn store_share<T>(mut req: Request<State<T>>) -> Result<StatusCode>
 where
-    T: Database + 'static,
+    T: Database,
 {
     let body = &req.body_bytes().await.map_err(server_err)?;
     let db = &req.state().db;
@@ -328,7 +345,7 @@ where
 
 async fn option_vault<T>(_req: Request<State<T>>) -> Result
 where
-    T: Database + 'static,
+    T: Database,
 {
     let response = Response::builder(StatusCode::Ok)
         .body("ok")
@@ -357,7 +374,7 @@ struct Vault
 
 async fn fetch_vault<T>(req: Request<State<T>>) -> Result<Response>
 where
-    T: Database + 'static,
+    T: Database,
 {
     let db = &req.state().db;
     let id = &req.ext::<VaultId>().unwrap().0;
@@ -395,7 +412,7 @@ where
 
 async fn store_vault<T>(mut req: Request<State<T>>) -> Result<Response>
 where
-    T: Database + 'static,
+    T: Database,
 {
     let body = &req.body_bytes().await.map_err(server_err)?;
     let db = &req.state().db;
@@ -534,7 +551,7 @@ where
 
 async fn delete_vault<T>(req: Request<State<T>>) -> Result<Response>
 where
-    T: Database + 'static,
+    T: Database,
 {
     let db = &req.state().db;
     let id = &req.ext::<VaultId>().unwrap().0;
@@ -553,7 +570,7 @@ struct ServiceQuery
 
 async fn fetch_service_list<T>(req: Request<State<T>>) -> Result<Body>
 where
-    T: Database + 'static,
+    T: Database,
 {
     let db = &req.state().db;
     let list = db.get("services.json").await.map_err(not_found)?;
@@ -562,7 +579,7 @@ where
 
 async fn fetch_service<T>(req: Request<State<T>>) -> Result<Body>
 where
-    T: Database + 'static,
+    T: Database,
 {
     let db = &req.state().db;
     let name = req.param("name").map_err(bad_request)?;
@@ -595,7 +612,7 @@ where
 
 async fn ssss_get<T>(req: Request<State<T>>) -> Result<Body>
 where
-    T: Database + 'static,
+    T: Database,
 {
     let db = &req.state().db;
     let sid = &req.ext::<SessionId>().unwrap().0;
@@ -606,7 +623,7 @@ where
 
 async fn ssss_put<T>(mut req: Request<State<T>>) -> Result<Body>
 where
-    T: Database + 'static,
+    T: Database,
 {
     let body = req.body_bytes().await?;
 
@@ -621,7 +638,7 @@ where
 
 async fn ssss_patch<T>(mut req: Request<State<T>>) -> Result<Body>
 where
-    T: Database + 'static,
+    T: Database,
 {
     let body = req.body_bytes().await?;
 
@@ -645,7 +662,7 @@ where
 
 async fn ssss_delete<T>(req: Request<State<T>>) -> Result<StatusCode>
 where
-    T: Database + 'static,
+    T: Database,
 {
     let db = &req.state().db;
     let sid = &req.ext::<SessionId>().unwrap().0;

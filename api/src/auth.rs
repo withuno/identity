@@ -168,6 +168,10 @@ pub struct Token
     /// hash of some data minus the actual hash).
     ///
     pub argon: String,
+
+    /// Optional cost value for the client-based, blake3 proof of work.
+    /// The higher the cost, the easier the proof is to solve.
+    pub blake3: Option<u8>,
 }
 
 const NO_CREATE: [&str; 5] = ["read", "update", "delete", "debug", "proxy"];
@@ -441,6 +445,9 @@ where
 const CREATE_PARAMS: &str = "$argon2d$v=19$m=262144,t=5,p=8";
 const ACCESS_PARAMS: &str = "$argon2d$v=19$m=65536,t=3,p=8";
 
+const BLAKE3_CREATE_COST: u8 = 2;
+const BLAKE3_ACCESS_COST: u8 = 4;
+
 use crate::store::Database;
 
 /// Generate a nonce, store the token in the database, and return a base64 url
@@ -461,8 +468,30 @@ where
         true => CREATE_PARAMS,
         false => ACCESS_PARAMS,
     };
-    let token = Token { allow: actions, argon: params.to_string() };
+
+    let blake3_cost = match actions.contains(&"create".to_string()) {
+        true => BLAKE3_CREATE_COST,
+        false => BLAKE3_ACCESS_COST,
+    };
+
+    let token = Token {
+        allow: actions,
+        blake3: Some(blake3_cost),
+        argon: params.to_string(),
+    };
+
     let data = serde_json::to_string(&token)?;
     let _ = token_db.put(&id, data.as_bytes()).await?;
+
     Ok((nonce, token))
+}
+
+#[cfg(test)]
+mod tests
+{
+    use super::*;
+
+    //#[async_std::test]
+    //#[test]
+    //
 }
