@@ -32,7 +32,6 @@ where
             let url_nonce = base64::encode_config(&raw_nonce, URL_SAFE_NO_PAD);
             let tok_req = req.state().tok.get(&url_nonce).await;
 
-
             req.set_ext(auth);
             match tok_req {
                 Err(_) => "unknown nonce",
@@ -171,6 +170,7 @@ pub struct Token
 
     /// Optional cost value for the client-based, blake3 proof of work.
     /// The higher the cost, the easier the proof is to solve.
+    /// The cost value range is actually 0-255, hence u8.
     pub blake3: Option<u8>,
 }
 
@@ -358,6 +358,12 @@ where
     let actions = vec![action.to_string()];
     let auth = match gen_nonce(actions, req.state().tok.clone()).await {
         Ok((nonce, token)) => {
+            // XXX: gen_nonce will always return Some(blake3) but
+            // since we also have to deserialize a Token that might not
+            // have blake3 info, we have to make that structure member optional.
+            // A better solution might be to have two types of Token structures.
+            let some_blake3 = token.blake3.unwrap().to_string();
+
             let mut params = String::new();
             params.push_str("tuned-digest-signature");
             params.push(' ');
@@ -369,6 +375,12 @@ where
             params.push_str("algorithm");
             params.push('=');
             params.push_str(&token.argon);
+            params.push(';');
+            params.push_str("algorithm2");
+            params.push('=');
+            params.push_str("blake3");
+            params.push_str("$");
+            params.push_str(&some_blake3);
             params.push(';');
             params.push_str("actions");
             params.push('=');
@@ -407,6 +419,13 @@ where
             // and new tokens can't be saved.
             Err(_) => continue,
         };
+
+        // XXX: gen_nonce will always return Some(blake3) but
+        // since we also have to deserialize a Token that might not
+        // have blake3 info, we have to make that structure member optional.
+        // A better solution might be to have two types of Token structures...
+        let some_blake3 = token.blake3.unwrap().to_string();
+
         let mut info = String::new();
         info.push_str("nextnonce");
         info.push('=');
@@ -415,6 +434,10 @@ where
         info.push_str("argon");
         info.push('=');
         info.push_str(&token.argon);
+        info.push(';');
+        info.push_str("blake3");
+        info.push('=');
+        info.push_str(&some_blake3);
         info.push(';');
         info.push_str("scopes");
         info.push('=');
@@ -445,6 +468,7 @@ where
 const CREATE_PARAMS: &str = "$argon2d$v=19$m=262144,t=5,p=8";
 const ACCESS_PARAMS: &str = "$argon2d$v=19$m=65536,t=3,p=8";
 
+// The higher the cost, the easier the proof is to solve.
 const BLAKE3_CREATE_COST: u8 = 2;
 const BLAKE3_ACCESS_COST: u8 = 4;
 
@@ -486,12 +510,12 @@ where
     Ok((nonce, token))
 }
 
-#[cfg(test)]
-mod tests
-{
-    use super::*;
-
-    //#[async_std::test]
-    //#[test]
-    //
-}
+//#[cfg(test)]
+//mod tests
+//{
+//    use super::*;
+//
+//    //#[async_std::test]
+//    //#[test]
+//    //
+//}

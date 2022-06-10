@@ -73,23 +73,6 @@ where
     })
 }
 
-/// On the way out, attach a client-based proof of work to all responses.
-///
-pub fn add_client_auto_info<'a, T>(
-    req: Request<State<T>>,
-    next: Next<'a, State<T>>,
-) -> Pin<Box<dyn Future<Output = Result> + Send + 'a>>
-where
-    T: Database + 'static,
-{
-   Box::pin(async {
-       let tok = req.state().tok.clone();
-       let out = next.run(req).await;
-       let resp = auth::add_client_info(out, tok).await;
-       Ok(resp)
-   })
-}
-
 /// On the way out, attach auth_info to all responses.
 ///
 pub fn add_auth_info<'a, T>(

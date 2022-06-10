@@ -221,6 +221,71 @@ mod requests
         Ok((api, dbs))
     }
 
+    // Add the correct authorization header to the client-based proof of work.
+    fn blake3_sign_req(
+        req: &mut Request,
+        n64: &str,
+        cost: u8,
+        id: &Id,
+    ) -> Result<()>
+    {
+        let body = req.take_body();
+        let bbytes: Vec<u8> = task::block_on(body.into_bytes())
+            .map_err(|_| anyhow!("body bytes failed"))?;
+        let bhash = blake3::hash(&bbytes);
+        let bhashb = bhash.as_bytes();
+        let bhash_enc = base64::encode_config(bhashb, base64::STANDARD_NO_PAD);
+        req.set_body(Body::from_bytes(bbytes));
+        let method = req.method();
+
+        let mut split: Vec<&str> = req.url().path().split("/").collect();
+        split.reverse();
+        split.pop();
+        split.pop();
+        split.reverse();
+
+        let path = split.join("/");
+        let challenge = format!("{}:{}:/{}:{}", n64, method, path, bhash_enc);
+
+        let maxn: u32 = 4_000_000_000;
+        let mut n: u32 = 0;
+        while n < maxn {
+            let mut hash = blake3::Hasher::new();
+            hash.update(&challenge.as_bytes());
+            hash.update(&n.to_le_bytes());
+
+            let digest = hash.finalize().as_bytes().to_vec();
+            if digest[0] == 0 {
+                if digest[1] == 0 {
+                    if digest[2] < cost {
+                        break;
+                    }
+                }
+            }
+
+            n += 1;
+        }
+
+        assert!(n < maxn);
+
+        let response = format!("{}${}", challenge, n);
+
+        let kp: uno::KeyPair = KeyPair::from(id);
+        let pub_bytes = kp.public.to_bytes();
+        let pub64 = base64::encode_config(&pub_bytes, base64::STANDARD_NO_PAD);
+        let sig = kp.sign(&response.as_bytes());
+        let sig64 = base64::encode_config(sig, base64::STANDARD_NO_PAD);
+
+        let i = format!("identity={}", pub64);
+        let n = format!("nonce={}", n64);
+        let r = format!("response={}", response);
+        let s = format!("signature={}", sig64);
+        let auth = format!("tuned-digest-signature {};{};{};{}", i, n, r, s);
+        req.insert_header("authorization2", auth);
+
+        Ok(())
+    }
+
     // Add the correct authorization header to the request
     fn sign_req(
         req: &mut Request,
@@ -331,7 +396,7 @@ mod requests
             let kv: Vec<&str> = i.trim().splitn(2, "=").collect();
             map.insert(kv[0].into(), kv[1].into());
         }
-        let keys = ["nonce", "algorithm", "actions"];
+        let keys = ["nonce", "algorithm", "actions", "algorithm2"];
         if keys.iter().fold(true, |a, k| a && map.contains_key(&k.to_string()))
         {
             Ok(WwwAuthTemp { params: map })
@@ -420,6 +485,161 @@ mod requests
             api.respond(req1).await.map_err(|_| anyhow!("request1 failed"))?;
 
         assert_eq!(StatusCode::BadRequest, res1.status());
+
+        Ok(())
+    }
+
+    #[async_std::test]
+    async fn blake3_authentication() -> Result<()>
+    {
+        // test www-authenticate
+        // test auth-info
+        // test scopes
+        // test nonce reuse
+
+        let (_, dbs) = setup_tmp_api().await?;
+
+        let state = State::new(dbs.objects.clone(), dbs.tokens.clone());
+        let mut foo = tide::with_state(state);
+        foo.at(":id")
+            .with(add_auth_info)
+            .with(signed_pow_auth)
+            .get(|_| async { Ok(Response::new(StatusCode::NoContent)) })
+            .put(|_| async { Ok(Response::new(StatusCode::NoContent)) });
+
+        let mut api = tide::new();
+        api.at("/foo").nest(foo);
+
+        let url = Url::parse("http://example.com/foo/bar")?;
+
+        // don't sign the initial request
+        let req0: Request = surf::get(url.to_string()).into();
+        let res0: Response =
+            api.respond(req0).await.map_err(|_| anyhow!("request0 failed"))?;
+
+        // process the www-authenticate header
+        let www_auth_header0 = res0
+            .header("www-authenticate")
+            .ok_or(anyhow!("expected www-authenticate header"))?;
+        let www_auth1 = parse_www_auth(www_auth_header0.last().as_str())?;
+        let n64_1 = &www_auth1.params["nonce"];
+
+        // sign the request this time
+        let id = Id([0u8; ID_LENGTH]);
+
+        let mut req1: Request = surf::get(url.to_string()).into();
+        let blake_parts: Vec<&str> =
+            www_auth1.params["algorithm2"].split("$").collect();
+
+        assert_eq!(blake_parts[0], "blake3");
+        let cost: u8 = blake_parts[1].parse().unwrap();
+
+        blake3_sign_req(&mut req1, &n64_1, cost, &id)?;
+        let res1: Response =
+            api.respond(req1).await.map_err(|_| anyhow!("request1 failed"))?;
+
+        assert_eq!(StatusCode::NoContent, res1.status());
+
+        // grab the nextnonce
+        let aih1 = res1
+            .header("authentication-info")
+            .ok_or(anyhow!("expected auth-info"))?;
+        let auth_info2 = parse_auth_info(aih1.last().as_str())?;
+        let n64_2 = &auth_info2.params["nextnonce"];
+
+        // try to use the nextnonce to create a reasource, it should fail
+        // recall, the db is empty
+        let mut salt2 = [0u8; 8];
+        rand::thread_rng().fill_bytes(&mut salt2);
+        let salt64_2 = base64::encode_config(&salt2, STANDARD_NO_PAD);
+
+        let mut req2: Request = surf::put(url.to_string()).body("baz").into();
+        let alg2 = &auth_info2.params["argon"];
+        sign_req(&mut req2, &n64_2, alg2, &salt64_2, &id)?;
+
+        let mut res2: Response =
+            api.respond(req2).await.map_err(|_| anyhow!("request2 failed"))?;
+
+        assert_eq!(StatusCode::Unauthorized, res2.status());
+
+        let exp_body2 = r#"{"reason":"scope mismatch","action":"create"}"#;
+        let actual_body2 = res2
+            .take_body()
+            .into_bytes()
+            .await
+            .map_err(|_| anyhow!("body read failed"))?;
+        assert_eq!(exp_body2.as_bytes(), actual_body2);
+
+        // now use the correct scoped token
+        let www_auth_header2 = res2
+            .header("www-authenticate")
+            .ok_or(anyhow!("expected www-authenticate header"))?;
+        let www_auth3 = parse_www_auth(www_auth_header2.last().as_str())?;
+        let n64_3 = &www_auth3.params["nonce"];
+
+        let mut salt3 = [0u8; 8];
+        rand::thread_rng().fill_bytes(&mut salt3);
+        let salt64_3 = base64::encode_config(&salt3, STANDARD_NO_PAD);
+
+        let mut req3: Request = surf::put(url.to_string()).body("baz").into();
+
+        let alg3 = &www_auth3.params["algorithm"];
+        sign_req(&mut req3, &n64_3, alg3, &salt64_3, &id)?;
+
+        let res3: Response =
+            api.respond(req3).await.map_err(|_| anyhow!("request3 failed"))?;
+
+        assert_eq!(StatusCode::NoContent, res3.status());
+
+        // try a create
+        let aih3 = res3
+            .header("authentication-info")
+            .ok_or(anyhow!("expected auth-info"))?;
+        let auth_info4 = parse_auth_info(aih3.last().as_str())?;
+        // todo: turns out this happens to be the right scope. need to fix the
+        // auth layer so that it adds multiple auth-info headers with different
+        // scope options.
+        let n64_4 = &auth_info4.params["nextnonce"];
+        // todo: test for scope: create
+
+        // add some data so it's an update instead of a create
+        let _ = dbs.objects.put("bar", "data".as_bytes()).await?;
+
+        let mut salt4 = [0u8; 8];
+        rand::thread_rng().fill_bytes(&mut salt4);
+        let salt64_4 = base64::encode_config(&salt4, STANDARD_NO_PAD);
+
+        let mut req4: Request = surf::put(url.to_string()).body("qux").into();
+
+        let alg4 = &auth_info4.params["argon"];
+        sign_req(&mut req4, &n64_4, alg4, &salt64_4, &id)?;
+
+        let res4: Response =
+            api.respond(req4).await.map_err(|_| anyhow!("request4 failed"))?;
+
+        assert_eq!(StatusCode::NoContent, res4.status());
+
+        // test nonce reuse
+        let mut salt5 = [0u8; 8];
+        rand::thread_rng().fill_bytes(&mut salt5);
+        let salt64_5 = base64::encode_config(&salt5, STANDARD_NO_PAD);
+
+        let mut req5: Request = surf::put(url.to_string()).body("qux").into();
+
+        sign_req(&mut req5, &n64_4, alg4, &salt64_5, &id)?;
+
+        let mut res5: Response =
+            api.respond(req5).await.map_err(|_| anyhow!("request5 failed"))?;
+
+        assert_eq!(StatusCode::Unauthorized, res5.status());
+
+        let expected_body5 = r#"{"reason":"unknown nonce","action":"update"}"#;
+        let actual_body5 = res5
+            .take_body()
+            .into_bytes()
+            .await
+            .map_err(|_| anyhow!("body read failed"))?;
+        assert_eq!(expected_body5.as_bytes(), actual_body5);
 
         Ok(())
     }
