@@ -109,6 +109,41 @@ pub fn wasm_auth_header(
 }
 
 #[wasm_bindgen]
+pub fn wasm_blake3_proof(nonce: String, cost: u8) -> Option<String>
+{
+    let decoded_nonce =
+        match base64::decode_config(nonce.clone(), base64::STANDARD_NO_PAD) {
+            Ok(v) => v,
+            Err(_) => return None,
+        };
+
+    let maxn: u32 = 4_000_000_000;
+    let mut n: u32 = 0;
+    while n < maxn {
+        let mut hash = blake3::Hasher::new();
+        hash.update(&decoded_nonce);
+        hash.update(&n.to_le_bytes());
+
+        let digest = hash.finalize().as_bytes().to_vec();
+        if digest[0] == 0 {
+            if digest[1] == 0 {
+                if digest[2] < cost {
+                    break;
+                }
+            }
+        }
+
+        n += 1;
+    }
+
+    if n == maxn {
+        return None;
+    }
+
+    Some(format!("blake3${}${}", n, nonce))
+}
+
+#[wasm_bindgen]
 pub fn wasm_decrypt_share(share: String, seed: String) -> Option<String>
 {
     let decoded_share = match base64::decode(share) {
