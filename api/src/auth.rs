@@ -181,7 +181,7 @@ fn parse_token(data: &[u8]) -> Result<Token, Response>
     let json = std::str::from_utf8(data)
         .map_err(|_| Response::new(StatusCode::InternalServerError))?;
     let toky = serde_json::from_str::<Token>(json)
-        .map_err(|_| Response::new(StatusCode::InternalServerError))?;
+        .map_err(|_| Response::new(StatusCode::Unauthorized))?;
 
     Ok(toky)
 }

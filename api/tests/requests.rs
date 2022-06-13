@@ -416,7 +416,7 @@ mod requests
         let n64 = "U4L+xVHzX4qzBSDPv5NJMhB2HJuhkksmFqJe7geX+xA";
         let n = base64::decode_config(&n64, STANDARD_NO_PAD)?;
         let n64url = base64::encode_config(&n, URL_SAFE_NO_PAD);
-        let token = json!({"argon":TUNE,"allow":scopes});
+        let token = json!({"argon":TUNE,"allow":scopes,"blake3":255});
         let tstr = token.to_string();
         let tok_bytes = tstr.as_bytes();
         let _ = token_db.put(&n64url, tok_bytes).await?;
