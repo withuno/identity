@@ -214,7 +214,8 @@ pub fn wasm_decrypt_magic_share(share: &[u8], seed: String) -> Option<String>
 }
 
 #[wasm_bindgen]
-pub fn wasm_encrypt_vault(vault: String, seed: String) -> Option<Box<[u8]>> {
+pub fn wasm_encrypt_vault(vault: String, seed: String) -> Option<Box<[u8]>>
+{
     let decoded_seed = match base64::decode(seed) {
         Ok(v) => v,
         Err(_) => return None,
@@ -235,7 +236,8 @@ pub fn wasm_encrypt_vault(vault: String, seed: String) -> Option<Box<[u8]>> {
 }
 
 #[wasm_bindgen]
-pub fn wasm_decrypt_vault(vault: &[u8], seed: String) -> Option<String> {
+pub fn wasm_decrypt_vault(vault: &[u8], seed: String) -> Option<String>
+{
     let decoded_seed = match base64::decode(seed) {
         Ok(v) => v,
         Err(_) => return None,

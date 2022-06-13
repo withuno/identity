@@ -27,7 +27,8 @@ fn test_decrypt_share()
 }
 
 #[wasm_bindgen_test]
-fn test_encrypt_decrypt_vault() {
+fn test_encrypt_decrypt_vault()
+{
     let seed = base64::encode(vec![
         185, 203, 86, 9, 47, 81, 143, 207, 19, 215, 220, 79, 129, 50, 252, 151,
         18, 101, 187, 123, 90, 83, 228, 37, 202, 54, 46, 236, 245, 152, 160,
