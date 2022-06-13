@@ -229,29 +229,14 @@ mod requests
         id: &Id,
     ) -> Result<()>
     {
-        let body = req.take_body();
-        let bbytes: Vec<u8> = task::block_on(body.into_bytes())
-            .map_err(|_| anyhow!("body bytes failed"))?;
-        let bhash = blake3::hash(&bbytes);
-        let bhashb = bhash.as_bytes();
-        let bhash_enc = base64::encode_config(bhashb, base64::STANDARD_NO_PAD);
-        req.set_body(Body::from_bytes(bbytes));
-        let method = req.method();
-
-        let mut split: Vec<&str> = req.url().path().split("/").collect();
-        split.reverse();
-        split.pop();
-        split.pop();
-        split.reverse();
-
-        let path = split.join("/");
-        let challenge = format!("{}:{}:/{}:{}", n64, method, path, bhash_enc);
+        let decoded_nonce =
+            base64::decode_config(n64, base64::STANDARD_NO_PAD).unwrap();
 
         let maxn: u32 = 4_000_000_000;
         let mut n: u32 = 0;
         while n < maxn {
             let mut hash = blake3::Hasher::new();
-            hash.update(&challenge.as_bytes());
+            hash.update(&decoded_nonce);
             hash.update(&n.to_le_bytes());
 
             let digest = hash.finalize().as_bytes().to_vec();
@@ -268,7 +253,7 @@ mod requests
 
         assert!(n < maxn);
 
-        let response = format!("{}${}", challenge, n);
+        let response = format!("blake3${}${}", n, n64);
 
         let kp: uno::KeyPair = KeyPair::from(id);
         let pub_bytes = kp.public.to_bytes();
@@ -281,7 +266,8 @@ mod requests
         let r = format!("response={}", response);
         let s = format!("signature={}", sig64);
         let auth = format!("tuned-digest-signature {};{};{};{}", i, n, r, s);
-        req.insert_header("authorization2", auth);
+
+        req.insert_header("authorization", auth);
 
         Ok(())
     }

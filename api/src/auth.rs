@@ -21,7 +21,6 @@ where
     // If there is an Authorization header and it is valid for this request,
     // then let it through.
     //
-
     let reason = match req.header("Authorization") {
         None => "authorization required",
         Some(a) => {
@@ -125,7 +124,7 @@ fn parse_auth(header: &str) -> Result<AuthTemp, Response>
         map.insert(kv[0].into(), kv[1].into());
     }
 
-    // require the following keys to have been privided by the client:
+    // require the following keys to have been provided by the client:
     let keys = ["identity", "nonce", "response", "signature"];
     if keys.iter().fold(true, |a, k| a && map.contains_key(&k.to_string())) {
         Ok(AuthTemp { params: map })
@@ -168,10 +167,10 @@ pub struct Token
     ///
     pub argon: String,
 
-    /// Optional cost value for the client-based, blake3 proof of work.
+    /// Cost value for the client-based, blake3 proof of work.
     /// The higher the cost, the easier the proof is to solve.
-    /// The cost value range is actually 0-255, hence u8.
-    pub blake3: Option<u8>,
+    /// The cost value range is 0-255.
+    pub blake3: u8,
 }
 
 const NO_CREATE: [&str; 5] = ["read", "update", "delete", "debug", "proxy"];
@@ -271,50 +270,81 @@ where
     let auth = req.ext::<AuthTemp>().unwrap();
     let nonce = &auth.params["nonce"];
     let response = &auth.params["response"];
-    let method = req.method();
-    let path = req.url().path();
-    // TODO: figure out how to fix this ^
-    // print!("req: {:?}\n", &req);
-    // print!("host: {:?}\n", req.host());
-    // print!("url: {}\n", req.url());
-    // let foo = req.param("--tide-path-rest");
-    // print!("tide-path: {:?}\n", foo);
-    let bhash = blake3::hash(&body);
-    let bhashb = bhash.as_bytes();
-    let body_enc = base64::encode_config(bhashb, base64::STANDARD_NO_PAD);
-    let challenge = format!("{}:{}:{}:{}", nonce, method, path, body_enc);
-    // print!("challenge: {}\n", &challenge);
 
-    // The response contains both the salt and the hash so just cat them.
-    use argon2::{Argon2, PasswordHash, PasswordVerifier};
-    let enc_hash = format!("{}${}", token.argon, response);
-    // print!("enc_hash: {}\n", &enc_hash);
-
-    let hash = PasswordHash::new(&enc_hash).map_err(|_| {
-        Response::builder(StatusCode::BadRequest)
-            .body(r#"{"message": "bad request check salt$hash format"}"#)
-            .build()
-    })?;
-    let alg = Argon2::default();
-
-    // This works too:
-    // hash.verify_password(&[&alg], challenge.as_bytes())?;
-
-    use password_hash::Error;
-    match alg.verify_password(challenge.as_bytes(), &hash) {
-        Err(Error::Password) => {
-            return Ok(Err("challenge verification failed"));
-        },
-        Err(e) => {
-            // todo: make sure all these errors are okay to expose and do
-            // constitute an issue with the request as provided by the client.
-            let res: Response = Response::builder(StatusCode::BadRequest)
-                .body(format!(r#"{{"message": "{}"}}"#, e))
-                .into();
+    if response.starts_with("blake3") {
+        let split: Vec<&str> = response.split('$').collect();
+        if split.len() != 3 || split[2] != nonce {
+            let res: Response =
+                Response::builder(StatusCode::BadRequest).into();
             return Err(res);
-        },
-        Ok(()) => {}, // success
+        }
+
+        let cost: u8 = split[1]
+            .parse()
+            .map_err(|_| Response::new(StatusCode::BadRequest))?;
+
+        let decoded_nonce =
+            base64::decode_config(nonce, base64::STANDARD_NO_PAD).unwrap();
+
+        let mut hash = blake3::Hasher::new();
+        hash.update(&decoded_nonce);
+        hash.update(&cost.to_le_bytes());
+
+        let digest = hash.finalize().as_bytes().to_vec();
+        if (digest[0] != 0) || (digest[1] != 0) || (digest[2] >= cost) {
+            let res: Response =
+                Response::builder(StatusCode::BadRequest).into();
+            return Err(res);
+        }
+    } else {
+        let method = req.method();
+        let path = req.url().path();
+        // TODO: figure out how to fix this ^
+        // print!("req: {:?}\n", &req);
+        // print!("host: {:?}\n", req.host());
+        // print!("url: {}\n", req.url());
+        // let foo = req.param("--tide-path-rest");
+        // print!("tide-path: {:?}\n", foo);
+        let bhash = blake3::hash(&body);
+        let bhashb = bhash.as_bytes();
+        let body_enc = base64::encode_config(bhashb, base64::STANDARD_NO_PAD);
+
+        let challenge = format!("{}:{}:{}:{}", nonce, method, path, body_enc);
+        // print!("challenge: {}\n", &challenge);
+
+        // The response contains both the salt and the hash so just cat them.
+        use argon2::{Argon2, PasswordHash, PasswordVerifier};
+        let enc_hash = format!("{}${}", token.argon, response);
+        // print!("enc_hash: {}\n", &enc_hash);
+
+        let hash = PasswordHash::new(&enc_hash).map_err(|_| {
+            Response::builder(StatusCode::BadRequest)
+                .body(r#"{"message": "bad request check salt$hash format"}"#)
+                .build()
+        })?;
+        let alg = Argon2::default();
+
+        // This works too:
+        // hash.verify_password(&[&alg], challenge.as_bytes())?;
+
+        use password_hash::Error;
+        match alg.verify_password(challenge.as_bytes(), &hash) {
+            Err(Error::Password) => {
+                return Ok(Err("challenge verification failed"));
+            },
+            Err(e) => {
+                // todo: make sure all these errors are okay to expose and do
+                // constitute an issue with the request as provided by the client.
+                let res: Response = Response::builder(StatusCode::BadRequest)
+                    .body(format!(r#"{{"message": "{}"}}"#, e))
+                    .into();
+                return Err(res);
+            },
+            Ok(()) => {}, // success
+        };
     };
+
+    assert!(false);
 
     // 3.
     let pub64 = &auth.params["identity"]; // todo: use the real type
@@ -358,12 +388,6 @@ where
     let actions = vec![action.to_string()];
     let auth = match gen_nonce(actions, req.state().tok.clone()).await {
         Ok((nonce, token)) => {
-            // XXX: gen_nonce will always return Some(blake3) but
-            // since we also have to deserialize a Token that might not
-            // have blake3 info, we have to make that structure member optional.
-            // A better solution might be to have two types of Token structures.
-            let some_blake3 = token.blake3.unwrap().to_string();
-
             let mut params = String::new();
             params.push_str("tuned-digest-signature");
             params.push(' ');
@@ -380,7 +404,7 @@ where
             params.push('=');
             params.push_str("blake3");
             params.push_str("$");
-            params.push_str(&some_blake3);
+            params.push_str(&token.blake3.to_string());
             params.push(';');
             params.push_str("actions");
             params.push('=');
@@ -420,12 +444,6 @@ where
             Err(_) => continue,
         };
 
-        // XXX: gen_nonce will always return Some(blake3) but
-        // since we also have to deserialize a Token that might not
-        // have blake3 info, we have to make that structure member optional.
-        // A better solution might be to have two types of Token structures...
-        let some_blake3 = token.blake3.unwrap().to_string();
-
         let mut info = String::new();
         info.push_str("nextnonce");
         info.push('=');
@@ -437,7 +455,7 @@ where
         info.push(';');
         info.push_str("blake3");
         info.push('=');
-        info.push_str(&some_blake3);
+        info.push_str(&token.blake3.to_string());
         info.push(';');
         info.push_str("scopes");
         info.push('=');
@@ -470,7 +488,8 @@ const ACCESS_PARAMS: &str = "$argon2d$v=19$m=65536,t=3,p=8";
 
 // The higher the cost, the easier the proof is to solve.
 const BLAKE3_CREATE_COST: u8 = 2;
-const BLAKE3_ACCESS_COST: u8 = 4;
+// access should be free since we already verify the requests identity.
+const BLAKE3_ACCESS_COST: u8 = 255;
 
 use crate::store::Database;
 
@@ -500,7 +519,7 @@ where
 
     let token = Token {
         allow: actions,
-        blake3: Some(blake3_cost),
+        blake3: blake3_cost,
         argon: params.to_string(),
     };
 
