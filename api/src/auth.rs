@@ -279,7 +279,8 @@ where
             return Err(res);
         }
 
-        let cost: u8 = split[1]
+        let cost = token.blake3;
+        let proof: u32 = split[1]
             .parse()
             .map_err(|_| Response::new(StatusCode::BadRequest))?;
 
@@ -288,7 +289,7 @@ where
 
         let mut hash = blake3::Hasher::new();
         hash.update(&decoded_nonce);
-        hash.update(&cost.to_le_bytes());
+        hash.update(&proof.to_le_bytes());
 
         let digest = hash.finalize().as_bytes().to_vec();
         if (digest[0] != 0) || (digest[1] != 0) || (digest[2] >= cost) {
@@ -343,8 +344,6 @@ where
             Ok(()) => {}, // success
         };
     };
-
-    assert!(false);
 
     // 3.
     let pub64 = &auth.params["identity"]; // todo: use the real type

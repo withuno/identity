@@ -533,15 +533,9 @@ mod requests
         let auth_info2 = parse_auth_info(aih1.last().as_str())?;
         let n64_2 = &auth_info2.params["nextnonce"];
 
-        // try to use the nextnonce to create a reasource, it should fail
-        // recall, the db is empty
-        let mut salt2 = [0u8; 8];
-        rand::thread_rng().fill_bytes(&mut salt2);
-        let salt64_2 = base64::encode_config(&salt2, STANDARD_NO_PAD);
-
         let mut req2: Request = surf::put(url.to_string()).body("baz").into();
-        let alg2 = &auth_info2.params["argon"];
-        sign_req(&mut req2, &n64_2, alg2, &salt64_2, &id)?;
+        let cost2: u8 = auth_info2.params["blake3"].parse().unwrap();
+        blake3_sign_req(&mut req2, &n64_2, cost2, &id)?;
 
         let mut res2: Response =
             api.respond(req2).await.map_err(|_| anyhow!("request2 failed"))?;
@@ -563,14 +557,14 @@ mod requests
         let www_auth3 = parse_www_auth(www_auth_header2.last().as_str())?;
         let n64_3 = &www_auth3.params["nonce"];
 
-        let mut salt3 = [0u8; 8];
-        rand::thread_rng().fill_bytes(&mut salt3);
-        let salt64_3 = base64::encode_config(&salt3, STANDARD_NO_PAD);
-
         let mut req3: Request = surf::put(url.to_string()).body("baz").into();
+        let blake_parts3: Vec<&str> =
+            www_auth3.params["algorithm2"].split("$").collect();
 
-        let alg3 = &www_auth3.params["algorithm"];
-        sign_req(&mut req3, &n64_3, alg3, &salt64_3, &id)?;
+        assert_eq!(blake_parts[0], "blake3");
+        let cost: u8 = blake_parts3[1].parse().unwrap();
+
+        blake3_sign_req(&mut req3, &n64_3, cost, &id)?;
 
         let res3: Response =
             api.respond(req3).await.map_err(|_| anyhow!("request3 failed"))?;
@@ -591,28 +585,18 @@ mod requests
         // add some data so it's an update instead of a create
         let _ = dbs.objects.put("bar", "data".as_bytes()).await?;
 
-        let mut salt4 = [0u8; 8];
-        rand::thread_rng().fill_bytes(&mut salt4);
-        let salt64_4 = base64::encode_config(&salt4, STANDARD_NO_PAD);
-
         let mut req4: Request = surf::put(url.to_string()).body("qux").into();
-
-        let alg4 = &auth_info4.params["argon"];
-        sign_req(&mut req4, &n64_4, alg4, &salt64_4, &id)?;
+        let cost4: u8 = auth_info4.params["blake3"].parse().unwrap();
+        blake3_sign_req(&mut req4, &n64_4, cost4, &id)?;
 
         let res4: Response =
             api.respond(req4).await.map_err(|_| anyhow!("request4 failed"))?;
 
         assert_eq!(StatusCode::NoContent, res4.status());
 
-        // test nonce reuse
-        let mut salt5 = [0u8; 8];
-        rand::thread_rng().fill_bytes(&mut salt5);
-        let salt64_5 = base64::encode_config(&salt5, STANDARD_NO_PAD);
-
         let mut req5: Request = surf::put(url.to_string()).body("qux").into();
 
-        sign_req(&mut req5, &n64_4, alg4, &salt64_5, &id)?;
+        blake3_sign_req(&mut req5, &n64_4, cost4, &id)?;
 
         let mut res5: Response =
             api.respond(req5).await.map_err(|_| anyhow!("request5 failed"))?;
