@@ -10,6 +10,8 @@ use crate::State;
 use std::result::Result;
 use tide::{Request, Response, StatusCode};
 
+use uno::verify_blake3_work;
+
 /// Returns Ok(orig req) if further processing of the request is authorized. If
 /// the request is not authorized an Err(res) is returned and the enclosed
 /// Response should be relayed to the client.
@@ -181,7 +183,7 @@ fn parse_token(data: &[u8]) -> Result<Token, Response>
     let json = std::str::from_utf8(data)
         .map_err(|_| Response::new(StatusCode::InternalServerError))?;
     let toky = serde_json::from_str::<Token>(json)
-        .map_err(|_| Response::new(StatusCode::Unauthorized))?;
+        .map_err(|_| Response::new(StatusCode::InternalServerError))?;
 
     Ok(toky)
 }
@@ -287,12 +289,7 @@ where
         let decoded_nonce =
             base64::decode_config(nonce, base64::STANDARD_NO_PAD).unwrap();
 
-        let mut hash = blake3::Hasher::new();
-        hash.update(&decoded_nonce);
-        hash.update(&proof.to_le_bytes());
-
-        let digest = hash.finalize().as_bytes().to_vec();
-        if (digest[0] != 0) || (digest[1] != 0) || (digest[2] >= cost) {
+        if !verify_blake3_work(&decoded_nonce, proof, cost) {
             let res: Response =
                 Response::builder(StatusCode::BadRequest).into();
             return Err(res);

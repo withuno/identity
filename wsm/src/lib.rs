@@ -13,6 +13,7 @@ use argon2::{Algorithm, Argon2, Params, Version};
 use wasm_bindgen::prelude::*;
 
 use uno::Signer;
+use uno::prove_blake3_work;
 
 #[derive(Debug)]
 pub enum Error
@@ -117,30 +118,12 @@ pub fn wasm_blake3_proof(nonce: String, cost: u8) -> Option<String>
             Err(_) => return None,
         };
 
-    let maxn: u32 = 4_000_000_000;
-    let mut n: u32 = 0;
-    while n < maxn {
-        let mut hash = blake3::Hasher::new();
-        hash.update(&decoded_nonce);
-        hash.update(&n.to_le_bytes());
-
-        let digest = hash.finalize().as_bytes().to_vec();
-        if digest[0] == 0 {
-            if digest[1] == 0 {
-                if digest[2] < cost {
-                    break;
-                }
-            }
-        }
-
-        n += 1;
+    match prove_blake3_work(&decoded_nonce, cost) {
+        Some(n) => {
+            Some(format!("blake3${}${}", n, nonce))
+        },
+        None => None
     }
-
-    if n == maxn {
-        return None;
-    }
-
-    Some(format!("blake3${}${}", n, nonce))
 }
 
 #[wasm_bindgen]

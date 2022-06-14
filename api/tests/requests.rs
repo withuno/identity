@@ -42,6 +42,7 @@ mod requests
     use uno::Signer;
     use uno::ID_LENGTH;
     use uno::MU_LENGTH;
+    use uno::prove_blake3_work;
 
     use vclock::VClock;
 
@@ -232,27 +233,7 @@ mod requests
         let decoded_nonce =
             base64::decode_config(n64, base64::STANDARD_NO_PAD).unwrap();
 
-        let maxn: u32 = 4_000_000_000;
-        let mut n: u32 = 0;
-        while n < maxn {
-            let mut hash = blake3::Hasher::new();
-            hash.update(&decoded_nonce);
-            hash.update(&n.to_le_bytes());
-
-            let digest = hash.finalize().as_bytes().to_vec();
-            if digest[0] == 0 {
-                if digest[1] == 0 {
-                    if digest[2] < cost {
-                        break;
-                    }
-                }
-            }
-
-            n += 1;
-        }
-
-        assert!(n < maxn);
-
+        let n = prove_blake3_work(&decoded_nonce, cost).unwrap();
         let response = format!("blake3${}${}", n, n64);
 
         let kp: uno::KeyPair = KeyPair::from(id);
