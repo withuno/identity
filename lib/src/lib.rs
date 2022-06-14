@@ -297,7 +297,8 @@ pub fn decrypt(
     Ok(djb::decrypt(key, data, ctx.as_bytes())?)
 }
 
-pub fn prove_blake3_work(nonce: &[u8], cost: u8) -> Option<u32> {
+pub fn prove_blake3_work(nonce: &[u8], cost: u8) -> Option<u32>
+{
     let maxn: u32 = u32::MAX - 1;
     let mut n: u32 = 0;
     while n < maxn {
@@ -311,7 +312,8 @@ pub fn prove_blake3_work(nonce: &[u8], cost: u8) -> Option<u32> {
     None
 }
 
-pub fn verify_blake3_work(nonce: &[u8], proof: u32, cost: u8) -> bool {
+pub fn verify_blake3_work(nonce: &[u8], proof: u32, cost: u8) -> bool
+{
     let mut hash = blake3::Hasher::new();
     hash.update(&nonce);
     hash.update(&proof.to_le_bytes());
@@ -396,10 +398,11 @@ mod unit
     }
 
     #[test]
-    fn blake3_proof() {
+    fn blake3_proof()
+    {
         let random_bytes = b"12345678901234567890123456789012";
         let cost = 255; // make it easy
-        
+
         let proof = prove_blake3_work(random_bytes, cost);
         assert!(proof.is_some());
 

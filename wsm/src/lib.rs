@@ -12,8 +12,8 @@ use argon2::{Algorithm, Argon2, Params, Version};
 
 use wasm_bindgen::prelude::*;
 
-use uno::Signer;
 use uno::prove_blake3_work;
+use uno::Signer;
 
 #[derive(Debug)]
 pub enum Error
@@ -119,10 +119,8 @@ pub fn wasm_blake3_proof(nonce: String, cost: u8) -> Option<String>
         };
 
     match prove_blake3_work(&decoded_nonce, cost) {
-        Some(n) => {
-            Some(format!("blake3${}${}", n, nonce))
-        },
-        None => None
+        Some(n) => Some(format!("blake3${}${}", n, nonce)),
+        None => None,
     }
 }
 

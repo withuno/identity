@@ -35,6 +35,7 @@ mod requests
     use surf::Request;
     use surf::Url;
 
+    use uno::prove_blake3_work;
     use uno::Id;
     use uno::KeyPair;
     use uno::Mu;
@@ -42,7 +43,6 @@ mod requests
     use uno::Signer;
     use uno::ID_LENGTH;
     use uno::MU_LENGTH;
-    use uno::prove_blake3_work;
 
     use vclock::VClock;
 
