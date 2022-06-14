@@ -12,19 +12,12 @@ use anyhow::Result;
 use futures::stream;
 use futures::stream::StreamExt;
 use serde::{Deserialize, Serialize};
+use serde_json::value::Value;
 
 #[derive(Debug, Serialize, Deserialize, PartialEq)]
 pub struct Mailbox
 {
     pub messages: Vec<MessageStored>,
-}
-
-#[derive(Debug, Serialize, Deserialize, PartialEq, Clone)]
-pub struct Payload
-{
-    pub signature: String,
-    #[serde(default)]
-    pub share: String,
 }
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -39,7 +32,7 @@ pub struct MessageRequest
 {
     pub action: String,
     pub uuid: String,
-    pub data: Payload,
+    pub data: Value,
 }
 
 #[derive(Debug, Serialize, Deserialize, PartialEq)]
@@ -49,7 +42,7 @@ pub struct MessageStored
     pub uuid: String,
     pub id: u64,
     pub from: String,
-    pub data: Payload,
+    pub data: Value,
 }
 
 pub async fn delete_messages(
@@ -142,6 +135,8 @@ mod tests
 {
     use super::*;
 
+    use serde_json::json;
+
     #[cfg(feature = "s3")]
     use crate::store::S3Store;
 
@@ -205,10 +200,7 @@ mod tests
         let any_message = MessageRequest {
             uuid: "1111-2222".to_string(),
             action: "packed".to_string(),
-            data: Payload {
-                signature: "signature".to_string(),
-                share: "share".to_string(),
-            },
+            data: json!("message data is opaque"),
         };
 
         let _ = post_message(&store, &owner1, &sender1, &any_message).await?;
@@ -232,10 +224,7 @@ mod tests
         let any_message = MessageRequest {
             uuid: "11111".to_string(),
             action: "packed".to_string(),
-            data: Payload {
-                signature: "signature".to_string(),
-                share: "share".to_string(),
-            },
+            data: json!({"info": "message data is opaque"}),
         };
 
         let r1 = post_message(&store, &owner1, &sender1, &any_message).await?;
