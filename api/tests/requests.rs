@@ -17,7 +17,6 @@ mod requests
     use tide::{Body, Response, StatusCode};
 
     use anyhow::anyhow;
-    use anyhow::bail;
     use anyhow::Context;
     use anyhow::Result;
     use async_std::task;
@@ -351,25 +350,57 @@ mod requests
 
     fn parse_www_auth(header: &str) -> Result<WwwAuthTemp>
     {
-        let items = match header.strip_prefix("tuned-digest-signature") {
-            Some(s) => s.trim().split(';'),
-            None => {
-                bail!("wrong auth type");
-            },
-        };
-
+        use regex::Regex;
         let mut map = HashMap::new();
-        for i in items {
-            let kv: Vec<&str> = i.trim().splitn(2, "=").collect();
-            map.insert(kv[0].into(), kv[1].into());
+
+        // tuned-digest-signature nonce=E2nl6WRukjQrm9pYcJB/LVwqGEZRU4ik+TM1NgvDSjk;algorithm=$argon2d$v=19$m=65536,t=3,p=8;actions=read asym-tuned-digest-signature nonce=E2nl6WRukjQrm9pYcJB/LVwqGEZRU4ik+TM1NgvDSjk;algorithm=blake3$255;actions=read
+        let sym_tuned_re = Regex::new(
+            r"tuned-digest-signature nonce=([A-Za-z0-9/+]+=*);algorithm=(\$argon2d\$v=[0-9]+\$m=[0-9]+,t=[0-9]+,p=[0-9]+);actions=([a-z,]+)",
+        )
+        .unwrap();
+
+        let caps = sym_tuned_re.captures(header).unwrap();
+
+        map.insert(
+            "nonce".to_string(),
+            caps.get(1).unwrap().as_str().to_string(),
+        );
+
+        map.insert(
+            "algorithm".to_string(),
+            caps.get(2).unwrap().as_str().to_string(),
+        );
+
+        map.insert(
+            "actions".to_string(),
+            caps.get(3).unwrap().as_str().to_string(),
+        );
+
+        let asym_tuned_re = Regex::new(
+            r"asym-tuned-digest-signature nonce=([A-Za-z0-9/+]+=*);algorithm=(blake3\$[0-9]+);actions=([a-z,]+)",
+        ).unwrap();
+
+        match asym_tuned_re.captures(header) {
+            Some(caps) => {
+                map.insert(
+                    "nonce_asym".to_string(),
+                    caps.get(1).unwrap().as_str().to_string(),
+                );
+
+                map.insert(
+                    "algorithm_asym".to_string(),
+                    caps.get(2).unwrap().as_str().to_string(),
+                );
+
+                map.insert(
+                    "actions_asym".to_string(),
+                    caps.get(3).unwrap().as_str().to_string(),
+                );
+            },
+            None => {},
         }
-        let keys = ["nonce", "algorithm", "actions", "algorithm2"];
-        if keys.iter().fold(true, |a, k| a && map.contains_key(&k.to_string()))
-        {
-            Ok(WwwAuthTemp { params: map })
-        } else {
-            Err(anyhow!("invalid www-auth"))
-        }
+
+        Ok(WwwAuthTemp { params: map })
     }
 
     fn parse_auth_info(header: &str) -> Result<AuthInfoTemp>
@@ -489,14 +520,14 @@ mod requests
             .header("www-authenticate")
             .ok_or(anyhow!("expected www-authenticate header"))?;
         let www_auth1 = parse_www_auth(www_auth_header0.last().as_str())?;
-        let n64_1 = &www_auth1.params["nonce"];
+        let n64_1 = &www_auth1.params["nonce_asym"];
 
         // sign the request this time
         let id = Id([0u8; ID_LENGTH]);
 
         let mut req1: Request = surf::get(url.to_string()).into();
         let blake_parts: Vec<&str> =
-            www_auth1.params["algorithm2"].split("$").collect();
+            www_auth1.params["algorithm_asym"].split("$").collect();
 
         assert_eq!(blake_parts[0], "blake3");
         let cost: u8 = blake_parts[1].parse().unwrap();
@@ -536,11 +567,11 @@ mod requests
             .header("www-authenticate")
             .ok_or(anyhow!("expected www-authenticate header"))?;
         let www_auth3 = parse_www_auth(www_auth_header2.last().as_str())?;
-        let n64_3 = &www_auth3.params["nonce"];
+        let n64_3 = &www_auth3.params["nonce_asym"];
 
         let mut req3: Request = surf::put(url.to_string()).body("baz").into();
         let blake_parts3: Vec<&str> =
-            www_auth3.params["algorithm2"].split("$").collect();
+            www_auth3.params["algorithm_asym"].split("$").collect();
 
         assert_eq!(blake_parts[0], "blake3");
         let cost: u8 = blake_parts3[1].parse().unwrap();

@@ -384,19 +384,32 @@ where
     let actions = vec![action.to_string()];
     let auth = match gen_nonce(actions, req.state().tok.clone()).await {
         Ok((nonce, token)) => {
+            use base64::STANDARD_NO_PAD;
+            let encoded_nonce = base64::encode_config(nonce, STANDARD_NO_PAD);
+
             let mut params = String::new();
             params.push_str("tuned-digest-signature");
             params.push(' ');
             params.push_str("nonce");
             params.push('=');
-            use base64::STANDARD_NO_PAD;
-            params.push_str(&base64::encode_config(nonce, STANDARD_NO_PAD));
+            params.push_str(&encoded_nonce);
             params.push(';');
             params.push_str("algorithm");
             params.push('=');
             params.push_str(&token.argon);
             params.push(';');
-            params.push_str("algorithm2");
+            params.push_str("actions");
+            params.push('=');
+            params.push_str(&token.allow.join(","));
+            params.push(' ');
+
+            params.push_str("asym-tuned-digest-signature");
+            params.push(' ');
+            params.push_str("nonce");
+            params.push('=');
+            params.push_str(&encoded_nonce);
+            params.push(';');
+            params.push_str("algorithm");
             params.push('=');
             params.push_str("blake3");
             params.push_str("$");
