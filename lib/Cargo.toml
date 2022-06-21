@@ -13,7 +13,7 @@ s39 = { path = "../s39" }
 argon2 = "0.1"
 base64 = "0.13"
 blake3 = "0.3"
-chrono = "0.4"
+chrono = { version = "0.4", features = ["serde"] }
 rand = "0.8"
 serde = { version = "1.0", features = ["derive"] }
 strum = "0.21"
