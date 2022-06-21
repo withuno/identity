@@ -557,7 +557,7 @@ fn do_share_get(ctx: Context, opt: ShareOpts, g: ShareGet) -> Result<String>
 {
     let cfg = load_conf(&ctx)?;
     let url = opt.url.as_ref().unwrap_or(&cfg.api_host);
-    let seed = id_from_b64(g.seed)?;
+    let seed = id_from_url_b64(g.seed)?;
 
     let v = cli::get_share(url, seed)?;
 
@@ -889,6 +889,15 @@ fn main() -> Result<()>
     println!("{}", out);
 
     Ok(())
+}
+
+fn id_from_url_b64(seed: String) -> Result<uno::Id>
+{
+    let seed = base64::decode_config(seed, base64::URL_SAFE_NO_PAD)
+        .context("seed must be base64 url encoded")?;
+    let array = <[u8; 32]>::try_from(seed)
+        .map_err(|_| anyhow!("seed must be exactly 32 bytes long"))?;
+    Ok(uno::Id(array))
 }
 
 fn id_from_b64(seed: String) -> Result<uno::Id>
