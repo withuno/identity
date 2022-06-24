@@ -247,7 +247,7 @@ mod requests
         let s = format!("signature={}", sig64);
         let auth = format!("tuned-digest-signature {};{};{};{}", i, n, r, s);
 
-        req.insert_header("authorization", auth);
+        req.insert_header("asym-authorization", auth);
 
         Ok(())
     }
@@ -353,7 +353,7 @@ mod requests
         use regex::Regex;
         let mut map = HashMap::new();
 
-        // tuned-digest-signature nonce=E2nl6WRukjQrm9pYcJB/LVwqGEZRU4ik+TM1NgvDSjk;algorithm=$argon2d$v=19$m=65536,t=3,p=8;actions=read asym-tuned-digest-signature nonce=E2nl6WRukjQrm9pYcJB/LVwqGEZRU4ik+TM1NgvDSjk;algorithm=blake3$255;actions=read
+        // tuned-digest-signature nonce=E2nl6WRukjQrm9pYcJB/LVwqGEZRU4ik+TM1NgvDSjk;algorithm=$argon2d$v=19$m=65536,t=3,p=8;actions=read
         let sym_tuned_re = Regex::new(
             r"tuned-digest-signature nonce=([A-Za-z0-9/+]+=*);algorithm=(\$argon2d\$v=[0-9]+\$m=[0-9]+,t=[0-9]+,p=[0-9]+);actions=([a-z,]+)",
         )
@@ -376,6 +376,13 @@ mod requests
             caps.get(3).unwrap().as_str().to_string(),
         );
 
+        Ok(WwwAuthTemp { params: map })
+    }
+
+    fn parse_www_asym_auth(header: &str) -> Result<WwwAuthTemp> {
+        use regex::Regex;
+        let mut map = HashMap::new();
+
         let asym_tuned_re = Regex::new(
             r"asym-tuned-digest-signature nonce=([A-Za-z0-9/+]+=*);algorithm=(blake3\$[0-9]+);actions=([a-z,]+)",
         ).unwrap();
@@ -383,17 +390,17 @@ mod requests
         match asym_tuned_re.captures(header) {
             Some(caps) => {
                 map.insert(
-                    "nonce_asym".to_string(),
+                    "nonce".to_string(),
                     caps.get(1).unwrap().as_str().to_string(),
                 );
 
                 map.insert(
-                    "algorithm_asym".to_string(),
+                    "algorithm".to_string(),
                     caps.get(2).unwrap().as_str().to_string(),
                 );
 
                 map.insert(
-                    "actions_asym".to_string(),
+                    "actions".to_string(),
                     caps.get(3).unwrap().as_str().to_string(),
                 );
             },
@@ -517,17 +524,17 @@ mod requests
 
         // process the www-authenticate header
         let www_auth_header0 = res0
-            .header("www-authenticate")
-            .ok_or(anyhow!("expected www-authenticate header"))?;
-        let www_auth1 = parse_www_auth(www_auth_header0.last().as_str())?;
-        let n64_1 = &www_auth1.params["nonce_asym"];
+            .header("www-asym-authenticate")
+            .ok_or(anyhow!("expected www-asym-authenticate header"))?;
+        let www_auth1 = parse_www_asym_auth(www_auth_header0.last().as_str())?;
+        let n64_1 = &www_auth1.params["nonce"];
 
         // sign the request this time
         let id = Id([0u8; ID_LENGTH]);
 
         let mut req1: Request = surf::get(url.to_string()).into();
         let blake_parts: Vec<&str> =
-            www_auth1.params["algorithm_asym"].split("$").collect();
+            www_auth1.params["algorithm"].split("$").collect();
 
         assert_eq!(blake_parts[0], "blake3");
         let cost: u8 = blake_parts[1].parse().unwrap();
@@ -564,14 +571,14 @@ mod requests
 
         // now use the correct scoped token
         let www_auth_header2 = res2
-            .header("www-authenticate")
-            .ok_or(anyhow!("expected www-authenticate header"))?;
-        let www_auth3 = parse_www_auth(www_auth_header2.last().as_str())?;
-        let n64_3 = &www_auth3.params["nonce_asym"];
+            .header("www-asym-authenticate")
+            .ok_or(anyhow!("expected www-asym-authenticate header"))?;
+        let www_auth3 = parse_www_asym_auth(www_auth_header2.last().as_str())?;
+        let n64_3 = &www_auth3.params["nonce"];
 
         let mut req3: Request = surf::put(url.to_string()).body("baz").into();
         let blake_parts3: Vec<&str> =
-            www_auth3.params["algorithm_asym"].split("$").collect();
+            www_auth3.params["algorithm"].split("$").collect();
 
         assert_eq!(blake_parts[0], "blake3");
         let cost: u8 = blake_parts3[1].parse().unwrap();

@@ -23,7 +23,17 @@ where
     // If there is an Authorization header and it is valid for this request,
     // then let it through.
     //
-    let reason = match req.header("Authorization") {
+    let some_reason = match req.header("Asym-Authorization") {
+        Some(a) => Some(a),
+        None => {
+            match req.header("Authorization") {
+                Some(a) => Some(a),
+                None => None,
+            }
+        },
+    };
+
+    let reason = match some_reason {
         None => "authorization required",
         Some(a) => {
             // Parse the header and retrieve the nonce token.
@@ -382,7 +392,9 @@ where
         Err(s) => return Response::new(s),
     };
     let actions = vec![action.to_string()];
-    let auth = match gen_nonce(actions, req.state().tok.clone()).await {
+    let (auth, asym_auth) = match gen_nonce(actions, req.state().tok.clone())
+        .await
+    {
         Ok((nonce, token)) => {
             use base64::STANDARD_NO_PAD;
             let encoded_nonce = base64::encode_config(nonce, STANDARD_NO_PAD);
@@ -403,22 +415,24 @@ where
             params.push_str(&token.allow.join(","));
             params.push(' ');
 
-            params.push_str("asym-tuned-digest-signature");
-            params.push(' ');
-            params.push_str("nonce");
-            params.push('=');
-            params.push_str(&encoded_nonce);
-            params.push(';');
-            params.push_str("algorithm");
-            params.push('=');
-            params.push_str("blake3");
-            params.push_str("$");
-            params.push_str(&token.blake3.to_string());
-            params.push(';');
-            params.push_str("actions");
-            params.push('=');
-            params.push_str(&token.allow.join(","));
-            params
+            let mut aparams = String::new();
+            aparams.push_str("asym-tuned-digest-signature");
+            aparams.push(' ');
+            aparams.push_str("nonce");
+            aparams.push('=');
+            aparams.push_str(&encoded_nonce);
+            aparams.push(';');
+            aparams.push_str("algorithm");
+            aparams.push('=');
+            aparams.push_str("blake3");
+            aparams.push_str("$");
+            aparams.push_str(&token.blake3.to_string());
+            aparams.push(';');
+            aparams.push_str("actions");
+            aparams.push('=');
+            aparams.push_str(&token.allow.join(","));
+
+            (params, aparams)
         },
         Err(_) => return Response::new(StatusCode::InternalServerError),
     };
@@ -426,6 +440,7 @@ where
     let body = format!(r#"{{"reason":"{}","action":"{}"}}"#, reason, action);
     Response::builder(StatusCode::Unauthorized)
         .header("WWW-Authenticate", auth)
+        .header("WWW-Asym-Authenticate", asym_auth)
         .body(format!("{}", body))
         .build()
 }
