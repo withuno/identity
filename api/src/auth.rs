@@ -25,11 +25,9 @@ where
     //
     let some_reason = match req.header("Asym-Authorization") {
         Some(a) => Some(a),
-        None => {
-            match req.header("Authorization") {
-                Some(a) => Some(a),
-                None => None,
-            }
+        None => match req.header("Authorization") {
+            Some(a) => Some(a),
+            None => None,
         },
     };
 

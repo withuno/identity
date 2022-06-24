@@ -379,7 +379,8 @@ mod requests
         Ok(WwwAuthTemp { params: map })
     }
 
-    fn parse_www_asym_auth(header: &str) -> Result<WwwAuthTemp> {
+    fn parse_www_asym_auth(header: &str) -> Result<WwwAuthTemp>
+    {
         use regex::Regex;
         let mut map = HashMap::new();
 
