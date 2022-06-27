@@ -1441,7 +1441,7 @@ mod requests
         let url = base.join(&sid)?;
 
         //XXX: won't work after the year 2120!
-        let j = json!({"id": sid, "schema_version": 0, "expires_at": "2120-03-12T13:37:27+00:00", "encrypted_credential": "1234"});
+        let j = json!({"id": sid, "schemaVersion": 0, "expiresAt": "2120-03-12T13:37:27+00:00", "encryptedCredential": "1234"});
         let post: Request = surf::post(url.to_string()).body(j).into();
 
         let res1: Response =

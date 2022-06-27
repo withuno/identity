@@ -58,7 +58,7 @@ pub fn new_from_json(json: &[u8]) -> Result<MagicShare>
         Err(e) => return Err(MagicShareError::Serde { source: e }),
     };
 
-    if let Some(s) = v["schema_version"].as_u64() {
+    if let Some(s) = v["schemaVersion"].as_u64() {
         match s {
             0 => return v0_from_json(json),
             _ => return Err(MagicShareError::Schema),
@@ -142,15 +142,15 @@ mod tests
         let bad_schema_version = "";
         assert!(new_from_json(bad_schema_version.as_bytes()).is_err());
 
-        let unsupported_schema = "{\"schema_version\": 1000}";
+        let unsupported_schema = "{\"schemaVersion\": 1000}";
         assert!(new_from_json(unsupported_schema.as_bytes()).is_err());
 
         let v = r#"
         {
-            "schema_version": 0,
+            "schemaVersion": 0,
             "id": "1234",
-            "expires_at": "2014-03-12T13:37:27+00:00",
-            "encrypted_credential": "some encrypted thing"
+            "expiresAt": "2014-03-12T13:37:27+00:00",
+            "encryptedCredential": "some encrypted thing"
         }"#;
 
         let m = new_from_json(v.as_bytes()).unwrap();
