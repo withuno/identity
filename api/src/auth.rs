@@ -23,7 +23,7 @@ where
     // If there is an Authorization header and it is valid for this request,
     // then let it through.
     //
-    let some_reason = match req.header("Asym-Authorization") {
+    let some_reason = match req.header("Authorization") {
         Some(a) => Some(a),
         None => match req.header("Authorization") {
             Some(a) => Some(a),
@@ -411,7 +411,6 @@ where
             params.push_str("actions");
             params.push('=');
             params.push_str(&token.allow.join(","));
-            params.push(' ');
 
             let mut aparams = String::new();
             aparams.push_str("asym-tuned-digest-signature");
@@ -436,11 +435,14 @@ where
     };
 
     let body = format!(r#"{{"reason":"{}","action":"{}"}}"#, reason, action);
-    Response::builder(StatusCode::Unauthorized)
-        .header("WWW-Authenticate", auth)
-        .header("WWW-Asym-Authenticate", asym_auth)
+    let mut response = Response::builder(StatusCode::Unauthorized)
         .body(format!("{}", body))
-        .build()
+        .build();
+
+    response.append_header("WWW-Authenticate", auth);
+    response.append_header("WWW-Authenticate", asym_auth);
+
+    response
 }
 
 /// Add the Authentication-Info header to all responses that don't otherwise
@@ -475,15 +477,26 @@ where
         info.push('=');
         info.push_str(&token.argon);
         info.push(';');
-        info.push_str("blake3");
-        info.push('=');
-        info.push_str(&token.blake3.to_string());
-        info.push(';');
         info.push_str("scopes");
         info.push('=');
         info.push_str(&actions.join(","));
         response.insert_header("authentication-info", info);
+
+        let mut asym_info = String::new();
+        asym_info.push_str("nextnonce");
+        asym_info.push('=');
+        asym_info.push_str(&base64::encode_config(&nonce, base64::STANDARD_NO_PAD));
+        asym_info.push(';');
+        asym_info.push_str("blake3");
+        asym_info.push('=');
+        asym_info.push_str(&token.blake3.to_string());
+        asym_info.push(';');
+        asym_info.push_str("scopes");
+        asym_info.push('=');
+        asym_info.push_str(&actions.join(","));
+        response.insert_header("authentication-info", asym_info);
     }
+
     return response;
 }
 

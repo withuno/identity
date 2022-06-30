@@ -245,9 +245,10 @@ mod requests
         let n = format!("nonce={}", n64);
         let r = format!("response={}", response);
         let s = format!("signature={}", sig64);
-        let auth = format!("tuned-digest-signature {};{};{};{}", i, n, r, s);
+        let auth =
+            format!("asym-tuned-digest-signature {};{};{};{}", i, n, r, s);
 
-        req.insert_header("asym-authorization", auth);
+        req.insert_header("authorization", auth);
 
         Ok(())
     }
@@ -525,9 +526,10 @@ mod requests
 
         // process the www-authenticate header
         let www_auth_header0 = res0
-            .header("www-asym-authenticate")
-            .ok_or(anyhow!("expected www-asym-authenticate header"))?;
+            .header("www-authenticate")
+            .ok_or(anyhow!("expected www-authenticate header"))?;
         let www_auth1 = parse_www_asym_auth(www_auth_header0.last().as_str())?;
+        println!("{:?}", www_auth1.params);
         let n64_1 = &www_auth1.params["nonce"];
 
         // sign the request this time
@@ -536,6 +538,7 @@ mod requests
         let mut req1: Request = surf::get(url.to_string()).into();
         let blake_parts: Vec<&str> =
             www_auth1.params["algorithm"].split("$").collect();
+
 
         assert_eq!(blake_parts[0], "blake3");
         let cost: u8 = blake_parts[1].parse().unwrap();
@@ -572,8 +575,8 @@ mod requests
 
         // now use the correct scoped token
         let www_auth_header2 = res2
-            .header("www-asym-authenticate")
-            .ok_or(anyhow!("expected www-asym-authenticate header"))?;
+            .header("www-authenticate")
+            .ok_or(anyhow!("expected www-authenticate header"))?;
         let www_auth3 = parse_www_asym_auth(www_auth_header2.last().as_str())?;
         let n64_3 = &www_auth3.params["nonce"];
 
@@ -666,7 +669,10 @@ mod requests
         let www_auth_header0 = res0
             .header("www-authenticate")
             .ok_or(anyhow!("expected www-authenticate header"))?;
-        let www_auth1 = parse_www_auth(www_auth_header0.last().as_str())?;
+
+        println!("{:?}", www_auth_header0);
+        let www_auth1 =
+            parse_www_auth(www_auth_header0.get(0).unwrap().as_str())?;
         let n64_1 = &www_auth1.params["nonce"];
 
         // gen a salt
@@ -689,7 +695,7 @@ mod requests
         let aih1 = res1
             .header("authentication-info")
             .ok_or(anyhow!("expected auth-info"))?;
-        let auth_info2 = parse_auth_info(aih1.last().as_str())?;
+        let auth_info2 = parse_auth_info(aih1.get(0).unwrap().as_str())?;
         let n64_2 = &auth_info2.params["nextnonce"];
 
         // try to use the nextnonce to create a reasource, it should fail
@@ -719,7 +725,8 @@ mod requests
         let www_auth_header2 = res2
             .header("www-authenticate")
             .ok_or(anyhow!("expected www-authenticate header"))?;
-        let www_auth3 = parse_www_auth(www_auth_header2.last().as_str())?;
+        let www_auth3 =
+            parse_www_auth(www_auth_header2.get(0).unwrap().as_str())?;
         let n64_3 = &www_auth3.params["nonce"];
 
         let mut salt3 = [0u8; 8];
@@ -740,7 +747,7 @@ mod requests
         let aih3 = res3
             .header("authentication-info")
             .ok_or(anyhow!("expected auth-info"))?;
-        let auth_info4 = parse_auth_info(aih3.last().as_str())?;
+        let auth_info4 = parse_auth_info(aih3.get(0).unwrap().as_str())?;
         // todo: turns out this happens to be the right scope. need to fix the
         // auth layer so that it adds multiple auth-info headers with different
         // scope options.
