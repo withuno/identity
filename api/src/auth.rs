@@ -109,16 +109,17 @@ struct AuthTemp
 ///
 fn parse_auth(header: &str) -> Result<AuthTemp, Response>
 {
-    println!("{:?}", header);
     let items = match header.strip_prefix("tuned-digest-signature") {
         Some(s) => s.trim().split(';'),
-        None => {
-            return Err(Response::builder(StatusCode::BadRequest)
-                .body(r#"{"message": "unrecognized auth scheme"}"#)
-                .build());
+        None => match header.strip_prefix("asym-tuned-digest-signature") {
+            Some(s) => s.trim().split(';'),
+            None => {
+                return Err(Response::builder(StatusCode::BadRequest)
+                    .body(r#"{"message": "unrecognized auth scheme"}"#)
+                    .build());
+            },
         },
     };
-
 
     // The defualt hasher uses entropy to achieve collision resistance. We do
     // not need that. TODO: use a lighter weight hasher or verify that the seed
