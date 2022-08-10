@@ -31,6 +31,7 @@ mod requests
     use std::convert::From;
     use std::convert::TryFrom;
 
+    use http_types::headers::HeaderValues;
     use surf::Request;
     use surf::Url;
 
@@ -46,6 +47,7 @@ mod requests
     use vclock::VClock;
 
     use api::Database;
+
 
     const TUNE: &str = "$argon2d$v=19$m=4096,t=3,p=1";
     const SALT: &str = "cm9ja3NhbHQ";
@@ -323,9 +325,7 @@ mod requests
     {
         let auth_info_str = prev
             .header("authentication-info")
-            .ok_or(anyhow!("expected auth-info"))?
-            .last()
-            .as_str();
+            .ok_or(anyhow!("expected auth-info"))?;
 
         let auth_info = parse_auth_info(auth_info_str)?;
         let nonce_b64 = &auth_info.params["nextnonce"];
@@ -349,7 +349,7 @@ mod requests
         params: HashMap<String, String>,
     }
 
-    fn parse_www_auth(header: &str) -> Result<WwwAuthTemp>
+    fn parse_www_auth(headers: &HeaderValues) -> Result<WwwAuthTemp>
     {
         use regex::Regex;
         let mut map = HashMap::new();
@@ -360,27 +360,34 @@ mod requests
         )
         .unwrap();
 
-        let caps = sym_tuned_re.captures(header).unwrap();
+        for header in headers.iter() {
+            match sym_tuned_re.captures(header.as_str()) {
+                Some(caps) => {
+                    map.insert(
+                        "nonce".to_string(),
+                        caps.get(1).unwrap().as_str().to_string(),
+                    );
 
-        map.insert(
-            "nonce".to_string(),
-            caps.get(1).unwrap().as_str().to_string(),
-        );
+                    map.insert(
+                        "algorithm".to_string(),
+                        caps.get(2).unwrap().as_str().to_string(),
+                    );
 
-        map.insert(
-            "algorithm".to_string(),
-            caps.get(2).unwrap().as_str().to_string(),
-        );
+                    map.insert(
+                        "actions".to_string(),
+                        caps.get(3).unwrap().as_str().to_string(),
+                    );
 
-        map.insert(
-            "actions".to_string(),
-            caps.get(3).unwrap().as_str().to_string(),
-        );
+                    return Ok(WwwAuthTemp { params: map });
+                },
+                None => {},
+            }
+        }
 
-        Ok(WwwAuthTemp { params: map })
+        return Err(anyhow!("invalid auth-info"));
     }
 
-    fn parse_www_asym_auth(header: &str) -> Result<WwwAuthTemp>
+    fn parse_asym_www_auth(headers: &HeaderValues) -> Result<WwwAuthTemp>
     {
         use regex::Regex;
         let mut map = HashMap::new();
@@ -389,44 +396,73 @@ mod requests
             r"asym-tuned-digest-signature nonce=([A-Za-z0-9/+]+=*);algorithm=(blake3\$[0-9]+);actions=([a-z,]+)",
         ).unwrap();
 
-        match asym_tuned_re.captures(header) {
-            Some(caps) => {
-                map.insert(
-                    "nonce".to_string(),
-                    caps.get(1).unwrap().as_str().to_string(),
-                );
+        for header in headers.iter() {
+            match asym_tuned_re.captures(header.as_str()) {
+                Some(caps) => {
+                    map.insert(
+                        "nonce".to_string(),
+                        caps.get(1).unwrap().as_str().to_string(),
+                    );
 
-                map.insert(
-                    "algorithm".to_string(),
-                    caps.get(2).unwrap().as_str().to_string(),
-                );
+                    map.insert(
+                        "algorithm".to_string(),
+                        caps.get(2).unwrap().as_str().to_string(),
+                    );
 
-                map.insert(
-                    "actions".to_string(),
-                    caps.get(3).unwrap().as_str().to_string(),
-                );
-            },
-            None => {},
+                    map.insert(
+                        "actions".to_string(),
+                        caps.get(3).unwrap().as_str().to_string(),
+                    );
+
+                    return Ok(WwwAuthTemp { params: map });
+                },
+                None => {},
+            }
         }
 
-        Ok(WwwAuthTemp { params: map })
+        return Err(anyhow!("invalid auth-info"));
     }
 
-    fn parse_auth_info(header: &str) -> Result<AuthInfoTemp>
+    fn parse_auth_info(headers: &HeaderValues) -> Result<AuthInfoTemp>
     {
-        let items = header.trim().split(';');
-        let mut map = HashMap::new();
-        for i in items {
-            let kv: Vec<&str> = i.trim().splitn(2, "=").collect();
-            map.insert(kv[0].into(), kv[1].into());
+        for header in headers.iter() {
+            let items = header.as_str().trim().split(';');
+            let mut map = HashMap::new();
+            for i in items {
+                let kv: Vec<&str> = i.trim().splitn(2, "=").collect();
+                map.insert(kv[0].into(), kv[1].into());
+            }
+            let keys = ["nextnonce", "argon", "scopes"];
+            if keys
+                .iter()
+                .fold(true, |a, k| a && map.contains_key(&k.to_string()))
+            {
+                return Ok(AuthInfoTemp { params: map });
+            }
         }
-        let keys = ["nextnonce", "argon", "scopes"];
-        if keys.iter().fold(true, |a, k| a && map.contains_key(&k.to_string()))
-        {
-            Ok(AuthInfoTemp { params: map })
-        } else {
-            Err(anyhow!("invalid auth-info"))
+
+        Err(anyhow!("invalid auth-info"))
+    }
+
+    fn parse_asym_auth_info(headers: &HeaderValues) -> Result<AuthInfoTemp>
+    {
+        for header in headers.iter() {
+            let items = header.as_str().trim().split(';');
+            let mut map = HashMap::new();
+            for i in items {
+                let kv: Vec<&str> = i.trim().splitn(2, "=").collect();
+                map.insert(kv[0].into(), kv[1].into());
+            }
+            let keys = ["nextnonce", "blake3", "scopes"];
+            if keys
+                .iter()
+                .fold(true, |a, k| a && map.contains_key(&k.to_string()))
+            {
+                return Ok(AuthInfoTemp { params: map });
+            }
         }
+
+        Err(anyhow!("invalid auth-info"))
     }
 
     async fn init_nonce(
@@ -528,17 +564,16 @@ mod requests
         let www_auth_header0 = res0
             .header("www-authenticate")
             .ok_or(anyhow!("expected www-authenticate header"))?;
-        let www_auth1 = parse_www_asym_auth(www_auth_header0.last().as_str())?;
-        println!("{:?}", www_auth1.params);
+        let www_auth1 = parse_asym_www_auth(www_auth_header0)?;
         let n64_1 = &www_auth1.params["nonce"];
 
         // sign the request this time
         let id = Id([0u8; ID_LENGTH]);
 
+
         let mut req1: Request = surf::get(url.to_string()).into();
         let blake_parts: Vec<&str> =
             www_auth1.params["algorithm"].split("$").collect();
-
 
         assert_eq!(blake_parts[0], "blake3");
         let cost: u8 = blake_parts[1].parse().unwrap();
@@ -553,7 +588,7 @@ mod requests
         let aih1 = res1
             .header("authentication-info")
             .ok_or(anyhow!("expected auth-info"))?;
-        let auth_info2 = parse_auth_info(aih1.last().as_str())?;
+        let auth_info2 = parse_asym_auth_info(aih1)?;
         let n64_2 = &auth_info2.params["nextnonce"];
 
         let mut req2: Request = surf::put(url.to_string()).body("baz").into();
@@ -577,7 +612,7 @@ mod requests
         let www_auth_header2 = res2
             .header("www-authenticate")
             .ok_or(anyhow!("expected www-authenticate header"))?;
-        let www_auth3 = parse_www_asym_auth(www_auth_header2.last().as_str())?;
+        let www_auth3 = parse_asym_www_auth(www_auth_header2)?;
         let n64_3 = &www_auth3.params["nonce"];
 
         let mut req3: Request = surf::put(url.to_string()).body("baz").into();
@@ -598,7 +633,7 @@ mod requests
         let aih3 = res3
             .header("authentication-info")
             .ok_or(anyhow!("expected auth-info"))?;
-        let auth_info4 = parse_auth_info(aih3.last().as_str())?;
+        let auth_info4 = parse_asym_auth_info(aih3)?;
         // todo: turns out this happens to be the right scope. need to fix the
         // auth layer so that it adds multiple auth-info headers with different
         // scope options.
@@ -670,9 +705,7 @@ mod requests
             .header("www-authenticate")
             .ok_or(anyhow!("expected www-authenticate header"))?;
 
-        println!("{:?}", www_auth_header0);
-        let www_auth1 =
-            parse_www_auth(www_auth_header0.get(0).unwrap().as_str())?;
+        let www_auth1 = parse_www_auth(www_auth_header0)?;
         let n64_1 = &www_auth1.params["nonce"];
 
         // gen a salt
@@ -695,7 +728,7 @@ mod requests
         let aih1 = res1
             .header("authentication-info")
             .ok_or(anyhow!("expected auth-info"))?;
-        let auth_info2 = parse_auth_info(aih1.get(0).unwrap().as_str())?;
+        let auth_info2 = parse_auth_info(aih1)?;
         let n64_2 = &auth_info2.params["nextnonce"];
 
         // try to use the nextnonce to create a reasource, it should fail
@@ -725,8 +758,7 @@ mod requests
         let www_auth_header2 = res2
             .header("www-authenticate")
             .ok_or(anyhow!("expected www-authenticate header"))?;
-        let www_auth3 =
-            parse_www_auth(www_auth_header2.get(0).unwrap().as_str())?;
+        let www_auth3 = parse_www_auth(www_auth_header2)?;
         let n64_3 = &www_auth3.params["nonce"];
 
         let mut salt3 = [0u8; 8];
@@ -747,7 +779,7 @@ mod requests
         let aih3 = res3
             .header("authentication-info")
             .ok_or(anyhow!("expected auth-info"))?;
-        let auth_info4 = parse_auth_info(aih3.get(0).unwrap().as_str())?;
+        let auth_info4 = parse_auth_info(aih3)?;
         // todo: turns out this happens to be the right scope. need to fix the
         // auth layer so that it adds multiple auth-info headers with different
         // scope options.
@@ -822,7 +854,7 @@ mod requests
         let aih1 = res1
             .header("authentication-info")
             .ok_or(anyhow!("expected auth-info"))?;
-        let auth_info1 = parse_auth_info(aih1.last().as_str())?;
+        let auth_info1 = parse_auth_info(aih1)?;
         let n64_2 = &auth_info1.params["nextnonce"];
 
         // add the file so the next request will succeed
@@ -857,7 +889,7 @@ mod requests
         let aih3 = res2
             .header("authentication-info")
             .ok_or(anyhow!("expected auth-info"))?;
-        let auth_info3 = parse_auth_info(aih3.last().as_str())?;
+        let auth_info3 = parse_auth_info(aih3)?;
         let n64_3 = &auth_info3.params["nextnonce"];
 
         let mut salt3 = [0u8; 8];

@@ -23,15 +23,8 @@ where
     // If there is an Authorization header and it is valid for this request,
     // then let it through.
     //
-    let some_reason = match req.header("Authorization") {
-        Some(a) => Some(a),
-        None => match req.header("Authorization") {
-            Some(a) => Some(a),
-            None => None,
-        },
-    };
 
-    let reason = match some_reason {
+    let reason = match req.header("Authorization") {
         None => "authorization required",
         Some(a) => {
             // Parse the header and retrieve the nonce token.
@@ -116,6 +109,7 @@ struct AuthTemp
 ///
 fn parse_auth(header: &str) -> Result<AuthTemp, Response>
 {
+    println!("{:?}", header);
     let items = match header.strip_prefix("tuned-digest-signature") {
         Some(s) => s.trim().split(';'),
         None => {
@@ -124,6 +118,7 @@ fn parse_auth(header: &str) -> Result<AuthTemp, Response>
                 .build());
         },
     };
+
 
     // The defualt hasher uses entropy to achieve collision resistance. We do
     // not need that. TODO: use a lighter weight hasher or verify that the seed
@@ -420,9 +415,7 @@ where
             aparams.push_str(&encoded_nonce);
             aparams.push(';');
             aparams.push_str("algorithm");
-            aparams.push('=');
-            aparams.push_str("blake3");
-            aparams.push_str("$");
+            aparams.push_str("=blake3$");
             aparams.push_str(&token.blake3.to_string());
             aparams.push(';');
             aparams.push_str("actions");
@@ -485,7 +478,8 @@ where
         let mut asym_info = String::new();
         asym_info.push_str("nextnonce");
         asym_info.push('=');
-        asym_info.push_str(&base64::encode_config(&nonce, base64::STANDARD_NO_PAD));
+        asym_info
+            .push_str(&base64::encode_config(&nonce, base64::STANDARD_NO_PAD));
         asym_info.push(';');
         asym_info.push_str("blake3");
         asym_info.push('=');
@@ -494,7 +488,7 @@ where
         asym_info.push_str("scopes");
         asym_info.push('=');
         asym_info.push_str(&actions.join(","));
-        response.insert_header("authentication-info", asym_info);
+        response.append_header("authentication-info", asym_info);
     }
 
     return response;
@@ -538,9 +532,11 @@ async fn gen_nonce<T>(
 where
     T: Database + 'static,
 {
-    let mut nonce = [0u8; 32];
     use rand::RngCore;
+
+    let mut nonce = [0u8; 32];
     rand::thread_rng().fill_bytes(&mut nonce);
+
     let id = base64::encode_config(nonce, base64::URL_SAFE_NO_PAD);
     let params = match actions.contains(&"create".to_string()) {
         true => CREATE_PARAMS,
