@@ -319,7 +319,7 @@ pub fn verify_blake3_work(nonce: &[u8], proof: u32, cost: u8) -> bool
     hash.update(&proof.to_le_bytes());
 
     let digest = hash.finalize().as_bytes().to_vec();
-    if digest[0] == 0 && digest[1] == 0 && digest[2] < cost {
+    if (digest[0] & cost) == 0 {
         return true;
     }
 

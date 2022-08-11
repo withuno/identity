@@ -516,10 +516,10 @@ where
 const CREATE_PARAMS: &str = "$argon2d$v=19$m=262144,t=5,p=8";
 const ACCESS_PARAMS: &str = "$argon2d$v=19$m=65536,t=3,p=8";
 
-// The higher the cost, the easier the proof is to solve.
-const BLAKE3_CREATE_COST: u8 = 255;
+// The lower the cost, the easier the proof is to solve.
+const BLAKE3_CREATE_COST: u8 = 1;
 // access should be free since we already verify the requests identity.
-const BLAKE3_ACCESS_COST: u8 = 255;
+const BLAKE3_ACCESS_COST: u8 = 1;
 
 use crate::store::Database;
 
