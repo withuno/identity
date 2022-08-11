@@ -29,11 +29,11 @@ where
         Some(a) => {
             // Parse the header and retrieve the nonce token.
             let auth = parse_auth(a.last().as_str())?;
-            let raw_nonce = base64::decode(&auth.params["nonce"])
-                .map_err(|_| {
+            let raw_nonce =
+                base64::decode(&auth.params["nonce"]).map_err(|_| {
                     return Response::builder(StatusCode::BadRequest)
                         .body(r#"{"message": "invalid nonce encoding"}"#)
-                        .build()
+                        .build();
                 })?;
             use base64::URL_SAFE_NO_PAD;
             let url_nonce = base64::encode_config(&raw_nonce, URL_SAFE_NO_PAD);
@@ -285,28 +285,27 @@ where
     if response.starts_with("blake3") {
         let split: Vec<&str> = response.split('$').collect();
         if split.len() != 3 || split[2] != nonce {
-            let res: Response =
-                Response::builder(StatusCode::BadRequest)
-                    .body(r#"{"message": "malformed response field"}"#)
-                    .into();
+            let res: Response = Response::builder(StatusCode::BadRequest)
+                .body(r#"{"message": "malformed response field"}"#)
+                .into();
             return Err(res);
         }
 
         let cost = token.blake3;
-        let proof: u32 = split[1]
-            .parse()
-            .map_err(|_| {
-                return Response::builder(StatusCode::BadRequest)
-                    .body(r#"{"message": "proof must be an unsigned integer"}"#)
-                    .build();
-            })?;
+        let proof: u32 = split[1].parse().map_err(|_| {
+            return Response::builder(StatusCode::BadRequest)
+                .body(r#"{"message": "proof must be an unsigned integer"}"#)
+                .build();
+        })?;
 
-        let decoded_nonce = base64::decode_config(nonce, base64::STANDARD_NO_PAD)
-            .map_err(|_| {
-                return Response::builder(StatusCode::BadRequest)
-                    .body(r#"{"message": "impossible"}"#)
-                    .build();
-            })?;
+        let decoded_nonce =
+            base64::decode_config(nonce, base64::STANDARD_NO_PAD).map_err(
+                |_| {
+                    return Response::builder(StatusCode::BadRequest)
+                        .body(r#"{"message": "impossible"}"#)
+                        .build();
+                },
+            )?;
 
         if !verify_blake3_work(&decoded_nonce, proof, cost) {
             return Ok(Err("challenge verification failed"));
