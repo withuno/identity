@@ -223,7 +223,7 @@ mod requests
         Ok((api, dbs))
     }
 
-    fn challenge_from_body(req: &mut Request, n64: &str) -> Result<String>
+    fn body_challenge(req: &mut Request, n64: &str) -> Result<String>
     {
         let body = req.take_body();
         let bbytes: Vec<u8> = task::block_on(body.into_bytes())
@@ -254,7 +254,7 @@ mod requests
         id: &Id,
     ) -> Result<()>
     {
-        let challenge = challenge_from_body(req, n64)?;
+        let challenge = body_challenge(req, n64)?;
 
         let n = prove_blake3_work(&challenge.as_bytes(), cost).unwrap();
         let response = format!("blake3${}${}", n, n64);
@@ -286,7 +286,7 @@ mod requests
         id: &Id,
     ) -> Result<()>
     {
-        let challenge = challenge_from_body(req, n64)?;
+        let challenge = body_challenge(req, n64)?;
 
         use argon2::{Argon2, PasswordHash, PasswordHasher};
         let alg = Argon2::default();

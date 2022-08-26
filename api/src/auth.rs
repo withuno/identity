@@ -298,16 +298,15 @@ where
                 .build();
         })?;
 
-        let decoded_nonce =
-            base64::decode_config(nonce, base64::STANDARD_NO_PAD).map_err(
-                |_| {
-                    return Response::builder(StatusCode::BadRequest)
-                        .body(r#"{"message": "impossible"}"#)
-                        .build();
-                },
-            )?;
+        let method = req.method();
+        let path = req.url().path();
+        let bhash = blake3::hash(&body);
+        let bhashb = bhash.as_bytes();
+        let body_enc = base64::encode_config(bhashb, base64::STANDARD_NO_PAD);
 
-        if !verify_blake3_work(&decoded_nonce, proof, cost) {
+        let challenge = format!("{}:{}:{}:{}", nonce, method, path, body_enc);
+
+        if !verify_blake3_work(&challenge.as_bytes(), proof, cost) {
             return Ok(Err("challenge verification failed"));
         }
     } else {
