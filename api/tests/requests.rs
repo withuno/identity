@@ -223,6 +223,29 @@ mod requests
         Ok((api, dbs))
     }
 
+    fn challenge_from_body(req: &mut Request, n64: &str) -> Result<String>
+    {
+        let body = req.take_body();
+        let bbytes: Vec<u8> = task::block_on(body.into_bytes())
+            .map_err(|_| anyhow!("body bytes failed"))?;
+        let bhash = blake3::hash(&bbytes);
+        let bhashb = bhash.as_bytes();
+        let bhash_enc = base64::encode_config(bhashb, base64::STANDARD_NO_PAD);
+        req.set_body(Body::from_bytes(bbytes));
+        let method = req.method();
+
+        let mut split: Vec<&str> = req.url().path().split("/").collect();
+        split.reverse();
+        split.pop();
+        split.pop();
+        split.reverse();
+
+        let path = split.join("/");
+        let challenge = format!("{}:{}:/{}:{}", n64, method, path, bhash_enc);
+
+        return Ok(challenge);
+    }
+
     // Add the correct authorization header to the client-based proof of work.
     fn blake3_sign_req(
         req: &mut Request,
@@ -231,10 +254,9 @@ mod requests
         id: &Id,
     ) -> Result<()>
     {
-        let decoded_nonce =
-            base64::decode_config(n64, base64::STANDARD_NO_PAD).unwrap();
+        let challenge = challenge_from_body(req, n64)?;
 
-        let n = prove_blake3_work(&decoded_nonce, cost).unwrap();
+        let n = prove_blake3_work(&challenge.as_bytes(), cost).unwrap();
         let response = format!("blake3${}${}", n, n64);
 
         let kp: uno::KeyPair = KeyPair::from(id);
@@ -264,24 +286,7 @@ mod requests
         id: &Id,
     ) -> Result<()>
     {
-        let body = req.take_body();
-        let bbytes: Vec<u8> = task::block_on(body.into_bytes())
-            .map_err(|_| anyhow!("body bytes failed"))?;
-        let bhash = blake3::hash(&bbytes);
-        let bhashb = bhash.as_bytes();
-        let bhash_enc = base64::encode_config(bhashb, base64::STANDARD_NO_PAD);
-        req.set_body(Body::from_bytes(bbytes));
-        let method = req.method();
-
-        let mut split: Vec<&str> = req.url().path().split("/").collect();
-        split.reverse();
-        split.pop();
-        split.pop();
-        split.reverse();
-
-        let path = split.join("/");
-        let challenge = format!("{}:{}:/{}:{}", n64, method, path, bhash_enc);
-        // println!("sign challenge: {:?}", &challenge);
+        let challenge = challenge_from_body(req, n64)?;
 
         use argon2::{Argon2, PasswordHash, PasswordHasher};
         let alg = Argon2::default();
