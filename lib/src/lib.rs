@@ -321,7 +321,7 @@ pub fn verify_blake3_work(challenge: &[u8], proof: u32, cost: u8) -> bool
     let digest = hash.finalize().as_bytes().to_vec();
 
     let u32value =
-        u32::from_le_bytes([digest[0], digest[1], digest[2], digest[3]]);
+        u32::from_be_bytes([digest[0], digest[1], digest[2], digest[3]]);
     if (u32value >> (32 - cost)) == 0 {
         return true;
     }
