@@ -297,12 +297,12 @@ pub fn decrypt(
     Ok(djb::decrypt(key, data, ctx.as_bytes())?)
 }
 
-pub fn prove_blake3_work(nonce: &[u8], cost: u8) -> Option<u32>
+pub fn prove_blake3_work(challenge: &[u8], cost: u8) -> Option<u32>
 {
     let maxn: u32 = u32::MAX - 1;
     let mut n: u32 = 0;
     while n < maxn {
-        if verify_blake3_work(nonce, n, cost) {
+        if verify_blake3_work(challenge, n, cost) {
             return Some(n);
         }
 
@@ -312,14 +312,17 @@ pub fn prove_blake3_work(nonce: &[u8], cost: u8) -> Option<u32>
     None
 }
 
-pub fn verify_blake3_work(nonce: &[u8], proof: u32, cost: u8) -> bool
+pub fn verify_blake3_work(challenge: &[u8], proof: u32, cost: u8) -> bool
 {
     let mut hash = blake3::Hasher::new();
-    hash.update(&nonce);
+    hash.update(&challenge);
     hash.update(&proof.to_le_bytes());
 
     let digest = hash.finalize().as_bytes().to_vec();
-    if (digest[0] & cost) == 0 {
+
+    let u32value =
+        u32::from_le_bytes([digest[0], digest[1], digest[2], digest[3]]);
+    if (u32value >> (32 - cost)) == 0 {
         return true;
     }
 
