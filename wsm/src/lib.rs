@@ -124,7 +124,7 @@ pub fn wasm_async_auth_header(
 
     let challenge = format!("{}:{}:{}:{}", nonce, method, resource, body_enc);
 
-    match prove_blake3_work(&challenge, cost) {
+    match prove_blake3_work(&challenge.as_bytes(), cost) {
         Some(n) => Some(format!(
             "blake3${}${}",
             n,

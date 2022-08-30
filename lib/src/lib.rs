@@ -404,7 +404,7 @@ mod unit
     fn blake3_proof()
     {
         let random_bytes = b"12345678901234567890123456789012";
-        let cost = 255; // make it easy
+        let cost = 2; // make it easy
 
         let proof = prove_blake3_work(random_bytes, cost);
         assert!(proof.is_some());
