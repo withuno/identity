@@ -110,16 +110,26 @@ pub fn wasm_auth_header(
 }
 
 #[wasm_bindgen]
-pub fn wasm_blake3_proof(nonce: String, cost: u8) -> Option<String>
+pub fn wasm_async_auth_header(
+    nonce: String,
+    method: String,
+    resource: String,
+    cost: u8,
+    body: &[u8],
+) -> Option<String>
 {
-    let decoded_nonce =
-        match base64::decode_config(nonce.clone(), base64::STANDARD_NO_PAD) {
-            Ok(v) => v,
-            Err(_) => return None,
-        };
+    let body_hash = blake3::hash(body);
+    let body_enc =
+        base64::encode_config(body_hash.as_bytes(), base64::STANDARD_NO_PAD);
 
-    match prove_blake3_work(&decoded_nonce, cost) {
-        Some(n) => Some(format!("blake3${}${}", n, nonce)),
+    let challenge = format!("{}:{}:{}:{}", nonce, method, resource, body_enc);
+
+    match prove_blake3_work(&challenge, cost) {
+        Some(n) => Some(format!(
+            "blake3${}${}",
+            n,
+            base64::encode_config(challenge, base64::STANDARD_NO_PAD)
+        )),
         None => None,
     }
 }
