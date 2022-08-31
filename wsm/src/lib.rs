@@ -128,7 +128,7 @@ pub fn wasm_async_auth_header(
         Some(n) => Some(format!(
             "blake3${}${}",
             n,
-            base64::encode_config(challenge, base64::STANDARD_NO_PAD)
+            nonce,
         )),
         None => None,
     }
