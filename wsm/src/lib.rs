@@ -158,6 +158,7 @@ pub fn wasm_decrypt_magic_share(share: &[u8], seed: String) -> Option<String>
             Err(_) => return None,
         };
 
+
     let id = match uno::Id::try_from(&decoded_seed[..]) {
         Ok(v) => v,
         Err(_) => return None,
@@ -174,6 +175,28 @@ pub fn wasm_decrypt_magic_share(share: &[u8], seed: String) -> Option<String>
     match String::from_utf8(decrypted_share) {
         Ok(s) => Some(s),
         Err(_) => None,
+    }
+}
+
+#[wasm_bindgen]
+pub fn wasm_encrypt_vault(vault: String, seed: String) -> Option<Box<[u8]>>
+{
+    let decoded_seed = match base64::decode(seed) {
+        Ok(v) => v,
+        Err(_) => return None,
+    };
+
+    let id = match uno::Id::try_from(&decoded_seed[..]) {
+        Ok(v) => v,
+        Err(_) => return None,
+    };
+
+    let key = uno::SymmetricKey::from(&id);
+    let ctx = uno::Binding::Vault;
+
+    match uno::encrypt(ctx, key, vault.as_bytes()) {
+        Ok(v) => Some(v.into_boxed_slice()),
+        Err(_) => return None,
     }
 }
 
