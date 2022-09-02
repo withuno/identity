@@ -17,7 +17,6 @@ mod requests
     use tide::{Body, Response, StatusCode};
 
     use anyhow::anyhow;
-    use anyhow::bail;
     use anyhow::Context;
     use anyhow::Result;
     use async_std::task;
@@ -32,9 +31,11 @@ mod requests
     use std::convert::From;
     use std::convert::TryFrom;
 
+    use http_types::headers::HeaderValues;
     use surf::Request;
     use surf::Url;
 
+    use uno::prove_blake3_work;
     use uno::Id;
     use uno::KeyPair;
     use uno::Mu;
@@ -46,6 +47,7 @@ mod requests
     use vclock::VClock;
 
     use api::Database;
+
 
     const TUNE: &str = "$argon2d$v=19$m=4096,t=3,p=1";
     const SALT: &str = "cm9ja3NhbHQ";
@@ -221,14 +223,7 @@ mod requests
         Ok((api, dbs))
     }
 
-    // Add the correct authorization header to the request
-    fn sign_req(
-        req: &mut Request,
-        n64: &str,
-        argon: &str,
-        s64: &str,
-        id: &Id,
-    ) -> Result<()>
+    fn body_challenge(req: &mut Request, n64: &str) -> Result<String>
     {
         let body = req.take_body();
         let bbytes: Vec<u8> = task::block_on(body.into_bytes())
@@ -247,7 +242,51 @@ mod requests
 
         let path = split.join("/");
         let challenge = format!("{}:{}:/{}:{}", n64, method, path, bhash_enc);
-        // println!("sign challenge: {:?}", &challenge);
+
+        return Ok(challenge);
+    }
+
+    // Add the correct authorization header to the client-based proof of work.
+    fn blake3_sign_req(
+        req: &mut Request,
+        n64: &str,
+        cost: u8,
+        id: &Id,
+    ) -> Result<()>
+    {
+        let challenge = body_challenge(req, n64)?;
+
+        let n = prove_blake3_work(&challenge.as_bytes(), cost).unwrap();
+        let response = format!("blake3${}${}", n, n64);
+
+        let kp: uno::KeyPair = KeyPair::from(id);
+        let pub_bytes = kp.public.to_bytes();
+        let pub64 = base64::encode_config(&pub_bytes, base64::STANDARD_NO_PAD);
+        let sig = kp.sign(&response.as_bytes());
+        let sig64 = base64::encode_config(sig, base64::STANDARD_NO_PAD);
+
+        let i = format!("identity={}", pub64);
+        let n = format!("nonce={}", n64);
+        let r = format!("response={}", response);
+        let s = format!("signature={}", sig64);
+        let auth =
+            format!("asym-tuned-digest-signature {};{};{};{}", i, n, r, s);
+
+        req.insert_header("authorization", auth);
+
+        Ok(())
+    }
+
+    // Add the correct authorization header to the request
+    fn sign_req(
+        req: &mut Request,
+        n64: &str,
+        argon: &str,
+        s64: &str,
+        id: &Id,
+    ) -> Result<()>
+    {
+        let challenge = body_challenge(req, n64)?;
 
         use argon2::{Argon2, PasswordHash, PasswordHasher};
         let alg = Argon2::default();
@@ -291,9 +330,7 @@ mod requests
     {
         let auth_info_str = prev
             .header("authentication-info")
-            .ok_or(anyhow!("expected auth-info"))?
-            .last()
-            .as_str();
+            .ok_or(anyhow!("expected auth-info"))?;
 
         let auth_info = parse_auth_info(auth_info_str)?;
         let nonce_b64 = &auth_info.params["nextnonce"];
@@ -317,44 +354,120 @@ mod requests
         params: HashMap<String, String>,
     }
 
-    fn parse_www_auth(header: &str) -> Result<WwwAuthTemp>
+    fn parse_www_auth(headers: &HeaderValues) -> Result<WwwAuthTemp>
     {
-        let items = match header.strip_prefix("tuned-digest-signature") {
-            Some(s) => s.trim().split(';'),
-            None => {
-                bail!("wrong auth type");
-            },
-        };
-
+        use regex::Regex;
         let mut map = HashMap::new();
-        for i in items {
-            let kv: Vec<&str> = i.trim().splitn(2, "=").collect();
-            map.insert(kv[0].into(), kv[1].into());
+
+        // tuned-digest-signature nonce=E2nl6WRukjQrm9pYcJB/LVwqGEZRU4ik+TM1NgvDSjk;algorithm=$argon2d$v=19$m=65536,t=3,p=8;actions=read
+        let sym_tuned_re = Regex::new(
+            r"tuned-digest-signature nonce=([A-Za-z0-9/+]+=*);algorithm=(\$argon2d\$v=[0-9]+\$m=[0-9]+,t=[0-9]+,p=[0-9]+);actions=([a-z,]+)",
+        )
+        .unwrap();
+
+        for header in headers.iter() {
+            match sym_tuned_re.captures(header.as_str()) {
+                Some(caps) => {
+                    map.insert(
+                        "nonce".to_string(),
+                        caps.get(1).unwrap().as_str().to_string(),
+                    );
+
+                    map.insert(
+                        "algorithm".to_string(),
+                        caps.get(2).unwrap().as_str().to_string(),
+                    );
+
+                    map.insert(
+                        "actions".to_string(),
+                        caps.get(3).unwrap().as_str().to_string(),
+                    );
+
+                    return Ok(WwwAuthTemp { params: map });
+                },
+                None => {},
+            }
         }
-        let keys = ["nonce", "algorithm", "actions"];
-        if keys.iter().fold(true, |a, k| a && map.contains_key(&k.to_string()))
-        {
-            Ok(WwwAuthTemp { params: map })
-        } else {
-            Err(anyhow!("invalid www-auth"))
-        }
+
+        return Err(anyhow!("invalid auth-info"));
     }
 
-    fn parse_auth_info(header: &str) -> Result<AuthInfoTemp>
+    fn parse_asym_www_auth(headers: &HeaderValues) -> Result<WwwAuthTemp>
     {
-        let items = header.trim().split(';');
+        use regex::Regex;
         let mut map = HashMap::new();
-        for i in items {
-            let kv: Vec<&str> = i.trim().splitn(2, "=").collect();
-            map.insert(kv[0].into(), kv[1].into());
+
+        let asym_tuned_re = Regex::new(
+            r"asym-tuned-digest-signature nonce=([A-Za-z0-9/+]+=*);algorithm=(blake3\$[0-9]+);actions=([a-z,]+)",
+        ).unwrap();
+
+        for header in headers.iter() {
+            match asym_tuned_re.captures(header.as_str()) {
+                Some(caps) => {
+                    map.insert(
+                        "nonce".to_string(),
+                        caps.get(1).unwrap().as_str().to_string(),
+                    );
+
+                    map.insert(
+                        "algorithm".to_string(),
+                        caps.get(2).unwrap().as_str().to_string(),
+                    );
+
+                    map.insert(
+                        "actions".to_string(),
+                        caps.get(3).unwrap().as_str().to_string(),
+                    );
+
+                    return Ok(WwwAuthTemp { params: map });
+                },
+                None => {},
+            }
         }
-        let keys = ["nextnonce", "argon", "scopes"];
-        if keys.iter().fold(true, |a, k| a && map.contains_key(&k.to_string()))
-        {
-            Ok(AuthInfoTemp { params: map })
-        } else {
-            Err(anyhow!("invalid auth-info"))
+
+        return Err(anyhow!("invalid auth-info"));
+    }
+
+    fn parse_auth_info(headers: &HeaderValues) -> Result<AuthInfoTemp>
+    {
+        for header in headers.iter() {
+            let items = header.as_str().trim().split(';');
+            let mut map = HashMap::new();
+            for i in items {
+                let kv: Vec<&str> = i.trim().splitn(2, "=").collect();
+                map.insert(kv[0].into(), kv[1].into());
+            }
+            let keys = ["nextnonce", "argon", "scopes"];
+            if keys
+                .iter()
+                .fold(true, |a, k| a && map.contains_key(&k.to_string()))
+            {
+                return Ok(AuthInfoTemp { params: map });
+            }
         }
+
+        Err(anyhow!("invalid auth-info"))
+    }
+
+    fn parse_asym_auth_info(headers: &HeaderValues) -> Result<AuthInfoTemp>
+    {
+        for header in headers.iter() {
+            let items = header.as_str().trim().split(';');
+            let mut map = HashMap::new();
+            for i in items {
+                let kv: Vec<&str> = i.trim().splitn(2, "=").collect();
+                map.insert(kv[0].into(), kv[1].into());
+            }
+            let keys = ["nextnonce", "blake3", "scopes"];
+            if keys
+                .iter()
+                .fold(true, |a, k| a && map.contains_key(&k.to_string()))
+            {
+                return Ok(AuthInfoTemp { params: map });
+            }
+        }
+
+        Err(anyhow!("invalid auth-info"))
     }
 
     async fn init_nonce(
@@ -365,7 +478,7 @@ mod requests
         let n64 = "U4L+xVHzX4qzBSDPv5NJMhB2HJuhkksmFqJe7geX+xA";
         let n = base64::decode_config(&n64, STANDARD_NO_PAD)?;
         let n64url = base64::encode_config(&n, URL_SAFE_NO_PAD);
-        let token = json!({"argon":TUNE,"allow":scopes});
+        let token = json!({"argon":TUNE,"allow":scopes,"blake3":255});
         let tstr = token.to_string();
         let tok_bytes = tstr.as_bytes();
         let _ = token_db.put(&n64url, tok_bytes).await?;
@@ -425,6 +538,146 @@ mod requests
     }
 
     #[async_std::test]
+    async fn blake3_authentication() -> Result<()>
+    {
+        // test www-authenticate
+        // test auth-info
+        // test scopes
+        // test nonce reuse
+
+        let (_, dbs) = setup_tmp_api().await?;
+
+        let state = State::new(dbs.objects.clone(), dbs.tokens.clone());
+        let mut foo = tide::with_state(state);
+        foo.at(":id")
+            .with(add_auth_info)
+            .with(signed_pow_auth)
+            .get(|_| async { Ok(Response::new(StatusCode::NoContent)) })
+            .put(|_| async { Ok(Response::new(StatusCode::NoContent)) });
+
+        let mut api = tide::new();
+        api.at("/foo").nest(foo);
+
+        let url = Url::parse("http://example.com/foo/bar")?;
+
+        // don't sign the initial request
+        let req0: Request = surf::get(url.to_string()).into();
+        let res0: Response =
+            api.respond(req0).await.map_err(|_| anyhow!("request0 failed"))?;
+
+        // process the www-authenticate header
+        let www_auth_header0 = res0
+            .header("www-authenticate")
+            .ok_or(anyhow!("expected www-authenticate header"))?;
+        let www_auth1 = parse_asym_www_auth(www_auth_header0)?;
+        let n64_1 = &www_auth1.params["nonce"];
+
+        // sign the request this time
+        let id = Id([0u8; ID_LENGTH]);
+
+
+        let mut req1: Request = surf::get(url.to_string()).into();
+        let blake_parts: Vec<&str> =
+            www_auth1.params["algorithm"].split("$").collect();
+
+        assert_eq!(blake_parts[0], "blake3");
+        let cost: u8 = blake_parts[1].parse().unwrap();
+
+        blake3_sign_req(&mut req1, &n64_1, cost, &id)?;
+        let res1: Response =
+            api.respond(req1).await.map_err(|_| anyhow!("request1 failed"))?;
+
+        assert_eq!(StatusCode::NoContent, res1.status());
+
+        // grab the nextnonce
+        let aih1 = res1
+            .header("authentication-info")
+            .ok_or(anyhow!("expected auth-info"))?;
+        let auth_info2 = parse_asym_auth_info(aih1)?;
+        let n64_2 = &auth_info2.params["nextnonce"];
+
+        let mut req2: Request = surf::put(url.to_string()).body("baz").into();
+        let cost2: u8 = auth_info2.params["blake3"].parse().unwrap();
+        blake3_sign_req(&mut req2, &n64_2, cost2, &id)?;
+
+        let mut res2: Response =
+            api.respond(req2).await.map_err(|_| anyhow!("request2 failed"))?;
+
+        assert_eq!(StatusCode::Unauthorized, res2.status());
+
+        let exp_body2 = r#"{"reason":"scope mismatch","action":"create"}"#;
+        let actual_body2 = res2
+            .take_body()
+            .into_bytes()
+            .await
+            .map_err(|_| anyhow!("body read failed"))?;
+        assert_eq!(exp_body2.as_bytes(), actual_body2);
+
+        // now use the correct scoped token
+        let www_auth_header2 = res2
+            .header("www-authenticate")
+            .ok_or(anyhow!("expected www-authenticate header"))?;
+        let www_auth3 = parse_asym_www_auth(www_auth_header2)?;
+        let n64_3 = &www_auth3.params["nonce"];
+
+        let mut req3: Request = surf::put(url.to_string()).body("baz").into();
+        let blake_parts3: Vec<&str> =
+            www_auth3.params["algorithm"].split("$").collect();
+
+        assert_eq!(blake_parts[0], "blake3");
+        let cost: u8 = blake_parts3[1].parse().unwrap();
+
+        blake3_sign_req(&mut req3, &n64_3, cost, &id)?;
+
+        let res3: Response =
+            api.respond(req3).await.map_err(|_| anyhow!("request3 failed"))?;
+
+        assert_eq!(StatusCode::NoContent, res3.status());
+
+        // try a create
+        let aih3 = res3
+            .header("authentication-info")
+            .ok_or(anyhow!("expected auth-info"))?;
+        let auth_info4 = parse_asym_auth_info(aih3)?;
+        // todo: turns out this happens to be the right scope. need to fix the
+        // auth layer so that it adds multiple auth-info headers with different
+        // scope options.
+        let n64_4 = &auth_info4.params["nextnonce"];
+        // todo: test for scope: create
+
+        // add some data so it's an update instead of a create
+        let _ = dbs.objects.put("bar", "data".as_bytes()).await?;
+
+        let mut req4: Request = surf::put(url.to_string()).body("qux").into();
+        let cost4: u8 = auth_info4.params["blake3"].parse().unwrap();
+        blake3_sign_req(&mut req4, &n64_4, cost4, &id)?;
+
+        let res4: Response =
+            api.respond(req4).await.map_err(|_| anyhow!("request4 failed"))?;
+
+        assert_eq!(StatusCode::NoContent, res4.status());
+
+        let mut req5: Request = surf::put(url.to_string()).body("qux").into();
+
+        blake3_sign_req(&mut req5, &n64_4, cost4, &id)?;
+
+        let mut res5: Response =
+            api.respond(req5).await.map_err(|_| anyhow!("request5 failed"))?;
+
+        assert_eq!(StatusCode::Unauthorized, res5.status());
+
+        let expected_body5 = r#"{"reason":"unknown nonce","action":"update"}"#;
+        let actual_body5 = res5
+            .take_body()
+            .into_bytes()
+            .await
+            .map_err(|_| anyhow!("body read failed"))?;
+        assert_eq!(expected_body5.as_bytes(), actual_body5);
+
+        Ok(())
+    }
+
+    #[async_std::test]
     async fn authentication() -> Result<()>
     {
         // test www-authenticate
@@ -456,7 +709,8 @@ mod requests
         let www_auth_header0 = res0
             .header("www-authenticate")
             .ok_or(anyhow!("expected www-authenticate header"))?;
-        let www_auth1 = parse_www_auth(www_auth_header0.last().as_str())?;
+
+        let www_auth1 = parse_www_auth(www_auth_header0)?;
         let n64_1 = &www_auth1.params["nonce"];
 
         // gen a salt
@@ -479,7 +733,7 @@ mod requests
         let aih1 = res1
             .header("authentication-info")
             .ok_or(anyhow!("expected auth-info"))?;
-        let auth_info2 = parse_auth_info(aih1.last().as_str())?;
+        let auth_info2 = parse_auth_info(aih1)?;
         let n64_2 = &auth_info2.params["nextnonce"];
 
         // try to use the nextnonce to create a reasource, it should fail
@@ -509,7 +763,7 @@ mod requests
         let www_auth_header2 = res2
             .header("www-authenticate")
             .ok_or(anyhow!("expected www-authenticate header"))?;
-        let www_auth3 = parse_www_auth(www_auth_header2.last().as_str())?;
+        let www_auth3 = parse_www_auth(www_auth_header2)?;
         let n64_3 = &www_auth3.params["nonce"];
 
         let mut salt3 = [0u8; 8];
@@ -530,7 +784,7 @@ mod requests
         let aih3 = res3
             .header("authentication-info")
             .ok_or(anyhow!("expected auth-info"))?;
-        let auth_info4 = parse_auth_info(aih3.last().as_str())?;
+        let auth_info4 = parse_auth_info(aih3)?;
         // todo: turns out this happens to be the right scope. need to fix the
         // auth layer so that it adds multiple auth-info headers with different
         // scope options.
@@ -605,7 +859,7 @@ mod requests
         let aih1 = res1
             .header("authentication-info")
             .ok_or(anyhow!("expected auth-info"))?;
-        let auth_info1 = parse_auth_info(aih1.last().as_str())?;
+        let auth_info1 = parse_auth_info(aih1)?;
         let n64_2 = &auth_info1.params["nextnonce"];
 
         // add the file so the next request will succeed
@@ -640,7 +894,7 @@ mod requests
         let aih3 = res2
             .header("authentication-info")
             .ok_or(anyhow!("expected auth-info"))?;
-        let auth_info3 = parse_auth_info(aih3.last().as_str())?;
+        let auth_info3 = parse_auth_info(aih3)?;
         let n64_3 = &auth_info3.params["nextnonce"];
 
         let mut salt3 = [0u8; 8];

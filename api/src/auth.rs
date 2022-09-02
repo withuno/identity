@@ -10,6 +10,8 @@ use crate::State;
 use std::result::Result;
 use tide::{Request, Response, StatusCode};
 
+use uno::verify_blake3_work;
+
 /// Returns Ok(orig req) if further processing of the request is authorized. If
 /// the request is not authorized an Err(res) is returned and the enclosed
 /// Response should be relayed to the client.
@@ -27,11 +29,15 @@ where
         Some(a) => {
             // Parse the header and retrieve the nonce token.
             let auth = parse_auth(a.last().as_str())?;
-            let raw_nonce = base64::decode(&auth.params["nonce"]).unwrap();
+            let raw_nonce =
+                base64::decode(&auth.params["nonce"]).map_err(|_| {
+                    return Response::builder(StatusCode::BadRequest)
+                        .body(r#"{"message": "invalid nonce encoding"}"#)
+                        .build();
+                })?;
             use base64::URL_SAFE_NO_PAD;
             let url_nonce = base64::encode_config(&raw_nonce, URL_SAFE_NO_PAD);
             let tok_req = req.state().tok.get(&url_nonce).await;
-
 
             req.set_ext(auth);
             match tok_req {
@@ -110,10 +116,13 @@ fn parse_auth(header: &str) -> Result<AuthTemp, Response>
 {
     let items = match header.strip_prefix("tuned-digest-signature") {
         Some(s) => s.trim().split(';'),
-        None => {
-            return Err(Response::builder(StatusCode::BadRequest)
-                .body(r#"{"message": "unrecognized auth scheme"}"#)
-                .build());
+        None => match header.strip_prefix("asym-tuned-digest-signature") {
+            Some(s) => s.trim().split(';'),
+            None => {
+                return Err(Response::builder(StatusCode::BadRequest)
+                    .body(r#"{"message": "unrecognized auth scheme"}"#)
+                    .build());
+            },
         },
     };
 
@@ -126,7 +135,7 @@ fn parse_auth(header: &str) -> Result<AuthTemp, Response>
         map.insert(kv[0].into(), kv[1].into());
     }
 
-    // require the following keys to have been privided by the client:
+    // require the following keys to have been provided by the client:
     let keys = ["identity", "nonce", "response", "signature"];
     if keys.iter().fold(true, |a, k| a && map.contains_key(&k.to_string())) {
         Ok(AuthTemp { params: map })
@@ -168,6 +177,11 @@ pub struct Token
     /// hash of some data minus the actual hash).
     ///
     pub argon: String,
+
+    /// Cost value for the client-based, blake3 proof of work.
+    /// The higher the cost, the easier the proof is to solve.
+    /// The cost value range is 0-255.
+    pub blake3: u8,
 }
 
 const NO_CREATE: [&str; 5] = ["read", "update", "delete", "debug", "proxy"];
@@ -267,49 +281,80 @@ where
     let auth = req.ext::<AuthTemp>().unwrap();
     let nonce = &auth.params["nonce"];
     let response = &auth.params["response"];
-    let method = req.method();
-    let path = req.url().path();
-    // TODO: figure out how to fix this ^
-    // print!("req: {:?}\n", &req);
-    // print!("host: {:?}\n", req.host());
-    // print!("url: {}\n", req.url());
-    // let foo = req.param("--tide-path-rest");
-    // print!("tide-path: {:?}\n", foo);
-    let bhash = blake3::hash(&body);
-    let bhashb = bhash.as_bytes();
-    let body_enc = base64::encode_config(bhashb, base64::STANDARD_NO_PAD);
-    let challenge = format!("{}:{}:{}:{}", nonce, method, path, body_enc);
-    // print!("challenge: {}\n", &challenge);
 
-    // The response contains both the salt and the hash so just cat them.
-    use argon2::{Argon2, PasswordHash, PasswordVerifier};
-    let enc_hash = format!("{}${}", token.argon, response);
-    // print!("enc_hash: {}\n", &enc_hash);
-
-    let hash = PasswordHash::new(&enc_hash).map_err(|_| {
-        Response::builder(StatusCode::BadRequest)
-            .body(r#"{"message": "bad request check salt$hash format"}"#)
-            .build()
-    })?;
-    let alg = Argon2::default();
-
-    // This works too:
-    // hash.verify_password(&[&alg], challenge.as_bytes())?;
-
-    use password_hash::Error;
-    match alg.verify_password(challenge.as_bytes(), &hash) {
-        Err(Error::Password) => {
-            return Ok(Err("challenge verification failed"));
-        },
-        Err(e) => {
-            // todo: make sure all these errors are okay to expose and do
-            // constitute an issue with the request as provided by the client.
+    if response.starts_with("blake3") {
+        let split: Vec<&str> = response.split('$').collect();
+        if split.len() != 3 || split[2] != nonce {
             let res: Response = Response::builder(StatusCode::BadRequest)
-                .body(format!(r#"{{"message": "{}"}}"#, e))
+                .body(r#"{"message": "malformed response field"}"#)
                 .into();
             return Err(res);
-        },
-        Ok(()) => {}, // success
+        }
+
+        let cost = token.blake3;
+        let proof: u32 = split[1].parse().map_err(|_| {
+            return Response::builder(StatusCode::BadRequest)
+                .body(r#"{"message": "proof must be an unsigned integer"}"#)
+                .build();
+        })?;
+
+        let method = req.method();
+        let path = req.url().path();
+        let bhash = blake3::hash(&body);
+        let bhashb = bhash.as_bytes();
+        let body_enc = base64::encode_config(bhashb, base64::STANDARD_NO_PAD);
+
+        let challenge = format!("{}:{}:{}:{}", nonce, method, path, body_enc);
+
+        if !verify_blake3_work(&challenge.as_bytes(), proof, cost) {
+            return Ok(Err("challenge verification failed"));
+        }
+    } else {
+        let method = req.method();
+        let path = req.url().path();
+        // TODO: figure out how to fix this ^
+        // print!("req: {:?}\n", &req);
+        // print!("host: {:?}\n", req.host());
+        // print!("url: {}\n", req.url());
+        // let foo = req.param("--tide-path-rest");
+        // print!("tide-path: {:?}\n", foo);
+        let bhash = blake3::hash(&body);
+        let bhashb = bhash.as_bytes();
+        let body_enc = base64::encode_config(bhashb, base64::STANDARD_NO_PAD);
+
+        let challenge = format!("{}:{}:{}:{}", nonce, method, path, body_enc);
+        // print!("challenge: {}\n", &challenge);
+
+        // The response contains both the salt and the hash so just cat them.
+        use argon2::{Argon2, PasswordHash, PasswordVerifier};
+        let enc_hash = format!("{}${}", token.argon, response);
+        // print!("enc_hash: {}\n", &enc_hash);
+
+        let hash = PasswordHash::new(&enc_hash).map_err(|_| {
+            Response::builder(StatusCode::BadRequest)
+                .body(r#"{"message": "bad request check salt$hash format"}"#)
+                .build()
+        })?;
+        let alg = Argon2::default();
+
+        // This works too:
+        // hash.verify_password(&[&alg], challenge.as_bytes())?;
+
+        use password_hash::Error;
+        match alg.verify_password(challenge.as_bytes(), &hash) {
+            Err(Error::Password) => {
+                return Ok(Err("challenge verification failed"));
+            },
+            Err(e) => {
+                // todo: make sure all these errors are okay to expose and do
+                // constitute an issue with the request as provided by the client.
+                let res: Response = Response::builder(StatusCode::BadRequest)
+                    .body(format!(r#"{{"message": "{}"}}"#, e))
+                    .into();
+                return Err(res);
+            },
+            Ok(()) => {}, // success
+        };
     };
 
     // 3.
@@ -352,15 +397,19 @@ where
         Err(s) => return Response::new(s),
     };
     let actions = vec![action.to_string()];
-    let auth = match gen_nonce(actions, req.state().tok.clone()).await {
+    let (auth, asym_auth) = match gen_nonce(actions, req.state().tok.clone())
+        .await
+    {
         Ok((nonce, token)) => {
+            use base64::STANDARD_NO_PAD;
+            let encoded_nonce = base64::encode_config(nonce, STANDARD_NO_PAD);
+
             let mut params = String::new();
             params.push_str("tuned-digest-signature");
             params.push(' ');
             params.push_str("nonce");
             params.push('=');
-            use base64::STANDARD_NO_PAD;
-            params.push_str(&base64::encode_config(nonce, STANDARD_NO_PAD));
+            params.push_str(&encoded_nonce);
             params.push(';');
             params.push_str("algorithm");
             params.push('=');
@@ -369,16 +418,36 @@ where
             params.push_str("actions");
             params.push('=');
             params.push_str(&token.allow.join(","));
-            params
+
+            let mut aparams = String::new();
+            aparams.push_str("asym-tuned-digest-signature");
+            aparams.push(' ');
+            aparams.push_str("nonce");
+            aparams.push('=');
+            aparams.push_str(&encoded_nonce);
+            aparams.push(';');
+            aparams.push_str("algorithm");
+            aparams.push_str("=blake3$");
+            aparams.push_str(&token.blake3.to_string());
+            aparams.push(';');
+            aparams.push_str("actions");
+            aparams.push('=');
+            aparams.push_str(&token.allow.join(","));
+
+            (params, aparams)
         },
         Err(_) => return Response::new(StatusCode::InternalServerError),
     };
 
     let body = format!(r#"{{"reason":"{}","action":"{}"}}"#, reason, action);
-    Response::builder(StatusCode::Unauthorized)
-        .header("WWW-Authenticate", auth)
+    let mut response = Response::builder(StatusCode::Unauthorized)
         .body(format!("{}", body))
-        .build()
+        .build();
+
+    response.append_header("WWW-Authenticate", auth);
+    response.append_header("WWW-Authenticate", asym_auth);
+
+    response
 }
 
 /// Add the Authentication-Info header to all responses that don't otherwise
@@ -403,6 +472,7 @@ where
             // and new tokens can't be saved.
             Err(_) => continue,
         };
+
         let mut info = String::new();
         info.push_str("nextnonce");
         info.push('=');
@@ -416,7 +486,23 @@ where
         info.push('=');
         info.push_str(&actions.join(","));
         response.insert_header("authentication-info", info);
+
+        let mut asym_info = String::new();
+        asym_info.push_str("nextnonce");
+        asym_info.push('=');
+        asym_info
+            .push_str(&base64::encode_config(&nonce, base64::STANDARD_NO_PAD));
+        asym_info.push(';');
+        asym_info.push_str("blake3");
+        asym_info.push('=');
+        asym_info.push_str(&token.blake3.to_string());
+        asym_info.push(';');
+        asym_info.push_str("scopes");
+        asym_info.push('=');
+        asym_info.push_str(&actions.join(","));
+        response.append_header("authentication-info", asym_info);
     }
+
     return response;
 }
 
@@ -441,6 +527,11 @@ where
 const CREATE_PARAMS: &str = "$argon2d$v=19$m=262144,t=5,p=8";
 const ACCESS_PARAMS: &str = "$argon2d$v=19$m=65536,t=3,p=8";
 
+// The lower the cost, the easier the proof is to solve.
+const BLAKE3_CREATE_COST: u8 = 1;
+// access should be free since we already verify the requests identity.
+const BLAKE3_ACCESS_COST: u8 = 1;
+
 use crate::store::Database;
 
 /// Generate a nonce, store the token in the database, and return a base64 url
@@ -453,16 +544,40 @@ async fn gen_nonce<T>(
 where
     T: Database + 'static,
 {
-    let mut nonce = [0u8; 32];
     use rand::RngCore;
+
+    let mut nonce = [0u8; 32];
     rand::thread_rng().fill_bytes(&mut nonce);
+
     let id = base64::encode_config(nonce, base64::URL_SAFE_NO_PAD);
     let params = match actions.contains(&"create".to_string()) {
         true => CREATE_PARAMS,
         false => ACCESS_PARAMS,
     };
-    let token = Token { allow: actions, argon: params.to_string() };
+
+    let blake3_cost = match actions.contains(&"create".to_string()) {
+        true => BLAKE3_CREATE_COST,
+        false => BLAKE3_ACCESS_COST,
+    };
+
+    let token = Token {
+        allow: actions,
+        blake3: blake3_cost,
+        argon: params.to_string(),
+    };
+
     let data = serde_json::to_string(&token)?;
     let _ = token_db.put(&id, data.as_bytes()).await?;
+
     Ok((nonce, token))
 }
+
+//#[cfg(test)]
+//mod tests
+//{
+//    use super::*;
+//
+//    //#[async_std::test]
+//    //#[test]
+//    //
+//}

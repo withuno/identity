@@ -297,6 +297,38 @@ pub fn decrypt(
     Ok(djb::decrypt(key, data, ctx.as_bytes())?)
 }
 
+pub fn prove_blake3_work(challenge: &[u8], cost: u8) -> Option<u32>
+{
+    let maxn: u32 = u32::MAX - 1;
+    let mut n: u32 = 0;
+    while n < maxn {
+        if verify_blake3_work(challenge, n, cost) {
+            return Some(n);
+        }
+
+        n += 1;
+    }
+
+    None
+}
+
+pub fn verify_blake3_work(challenge: &[u8], proof: u32, cost: u8) -> bool
+{
+    let mut hash = blake3::Hasher::new();
+    hash.update(&challenge);
+    hash.update(&proof.to_le_bytes());
+
+    let digest = hash.finalize().as_bytes().to_vec();
+
+    let u32value =
+        u32::from_be_bytes([digest[0], digest[1], digest[2], digest[3]]);
+    if (u32value >> (32 - cost)) == 0 {
+        return true;
+    }
+
+    false
+}
+
 #[cfg(test)]
 mod unit
 {
@@ -366,5 +398,19 @@ mod unit
         assert_eq!(expected, actual.as_slice());
 
         Ok(())
+    }
+
+    #[test]
+    fn blake3_proof()
+    {
+        let random_bytes = b"12345678901234567890123456789012";
+        let cost = 2; // make it easy
+
+        let proof = prove_blake3_work(random_bytes, cost);
+        assert!(proof.is_some());
+
+        assert!(verify_blake3_work(random_bytes, proof.unwrap(), cost));
+        // some other proof will fail
+        assert!(!verify_blake3_work(random_bytes, 0, cost));
     }
 }

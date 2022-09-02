@@ -12,6 +12,7 @@ use argon2::{Algorithm, Argon2, Params, Version};
 
 use wasm_bindgen::prelude::*;
 
+use uno::prove_blake3_work;
 use uno::Signer;
 
 #[derive(Debug)]
@@ -105,6 +106,27 @@ pub fn wasm_auth_header(
             Some(format!("{}${}", salthash, hash))
         },
         Err(_) => None,
+    }
+}
+
+#[wasm_bindgen]
+pub fn wasm_async_auth_header(
+    nonce: String,
+    method: String,
+    resource: String,
+    cost: u8,
+    body: &[u8],
+) -> Option<String>
+{
+    let body_hash = blake3::hash(body);
+    let body_enc =
+        base64::encode_config(body_hash.as_bytes(), base64::STANDARD_NO_PAD);
+
+    let challenge = format!("{}:{}:{}:{}", nonce, method, resource, body_enc);
+
+    match prove_blake3_work(&challenge.as_bytes(), cost) {
+        Some(n) => Some(format!("blake3${}${}", n, nonce,)),
+        None => None,
     }
 }
 
