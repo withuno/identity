@@ -130,6 +130,95 @@ pub fn wasm_async_auth_header(
     }
 }
 
+pub fn share_seed(
+    seed_to_share: &[u8],
+    mu_seed: &[u8],
+) -> Result<Vec<u8>, Error>
+{
+    let id_to_share = match uno::Id::try_from(seed_to_share) {
+        Ok(v) => v,
+        Err(e) => return Err(Error::Fatal(e.to_string())),
+    };
+
+    let mu = match uno::Mu::try_from(mu_seed) {
+        Ok(v) => v,
+        Err(e) => return Err(Error::Fatal(e.to_string())),
+    };
+
+    let split = match uno::split(id_to_share, &[(1, 1)]) {
+        Ok(v) => v,
+        Err(e) => return Err(Error::Fatal(e.to_string())),
+    };
+
+    let group = &split[0];
+    let share = &group.member_shares[0];
+
+    let mnemonic = match share.to_mnemonic() {
+        Ok(v) => v,
+        Err(e) => return Err(Error::Fatal(e.to_string())),
+    };
+
+    let view = mnemonic.join(" ");
+
+    let key = uno::SymmetricKey::from(&mu);
+    let ctx = uno::Binding::Combine;
+
+    match uno::encrypt(ctx, key, view.as_bytes()) {
+        Ok(v) => Ok(v),
+        Err(e) => return Err(Error::Fatal(e.to_string())),
+    }
+}
+
+// session_seed is a string because thats the output of _generate_session_id
+#[wasm_bindgen]
+pub fn wasm_share_seed(seed_to_share: &[u8], mu_seed: String)
+-> Option<String>
+{
+    let decoded_mu_seed = match base64::decode(mu_seed) {
+        Ok(v) => v,
+        Err(_) => return None,
+    };
+
+    match share_seed(seed_to_share, &decoded_mu_seed) {
+        Ok(v) => Some(base64::encode(v)),
+        Err(_) => return None,
+    }
+}
+
+pub fn decrypt_share(
+    share: &[u8],
+    seed: &[u8],
+) -> Result<[u8; uno::ID_LENGTH], Error>
+{
+    let id = match uno::Mu::try_from(&seed[..]) {
+        Ok(v) => v,
+        Err(e) => return Err(Error::Fatal(e.to_string())),
+    };
+
+    let key = uno::SymmetricKey::from(&id);
+    let ctx = uno::Binding::Combine;
+
+    let decrypted_share = match uno::decrypt(ctx, key, &share) {
+        Ok(v) => v,
+        Err(e) => return Err(Error::Fatal(e.to_string())),
+    };
+
+    let string_share = match String::from_utf8(decrypted_share) {
+        Ok(v) => v,
+        Err(e) => return Err(Error::Fatal(e.to_string())),
+    };
+
+    let words: Vec<String> =
+        string_share.split(' ').map(|s| s.to_owned()).collect();
+
+    let shares = vec![words];
+
+    match uno::combine(&shares) {
+        Ok(v) => Ok(v.0),
+        Err(e) => Err(Error::Fatal(e.to_string())),
+    }
+}
+
 #[wasm_bindgen]
 pub fn wasm_decrypt_share(share: String, seed: String) -> Option<String>
 {
@@ -143,30 +232,8 @@ pub fn wasm_decrypt_share(share: String, seed: String) -> Option<String>
         Err(_) => return None,
     };
 
-    let id = match uno::Mu::try_from(&decoded_seed[..]) {
-        Ok(v) => v,
-        Err(_) => return None,
-    };
-
-    let key = uno::SymmetricKey::from(&id);
-    let ctx = uno::Binding::Combine;
-
-    let decrypted_share = match uno::decrypt(ctx, key, &decoded_share) {
-        Ok(v) => v,
-        Err(_) => return None,
-    };
-
-    let string_share = match String::from_utf8(decrypted_share) {
-        Ok(v) => v,
-        Err(_) => return None,
-    };
-
-    let words: Vec<String> =
-        string_share.split(' ').map(|s| s.to_owned()).collect();
-
-    let shares = vec![words];
-    match uno::combine(&shares) {
-        Ok(v) => Some(base64::encode(v.0)),
+    match decrypt_share(&decoded_share, &decoded_seed) {
+        Ok(v) => Some(base64::encode(v)),
         Err(_) => None,
     }
 }
@@ -249,6 +316,16 @@ pub fn wasm_decrypt_vault(vault: &[u8], seed: String) -> Option<String>
     }
 }
 
+pub fn generate_session_id(seed: &[u8]) -> Result<Vec<u8>, Error>
+{
+    let salt = b"uno recovery session id";
+
+    match argon_hash(32, 256, 2, salt, seed) {
+        Ok(v) => Ok(v),
+        Err(e) => Err(e)
+    }
+}
+
 #[wasm_bindgen]
 pub fn wasm_generate_session_id(seed: String) -> Option<String>
 {
@@ -259,9 +336,7 @@ pub fn wasm_generate_session_id(seed: String) -> Option<String>
         Err(_) => return None,
     };
 
-    let salt = b"uno recovery session id";
-
-    match argon_hash(32, 256, 2, salt, &decoded_seed) {
+    match generate_session_id(&decoded_seed) {
         Ok(v) => Some(base64::encode_config(v, base64::URL_SAFE_NO_PAD)),
         Err(_) => None,
     }
