@@ -322,7 +322,7 @@ pub fn generate_session_id(seed: &[u8]) -> Result<Vec<u8>, Error>
 
     match argon_hash(32, 256, 2, salt, seed) {
         Ok(v) => Ok(v),
-        Err(e) => Err(e)
+        Err(e) => Err(e),
     }
 }
 
