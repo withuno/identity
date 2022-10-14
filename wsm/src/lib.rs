@@ -171,15 +171,20 @@ pub fn share_seed(
 
 // session_seed is a string because thats the output of _generate_session_id
 #[wasm_bindgen]
-pub fn wasm_share_seed(seed_to_share: &[u8], mu_seed: String)
+pub fn wasm_share_seed(seed_to_share: String, mu_seed: String)
 -> Option<String>
 {
+    let decoded_seed_to_share = match base64::decode(seed_to_share) {
+        Ok(v) => v,
+        Err(_) => return None,
+    };
+
     let decoded_mu_seed = match base64::decode(mu_seed) {
         Ok(v) => v,
         Err(_) => return None,
     };
 
-    match share_seed(seed_to_share, &decoded_mu_seed) {
+    match share_seed(&decoded_seed_to_share, &decoded_mu_seed) {
         Ok(v) => Some(base64::encode(v)),
         Err(_) => return None,
     }
