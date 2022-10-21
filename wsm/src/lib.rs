@@ -132,15 +132,9 @@ pub fn wasm_async_auth_header(
 
 pub fn share_seed(
     seed_to_share: &[u8],
-    mu_seed: &[u8],
-) -> Result<Vec<u8>, Error>
+) -> Result<String, Error>
 {
     let id_to_share = match uno::Id::try_from(seed_to_share) {
-        Ok(v) => v,
-        Err(e) => return Err(Error::Fatal(e.to_string())),
-    };
-
-    let mu = match uno::Mu::try_from(mu_seed) {
         Ok(v) => v,
         Err(e) => return Err(Error::Fatal(e.to_string())),
     };
@@ -158,20 +152,12 @@ pub fn share_seed(
         Err(e) => return Err(Error::Fatal(e.to_string())),
     };
 
-    let view = mnemonic.join(" ");
-
-    let key = uno::SymmetricKey::from(&mu);
-    let ctx = uno::Binding::Combine;
-
-    match uno::encrypt(ctx, key, view.as_bytes()) {
-        Ok(v) => Ok(v),
-        Err(e) => return Err(Error::Fatal(e.to_string())),
-    }
+    Ok(mnemonic.join(" "))
 }
 
 // session_seed is a string because thats the output of _generate_session_id
 #[wasm_bindgen]
-pub fn wasm_share_seed(seed_to_share: String, mu_seed: String)
+pub fn wasm_share_seed(seed_to_share: String)
 -> Option<String>
 {
     let decoded_seed_to_share = match base64::decode(seed_to_share) {
@@ -179,13 +165,8 @@ pub fn wasm_share_seed(seed_to_share: String, mu_seed: String)
         Err(_) => return None,
     };
 
-    let decoded_mu_seed = match base64::decode(mu_seed) {
-        Ok(v) => v,
-        Err(_) => return None,
-    };
-
-    match share_seed(&decoded_seed_to_share, &decoded_mu_seed) {
-        Ok(v) => Some(base64::encode(v)),
+    match share_seed(&decoded_seed_to_share) {
+        Ok(v) => Some(v),
         Err(_) => return None,
     }
 }

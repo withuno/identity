@@ -20,11 +20,11 @@ fn test_share_recover_seed()
     for _ in 1..100 {
         rng.fill(&mut seed_to_share);
 
-        let mu_seed: [u8; 10] = [0; 10];
+        let share = share_seed(&seed_to_share).unwrap();
 
-        let share = share_seed(&seed_to_share, &mu_seed).unwrap();
-
-        assert_eq!(decrypt_share(&share, &mu_seed).unwrap(), seed_to_share);
+        let words: Vec<String> =
+            share.split(' ').map(|s| s.to_owned()).collect();
+        assert_eq!(uno::combine(&[words]).unwrap().0.to_vec(), seed_to_share.to_vec());
     }
 }
 
