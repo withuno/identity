@@ -798,6 +798,7 @@ pub fn build_routes<T>(
     session_db: T,
     mailbox_db: T,
     share_db: T,
+    verify_db: T,
 ) -> anyhow::Result<tide::Server<()>>
 where
     T: Database + 'static,

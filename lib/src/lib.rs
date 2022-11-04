@@ -39,6 +39,26 @@ pub struct MagicShare
     pub encrypted_credential: String,
 }
 
+#[derive(Serialize, Deserialize)]
+pub enum VerifyMethod
+{
+    Phone(String),
+    Email(String),
+}
+
+#[derive(Serialize, Deserialize)]
+pub enum VerifyToken
+{
+    Unverified
+    {
+        id: Id, secret: Mu, expires_at: DateTime<Utc>
+    },
+    Verified
+    {
+        id: Id, method: VerifyMethod
+    },
+}
+
 use std::convert::TryFrom;
 use std::str;
 

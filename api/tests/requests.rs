@@ -61,6 +61,7 @@ mod requests
         mailboxes: T,
         objects: T,
         shares: T,
+        verify: T,
     }
 
     #[cfg(not(feature = "s3"))]
@@ -78,6 +79,7 @@ mod requests
             sessions: FileStore::new(dir.path(), "sess", "v0").await?,
             mailboxes: FileStore::new(dir.path(), "mbxs", "v0").await?,
             shares: FileStore::new(dir.path(), "shrs", "v0").await?,
+            verify: FileStore::new(dir.path(), "vdb", "v0").await?,
         };
         // we don't include objects db here because its only used in tests
         // todo: I don't understand this comment ^
@@ -88,6 +90,7 @@ mod requests
             dbs.sessions.clone(),
             dbs.mailboxes.clone(),
             dbs.shares.clone(),
+            dbs.verify.clone(),
         )?;
         Ok((api, dbs))
     }
