@@ -782,16 +782,6 @@ pub fn build_routes<T>(
 where
     T: Database + 'static,
 {
-    // XXX: this is used in the development environment and not anywhere else.
-    use http_types::headers::HeaderValue;
-    use tide::security::{CorsMiddleware, Origin};
-
-    let cors = CorsMiddleware::new()
-        .allow_methods("GET, POST, OPTIONS".parse::<HeaderValue>().unwrap())
-        .allow_origin(Origin::from("*"))
-        .allow_credentials(false);
-    // XXX: end development environment.
-
     let mut api = tide::new();
     api.at("health").get(health);
 
@@ -875,7 +865,6 @@ where
             tide::with_state(State::new(share_db.clone(), token_db.clone()));
         shares
             .at(":id")
-            .with(cors)
             .with(ensure_share_id)
             .get(fetch_share)
             .post(store_share);
