@@ -888,7 +888,13 @@ where
         let mut verify_tokens =
             tide::with_state(State::new(verify_db.clone(), token_db.clone()));
         verify_tokens
-            .at("
+            .at(":id")
+            .with(add_auth_info)
+            .with(signed_pow_auth)
+            .with(ensure_vault_id)
+            .post(create_verification_token)
+            .put(verify_verification_token);
+        api.at("verify").nest(verify_tokens);
     }
 
     Ok(api)
