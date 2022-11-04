@@ -12,6 +12,7 @@ use std::fmt::{Debug, Display};
 pub mod store;
 pub use store::Database;
 
+pub mod verify_token;
 pub mod magic_share;
 pub mod mailbox;
 
@@ -321,6 +322,9 @@ where
 {
     let db = &req.state().db;
     let id = &req.ext::<VaultId>().unwrap().0;
+
+    let v = verify_token::create(db, id)?;
+
     Ok(StatusCode::Created)
 }
 

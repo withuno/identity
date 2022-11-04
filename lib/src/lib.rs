@@ -49,13 +49,15 @@ pub enum VerifyMethod
 #[derive(Serialize, Deserialize)]
 pub enum VerifyToken
 {
+    /// id and secret are base64 (no url, padding enabled)
+    /// strings of type Id and Mu respectively.
     Unverified
     {
-        id: Id, secret: Mu, expires_at: DateTime<Utc>
+        id: String, secret: String, expires_at: DateTime<Utc>
     },
     Verified
     {
-        id: Id, method: VerifyMethod
+        id: String, method: VerifyMethod
     },
 }
 
