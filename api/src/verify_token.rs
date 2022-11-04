@@ -7,12 +7,9 @@
 
 pub use crate::store::Database;
 
-use uno::VerifyToken;
+use uno::{UnverifiedToken, VerifedToken};
 
-pub async fn create(
-    db: &impl Database,
-    id: String,
-) -> Result<VerifyToken>
+pub async fn create(db: &impl Database, id: String) -> Result<UnverifiedToken>
 {
 }
 
@@ -20,7 +17,7 @@ pub async fn verify(
     db: &impl Database,
     id: String,
     secret: String,
-) -> Result<VerifyToken>
+) -> Result<VerifiedToken>
 {
 }
 

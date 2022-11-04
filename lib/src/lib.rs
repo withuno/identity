@@ -46,19 +46,22 @@ pub enum VerifyMethod
     Email(String),
 }
 
+/// id and secret are base64 (no url, padding enabled)
+/// strings of type Id and Mu respectively.
 #[derive(Serialize, Deserialize)]
-pub enum VerifyToken
+pub struct VerifedToken
 {
-    /// id and secret are base64 (no url, padding enabled)
-    /// strings of type Id and Mu respectively.
-    Unverified
-    {
-        id: String, secret: String, expires_at: DateTime<Utc>
-    },
-    Verified
-    {
-        id: String, method: VerifyMethod
-    },
+    id: String,
+    method: VerifyMethod,
+}
+
+/// id and secret are base64 (no url, padding enabled)
+/// strings of type Id and Mu respectively.
+pub struct UnverifiedToken
+{
+    id: String,
+    secret: String,
+    expires_at: DateTime<Utc>,
 }
 
 use std::convert::TryFrom;
