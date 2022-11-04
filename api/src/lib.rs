@@ -871,6 +871,7 @@ where
     }
 
     {
+        // Magic shares
         let mut shares =
             tide::with_state(State::new(share_db.clone(), token_db.clone()));
         shares
@@ -880,6 +881,14 @@ where
             .get(fetch_share)
             .post(store_share);
         api.at("shares").nest(shares);
+    }
+
+    {
+        // Verification tokens
+        let mut verify_tokens =
+            tide::with_state(State::new(verify_db.clone(), token_db.clone()));
+        verify_tokens
+            .at("
     }
 
     Ok(api)
