@@ -304,6 +304,26 @@ where
     Ok(StatusCode::Created)
 }
 
+async fn verify_verification_token<T>(
+    mut req: Request<State<T>>,
+) -> Result<StatusCode>
+where
+    T: Database,
+{
+    Ok(StatusCode::Ok)
+}
+
+async fn create_verification_token<T>(
+    mut req: Request<State<T>>,
+) -> Result<StatusCode>
+where
+    T: Database,
+{
+    let db = &req.state().db;
+    let id = &req.ext::<VaultId>().unwrap().0;
+    Ok(StatusCode::Created)
+}
+
 // Make sure the vault in the url matches the public key that generated the
 // signature on the request. Requires VaultId middleware. Returns status 403
 // forbidden if there is a mismatch.
