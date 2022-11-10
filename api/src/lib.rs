@@ -30,6 +30,8 @@ use serde_derive::Deserialize;
 use serde_derive::Serialize;
 use serde_json::Value;
 
+use chrono::{Duration, Utc};
+
 use http_types::Method;
 use tide::{Body, Error, Next, Request, Response, Result, StatusCode};
 
@@ -315,17 +317,29 @@ where
 }
 
 async fn create_verification_token<T>(
-    req: Request<State<T>>,
+    mut req: Request<State<T>>,
 ) -> Result<StatusCode>
 where
     T: Database,
 {
+    #[derive(Deserialize)]
+    struct VerifyBody
+    {
+        email: String,
+    };
+
+    let body: VerifyBody = req.body_json().await.map_err(server_err)?;
+
     let db = &req.state().db;
     let id = &req.ext::<VaultId>().unwrap().0;
 
-    // let v = verify_token::create(db, id)?;
-    // broadcast v to email or phone...
-    // verify_token::create(db, id)?;
+    let unverified =
+        verify_token::create(db, id, Utc::now() + Duration::hours(24))
+            .await
+            .unwrap();
+
+
+    // email secret ...
 
     Ok(StatusCode::Created)
 }
