@@ -69,6 +69,9 @@ enum SubCommand
     Share(Share),
 
     #[clap(display_order = 80)]
+    VerifyToken(VerifyToken),
+
+    #[clap(display_order = 80)]
     Session(Session),
 
     #[clap(display_order = 80)]
@@ -510,6 +513,110 @@ fn do_session(_: Context, c: Session) -> Result<String>
     let mu = mu_from_b64(c.mu)?;
     let sid = uno::Session::try_from(mu)?;
     Ok(base64::encode_config(&sid.0, base64::URL_SAFE_NO_PAD))
+}
+
+#[derive(Parser)]
+struct VerifyToken
+{
+    #[clap(subcommand)]
+    subcmd: VerifyTokenCmd,
+    #[clap(flatten)]
+    opts: VerifyTokenOpts,
+}
+
+#[derive(Parser)]
+struct VerifyTokenOpts
+{
+    #[clap(long, value_name = "endpoint", display_order = 1)]
+    url: Option<String>,
+}
+
+#[derive(Parser)]
+enum VerifyTokenCmd
+{
+    #[clap(display_order = 1)]
+    Create(VerifyTokenCreate),
+
+    #[clap(display_order = 2)]
+    Verify(VerifyTokenVerify),
+}
+
+fn do_verify_token(ctx: Context, h: VerifyToken) -> Result<String>
+{
+    match h.subcmd {
+        VerifyTokenCmd::Create(t) => do_verify_token_create(ctx, h.opts, t),
+        VerifyTokenCmd::Verify(t) => do_verify_token_verify(ctx, h.opts, t),
+    }
+}
+
+#[derive(Parser)]
+struct VerifyTokenCreate
+{
+    #[clap(
+        long,
+        value_name = "expire_seconds",
+        display_order = 1,
+        default_value = "86400"
+    )]
+    expire_seconds: String,
+
+    /// Identity seed to use. If specified, supersedes the configured value.
+    #[clap(long, value_name = "b64", display_order = 1)]
+    seed: Option<String>,
+}
+
+fn do_verify_token_create(
+    ctx: Context,
+    opt: VerifyTokenOpts,
+    c: VerifyTokenCreate,
+) -> Result<String>
+{
+    let cfg = load_conf(&ctx)?;
+    let url = opt.url.as_ref().unwrap_or(&cfg.api_host);
+
+    let id = match c.seed {
+        Some(s) => id_from_b64(s)?,
+        None => cli::load_seed(&cfg)?,
+    };
+
+    let v = cli::create_verify_token(url, id, &c.expire_seconds)
+        .context("cannot create verify token")?;
+
+    Ok(v)
+}
+
+#[derive(Parser)]
+struct VerifyTokenVerify
+{
+    #[clap(long, value_name = "secret", display_order = 1)]
+    secret: String,
+
+    #[clap(long, value_name = "email", display_order = 2)]
+    email: String,
+
+    /// Identity seed to use. If specified, supersedes the configured value.
+    #[clap(long, value_name = "b64", display_order = 2)]
+    seed: Option<String>,
+}
+
+fn do_verify_token_verify(
+    ctx: Context,
+    opt: VerifyTokenOpts,
+    v: VerifyTokenVerify,
+) -> Result<String>
+{
+    let cfg = load_conf(&ctx)?;
+    let url = opt.url.as_ref().unwrap_or(&cfg.api_host);
+
+    let id = match v.seed {
+        Some(s) => id_from_b64(s)?,
+        None => cli::load_seed(&cfg)?,
+    };
+
+    let c = cli::verify_verify_token(url, id, &v.secret, &v.email)
+        .context("cannot verify verify token")?;
+
+    Ok(c)
 }
 
 #[derive(Parser)]

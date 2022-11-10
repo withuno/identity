@@ -14,7 +14,10 @@ pub use store::Database;
 
 pub mod magic_share;
 pub mod mailbox;
+
 pub mod verify_token;
+
+use uno::VerifyMethod;
 
 use anyhow::bail;
 
@@ -313,6 +316,27 @@ async fn verify_verification_token<T>(
 where
     T: Database,
 {
+    #[derive(Deserialize)]
+    struct VerifyVerifyBody
+    {
+        secret: String,
+        email: String,
+    }
+
+    let body: VerifyVerifyBody = req.body_json().await.map_err(server_err)?;
+
+    let db = &req.state().db;
+    let id = &req.ext::<VaultId>().unwrap().0;
+
+    verify_token::verify(
+        db,
+        id,
+        &body.secret,
+        VerifyMethod::Email(body.email),
+    )
+    .await
+    .map_err(server_err)?;
+
     Ok(StatusCode::Ok)
 }
 
@@ -323,12 +347,12 @@ where
     T: Database,
 {
     #[derive(Deserialize)]
-    struct VerifyBody
+    struct VerifyCreateBody
     {
         email: String,
-    };
+    }
 
-    let body: VerifyBody = req.body_json().await.map_err(server_err)?;
+    let body: VerifyCreateBody = req.body_json().await.map_err(server_err)?;
 
     let db = &req.state().db;
     let id = &req.ext::<VaultId>().unwrap().0;
