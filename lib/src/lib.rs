@@ -40,28 +40,26 @@ pub struct MagicShare
 }
 
 #[derive(Serialize, Deserialize)]
+#[derive(Clone)]
 pub enum VerifyMethod
 {
     Phone(String),
     Email(String),
 }
 
-/// id and secret are base64 (no url, padding enabled)
-/// strings of type Id and Mu respectively.
 #[derive(Serialize, Deserialize)]
-pub struct VerifedToken
+pub struct VerifiedToken
 {
-    id: String,
-    method: VerifyMethod,
+    pub schema_version: u64,
+    pub method: VerifyMethod,
 }
 
-/// id and secret are base64 (no url, padding enabled)
-/// strings of type Id and Mu respectively.
+#[derive(Serialize, Deserialize)]
 pub struct UnverifiedToken
 {
-    id: String,
-    secret: String,
-    expires_at: DateTime<Utc>,
+    pub schema_version: u64,
+    pub secret: String, // Mu, regular base64 encoded with padding
+    pub expires_at: DateTime<Utc>,
 }
 
 use std::convert::TryFrom;

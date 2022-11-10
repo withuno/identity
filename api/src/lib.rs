@@ -12,9 +12,9 @@ use std::fmt::{Debug, Display};
 pub mod store;
 pub use store::Database;
 
-pub mod verify_token;
 pub mod magic_share;
 pub mod mailbox;
+pub mod verify_token;
 
 use anyhow::bail;
 
@@ -315,7 +315,7 @@ where
 }
 
 async fn create_verification_token<T>(
-    mut req: Request<State<T>>,
+    req: Request<State<T>>,
 ) -> Result<StatusCode>
 where
     T: Database,
@@ -323,7 +323,9 @@ where
     let db = &req.state().db;
     let id = &req.ext::<VaultId>().unwrap().0;
 
-    let v = verify_token::create(db, id)?;
+    // let v = verify_token::create(db, id)?;
+    // broadcast v to email or phone...
+    // verify_token::create(db, id)?;
 
     Ok(StatusCode::Created)
 }
