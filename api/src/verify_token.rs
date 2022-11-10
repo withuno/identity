@@ -191,7 +191,8 @@ mod tests
             },
         }
 
-        verify(&db, keypair.public, &u.secret, email).await.unwrap();
+        let v = verify(&db, keypair.public, &u.secret, email).await.unwrap();
+        assert_eq!(v.method, VerifyMethod::Email("user@uno.app".to_string()));
 
         match create(&db, keypair.public, Utc::now() + Duration::days(1)).await
         {

@@ -40,7 +40,7 @@ pub struct MagicShare
 }
 
 #[derive(Serialize, Deserialize)]
-#[derive(Clone)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum VerifyMethod
 {
     Phone(String),
