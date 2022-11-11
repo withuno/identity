@@ -552,13 +552,8 @@ fn do_verify_token(ctx: Context, h: VerifyToken) -> Result<String>
 #[derive(Parser)]
 struct VerifyTokenCreate
 {
-    #[clap(
-        long,
-        value_name = "expire_seconds",
-        display_order = 1,
-        default_value = "86400"
-    )]
-    expire_seconds: String,
+    #[clap(long, value_name = "email", display_order = 1)]
+    email: Option<String>,
 
     /// Identity seed to use. If specified, supersedes the configured value.
     #[clap(long, value_name = "b64", display_order = 1)]
@@ -579,7 +574,7 @@ fn do_verify_token_create(
         None => cli::load_seed(&cfg)?,
     };
 
-    let v = cli::create_verify_token(url, id, &c.expire_seconds)
+    let v = cli::create_verify_token(url, id, c.email)
         .context("cannot create verify token")?;
 
     Ok(v)
@@ -590,9 +585,6 @@ struct VerifyTokenVerify
 {
     #[clap(long, value_name = "secret", display_order = 1)]
     secret: String,
-
-    #[clap(long, value_name = "email", display_order = 2)]
-    email: String,
 
     /// Identity seed to use. If specified, supersedes the configured value.
     #[clap(long, value_name = "b64", display_order = 2)]
@@ -613,7 +605,7 @@ fn do_verify_token_verify(
         None => cli::load_seed(&cfg)?,
     };
 
-    let c = cli::verify_verify_token(url, id, &v.secret, &v.email)
+    let c = cli::verify_verify_token(url, id, v.secret)
         .context("cannot verify verify token")?;
 
     Ok(c)
@@ -991,6 +983,7 @@ fn main() -> Result<()>
         SubCommand::Ssss(cmd) => do_ssss(ctx, cmd),
         SubCommand::Share(cmd) => do_share(ctx, cmd),
         SubCommand::S39(cmd) => do_s39(ctx, cmd),
+        SubCommand::VerifyToken(cmd) => do_verify_token(ctx, cmd),
     }?;
 
     println!("{}", out);

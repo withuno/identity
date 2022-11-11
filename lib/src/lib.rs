@@ -45,6 +45,7 @@ pub enum VerifyMethod
 {
     Phone(String),
     Email(String),
+    Cli,
 }
 
 #[derive(Serialize, Deserialize)]

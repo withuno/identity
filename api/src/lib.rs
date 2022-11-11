@@ -328,14 +328,9 @@ where
     let db = &req.state().db;
     let id = &req.ext::<VaultId>().unwrap().0;
 
-    verify_token::verify(
-        db,
-        id,
-        &body.secret,
-        VerifyMethod::Email(body.email),
-    )
-    .await
-    .map_err(server_err)?;
+    verify_token::verify(db, id, &body.secret, VerifyMethod::Email(body.email))
+        .await
+        .map_err(server_err)?;
 
     Ok(StatusCode::Ok)
 }
@@ -349,7 +344,7 @@ where
     #[derive(Deserialize)]
     struct VerifyCreateBody
     {
-        email: String,
+        email: Option<String>,
     }
 
     let body: VerifyCreateBody = req.body_json().await.map_err(server_err)?;
@@ -363,7 +358,9 @@ where
             .unwrap();
 
 
-    // email secret ...
+    if let email = Some(body.email) {
+        // send email
+    }
 
     Ok(StatusCode::Created)
 }
@@ -948,7 +945,7 @@ where
             .with(ensure_vault_id)
             .post(create_verification_token)
             .put(verify_verification_token);
-        api.at("verify").nest(verify_tokens);
+        api.at("verify_tokens").nest(verify_tokens);
     }
 
     Ok(api)

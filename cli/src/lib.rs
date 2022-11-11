@@ -323,6 +323,65 @@ pub fn post_share(
     ))
 }
 
+pub fn create_verify_token(
+    host: &str,
+    id: uno::Id,
+    email: Option<String>,
+) -> Result<String>
+{
+    let keypair = uno::KeyPair::from(id);
+    let url = verify_token_url_from_public_key(host, &keypair.public)?;
+
+    #[derive(Serialize)]
+    struct VerifyCreateBody
+    {
+        email: Option<String>,
+    }
+
+    let json =
+        serde_json::to_string(&VerifyCreateBody { email: email.clone() })?;
+
+    let req = surf::post(url.as_str()).body(json).build();
+
+    async_std::task::block_on(do_http_simple(req))
+        .map_err(|e| anyhow!("{}", e))?;
+
+    Ok(format!(
+        "verify token created at {} for email: {}",
+        url,
+        email.unwrap_or("(empty)".to_string())
+    ))
+}
+
+pub fn verify_verify_token(
+    host: &str,
+    id: uno::Id,
+    secret: String,
+) -> Result<String>
+{
+    let keypair = uno::KeyPair::from(id);
+    let url = verify_token_url_from_public_key(host, &keypair.public)?;
+
+    #[derive(Serialize)]
+    struct VerifyVerifyBody
+    {
+        secret: String,
+        method: uno::VerifyMethod,
+    }
+
+    let json = serde_json::to_string(&VerifyVerifyBody {
+        secret: secret,
+        method: uno::VerifyMethod::Cli,
+    })?;
+
+    let req = surf::put(url.as_str()).body(json).build();
+
+    async_std::task::block_on(do_http_simple(req))
+        .map_err(|e| anyhow!("{}", e))?;
+
+    Ok(format!("verified token."))
+}
+
 pub fn get_ssss(host: &String, mu: uno::Mu) -> Result<String>
 {
     let session = uno::Session::try_from(&mu)?;
@@ -505,6 +564,18 @@ fn share_url_from_public_key(
 {
     let host = Url::parse(&endpoint)?;
     let base = host.join("v2/shares/")?;
+    let sid = base64::encode_config(key, base64::URL_SAFE_NO_PAD);
+
+    Ok(base.join(&sid)?)
+}
+
+fn verify_token_url_from_public_key(
+    endpoint: &str,
+    key: &uno::PublicKey,
+) -> Result<Url>
+{
+    let host = Url::parse(&endpoint)?;
+    let base = host.join("v2/verify_tokens/")?;
     let sid = base64::encode_config(key, base64::URL_SAFE_NO_PAD);
 
     Ok(base.join(&sid)?)
