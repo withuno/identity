@@ -41,6 +41,31 @@ pub enum VerifyTokenError
 
 type Result<T> = result::Result<T, VerifyTokenError>;
 
+pub enum PossibleToken
+{
+    Verified,
+    Unverified,
+}
+
+pub async fn get(db: &impl Database, id: &str) -> Result<PossibleToken>
+{
+    match db.get(&id).await {
+        Ok(bytes) => {
+            if let verified = serde_json::from_slice::<VerifiedToken>(&bytes)? {
+                return Ok(PossibleToken::Verified);
+            }
+
+            match serde_json::from_slice::<UnverifiedToken>(&bytes) {
+                Ok(_) => return Ok(PossibleToken::Unverified),
+                Err(e) => {
+                    return Err(VerifyTokenError::Serde { source: e });
+                },
+            }
+        },
+        Err(_) => Ok(PossibleToken::Unverified),
+    }
+}
+
 pub async fn create(
     db: &impl Database,
     id: &str,
@@ -176,8 +201,7 @@ mod tests
             .await
             .unwrap();
 
-        match verify(&db, &encoded_id, "some other secret", email.clone())
-            .await
+        match verify(&db, &encoded_id, "some other secret", email.clone()).await
         {
             Err(VerifyTokenError::Secret) => {},
             _ => {
@@ -188,8 +212,7 @@ mod tests
         let v = verify(&db, &encoded_id, &u.secret, email).await.unwrap();
         assert_eq!(v.method, VerifyMethod::Email("user@uno.app".to_string()));
 
-        match create(&db, &encoded_id, Utc::now() + Duration::days(1)).await
-        {
+        match create(&db, &encoded_id, Utc::now() + Duration::days(1)).await {
             Err(VerifyTokenError::Done) => {},
             _ => {
                 assert!(false);

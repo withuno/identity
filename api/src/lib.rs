@@ -335,6 +335,27 @@ where
     Ok(StatusCode::Ok)
 }
 
+async fn get_verification_status<T>(mut req: Request<State<T>>) -> Result
+where
+    T: Database,
+{
+    let db = &req.state().db;
+    let id = &req.ext::<VaultId>().unwrap().0;
+
+    let mut response = Response::builder(StatusCode::Ok)
+        .header("content-type", "application/json");
+
+    match verify_token::get(db, id).await.map_err(server_err) {
+        Ok(verify_token::PossibleToken::Verified) => {
+            Ok(response.body("true").build())
+        },
+        Ok(verify_token::PossibleToken::Unverified) => {
+            Ok(response.body("false").build())
+        },
+        Err(e) => Err(e),
+    }
+}
+
 async fn create_verification_token<T>(
     mut req: Request<State<T>>,
 ) -> Result<StatusCode>
@@ -943,6 +964,7 @@ where
             .with(add_auth_info)
             .with(signed_pow_auth)
             .with(ensure_vault_id)
+            .get(get_verification_status)
             .post(create_verification_token)
             .put(verify_verification_token);
         api.at("verify_tokens").nest(verify_tokens);
