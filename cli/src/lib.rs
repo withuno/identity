@@ -343,7 +343,7 @@ pub fn create_verify_token(
 
     let req = surf::post(url.as_str()).body(json).build();
 
-    async_std::task::block_on(do_http_simple(req))
+    async_std::task::block_on(do_http_signed(req, &id))
         .map_err(|e| anyhow!("{}", e))?;
 
     Ok(format!(
