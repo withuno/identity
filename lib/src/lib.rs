@@ -39,8 +39,7 @@ pub struct MagicShare
     pub encrypted_credential: String,
 }
 
-#[derive(Serialize, Deserialize)]
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 pub enum VerifyMethod
 {
     Phone(String),
