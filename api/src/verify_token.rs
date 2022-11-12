@@ -51,15 +51,13 @@ pub async fn get(db: &impl Database, id: &str) -> Result<PossibleToken>
 {
     match db.get(&id).await {
         Ok(bytes) => {
-            if let _verified = serde_json::from_slice::<VerifiedToken>(&bytes)
-            {
+            if serde_json::from_slice::<VerifiedToken>(&bytes).is_ok() {
                 return Ok(PossibleToken::Verified);
             }
 
             match serde_json::from_slice::<UnverifiedToken>(&bytes) {
                 Ok(_) => return Ok(PossibleToken::Unverified),
                 Err(e) => {
-                    println!("{:?}", e);
                     return Err(VerifyTokenError::Serde { source: e });
                 },
             }
