@@ -303,3 +303,35 @@ pub fn wasm_get_public_key(seed: String, url_encode: bool) -> Option<String>
         Err(_) => None,
     }
 }
+
+#[wasm_bindgen(getter_with_clone)]
+pub struct StringTuple(pub String, pub String);
+
+use std::str;
+
+#[wasm_bindgen]
+pub fn wasm_verify_params_from_query(query: String) -> Option<StringTuple>
+{
+    // The form of the query params is 3 strings concated togther
+    // Mu + "::" + PublicKey
+    // where Mu is the base64 encoded (regular with padding) secret
+    // PublicKey is the base64 encoded (url encoded without padding) vault id
+    //
+    // Each of Mu and PublicKey can be used transparently for the
+    // PUT call to api/verify_tokens
+
+    match base64::decode_config(&query, base64::URL_SAFE_NO_PAD) {
+        Ok(q) => match str::from_utf8(&q) {
+            Ok(sq) => {
+                let s = sq.split("::").collect::<Vec<&str>>();
+                if s.len() != 2 {
+                    return None;
+                }
+
+                Some(StringTuple(s[0].to_string(), s[1].to_string()))
+            },
+            Err(_) => None,
+        },
+        Err(_) => None,
+    }
+}

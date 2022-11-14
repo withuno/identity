@@ -110,3 +110,28 @@ fn test_get_public_key()
         "hQuTnfStbKhU+i4ri9QnMQFrsbHHOm04kHm3fE190aY="
     );
 }
+
+use uno::{Id, KeyPair, Mu};
+
+#[wasm_bindgen_test]
+fn test_verify_params_from_query()
+{
+    let id = Id::new();
+    let keypair = KeyPair::from(id);
+
+    let mu = Mu::new();
+
+    let q = format!(
+        "{}::{}",
+        base64::encode(&mu.0),
+        base64::encode_config(keypair.public, base64::URL_SAFE_NO_PAD)
+    );
+
+    let StringTuple(one, two) =
+        wasm_verify_params_from_query(base64::encode(q)).unwrap();
+    assert_eq!(one, base64::encode(&mu.0));
+    assert_eq!(
+        two,
+        base64::encode_config(keypair.public, base64::URL_SAFE_NO_PAD)
+    );
+}
