@@ -335,14 +335,14 @@ where
     Ok(StatusCode::Ok)
 }
 
-async fn get_verification_status<T>(mut req: Request<State<T>>) -> Result
+async fn get_verification_status<T>(req: Request<State<T>>) -> Result
 where
     T: Database,
 {
     let db = &req.state().db;
     let id = &req.ext::<VaultId>().unwrap().0;
 
-    let mut response = Response::builder(StatusCode::Ok)
+    let response = Response::builder(StatusCode::Ok)
         .header("content-type", "application/json");
 
     match verify_token::get(db, id).await.map_err(server_err) {
@@ -366,22 +366,37 @@ where
     struct VerifyCreateBody
     {
         email: Option<String>,
+        phone: Option<String>,
     }
 
-    let body: VerifyCreateBody = req.body_json().await.map_err(server_err)?;
+
+    let body: VerifyCreateBody = req.body_json().await.map_err(bad_request)?;
+
+    if body.email.is_none() && body.phone.is_none() {
+        return Err(bad_request("missing verification method"));
+    }
+
+    // XXX: temporarily we do not support phone numbers
+    if body.phone.is_some() {
+        return Err(bad_request("unsupported verification method"));
+    }
 
     let db = &req.state().db;
     let id = &req.ext::<VaultId>().unwrap().0;
 
-    let unverified =
-        verify_token::create(db, id, Utc::now() + Duration::hours(24))
-            .await
-            .unwrap();
+    let unverified = verify_token::create(
+        db,
+        id,
+        VerifyMethod::Email(body.email.unwrap()),
+        Utc::now() + Duration::hours(24),
+    )
+    .await
+    .unwrap();
 
+    let query = format!("{}::{}", unverified.secret, id);
+    let encoded_query = base64::encode_config(query, base64::URL_SAFE_NO_PAD);
 
-    if let email = Some(body.email) {
-        // send email
-    }
+    println!("encoded_query: {:?}", encoded_query);
 
     Ok(StatusCode::Created)
 }
@@ -414,11 +429,12 @@ where
 {
     let response = Response::builder(StatusCode::Ok)
         .body("ok")
-        .header("Access-Control-Allow-Origin", "*")
+        .header("Access-Control-Allow-Origin", "localhost:*")
         .header(
             "Access-Control-Allow-Headers",
-            "WWW-Authenticate, Authentication-Info",
+            "WWW-Authenticate, Authentication-Info, Content-Type",
         )
+        .header("Access-Control-Allow-Methods", "PUT")
         .build();
 
     Ok(response)
@@ -961,9 +977,8 @@ where
             tide::with_state(State::new(verify_db.clone(), token_db.clone()));
         verify_tokens
             .at(":id")
-            .with(add_auth_info)
-            .with(signed_pow_auth)
             .with(ensure_vault_id)
+            .options(option_vault)
             .get(get_verification_status)
             .post(create_verification_token)
             .put(verify_verification_token);

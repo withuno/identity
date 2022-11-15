@@ -60,6 +60,7 @@ pub struct UnverifiedToken
     pub schema_version: u64,
     pub secret: String, // Mu, regular base64 encoded with padding
     pub expires_at: DateTime<Utc>,
+    pub method: VerifyMethod,
 }
 
 use std::convert::TryFrom;

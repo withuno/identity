@@ -69,6 +69,7 @@ pub async fn get(db: &impl Database, id: &str) -> Result<PossibleToken>
 pub async fn create(
     db: &impl Database,
     id: &str,
+    method: VerifyMethod,
     expires_at: DateTime<Utc>,
 ) -> Result<UnverifiedToken>
 {
@@ -94,6 +95,7 @@ pub async fn create(
     let t = UnverifiedToken {
         schema_version: 0,
         secret: encoded_secret,
+        method: method,
         expires_at: expires_at,
     };
 
@@ -177,7 +179,7 @@ mod tests
         let id = "some id";
         let encoded_id = base64::encode_config(id, base64::URL_SAFE_NO_PAD);
 
-        let email = VerifyMethod::Email("user@uno.app".to_string());
+        let email = VerifyMethod::Email("user@example.com".to_string());
 
         match verify(&db, &encoded_id, "secret", email.clone()).await {
             Err(VerifyTokenError::NotFound) => {},
@@ -186,9 +188,14 @@ mod tests
             },
         }
 
-        let mut u = create(&db, &encoded_id, Utc::now() - Duration::days(1))
-            .await
-            .unwrap();
+        let mut u = create(
+            &db,
+            &encoded_id,
+            email.clone(),
+            Utc::now() - Duration::days(1),
+        )
+        .await
+        .unwrap();
 
         match verify(&db, &encoded_id, &u.secret, email.clone()).await {
             Err(VerifyTokenError::Expired) => {},
@@ -197,9 +204,14 @@ mod tests
             },
         }
 
-        u = create(&db, &encoded_id, Utc::now() + Duration::days(1))
-            .await
-            .unwrap();
+        u = create(
+            &db,
+            &encoded_id,
+            email.clone(),
+            Utc::now() + Duration::days(1),
+        )
+        .await
+        .unwrap();
 
         match verify(&db, &encoded_id, "some other secret", email.clone()).await
         {
@@ -209,10 +221,13 @@ mod tests
             },
         }
 
-        let v = verify(&db, &encoded_id, &u.secret, email).await.unwrap();
+        let v =
+            verify(&db, &encoded_id, &u.secret, email.clone()).await.unwrap();
         assert_eq!(v.method, VerifyMethod::Email("user@uno.app".to_string()));
 
-        match create(&db, &encoded_id, Utc::now() + Duration::days(1)).await {
+        match create(&db, &encoded_id, email, Utc::now() + Duration::days(1))
+            .await
+        {
             Err(VerifyTokenError::Done) => {},
             _ => {
                 assert!(false);
