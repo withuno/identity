@@ -47,20 +47,43 @@ pub enum VerifyMethod
     Cli,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Debug)]
 pub struct VerifiedToken
 {
+    is_verified: bool, // tag for serde discrimination, always true.
     pub schema_version: u64,
     pub method: VerifyMethod,
 }
 
-#[derive(Serialize, Deserialize)]
+impl VerifiedToken
+{
+    pub fn new(schema_version: u64, method: VerifyMethod) -> VerifiedToken
+    {
+        Self { is_verified: true, schema_version, method }
+    }
+}
+
+#[derive(Serialize, Deserialize, Debug)]
 pub struct UnverifiedToken
 {
+    is_unverified: bool, // tag for serde discrimination, always true.
     pub schema_version: u64,
     pub secret: String, // Mu, regular base64 encoded with padding
     pub expires_at: DateTime<Utc>,
     pub method: VerifyMethod,
+}
+
+impl UnverifiedToken
+{
+    pub fn new(
+        schema_version: u64,
+        method: VerifyMethod,
+        secret: String,
+        expires_at: DateTime<Utc>,
+    ) -> UnverifiedToken
+    {
+        Self { is_unverified: true, schema_version, method, secret, expires_at }
+    }
 }
 
 use std::convert::TryFrom;

@@ -320,7 +320,6 @@ where
     struct VerifyVerifyBody
     {
         secret: String,
-        email: String,
     }
 
     let body: VerifyVerifyBody = req.body_json().await.map_err(server_err)?;
@@ -328,9 +327,7 @@ where
     let db = &req.state().db;
     let id = &req.ext::<VaultId>().unwrap().0;
 
-    verify_token::verify(db, id, &body.secret, VerifyMethod::Email(body.email))
-        .await
-        .map_err(server_err)?;
+    verify_token::verify(db, id, &body.secret).await.map_err(server_err)?;
 
     Ok(StatusCode::Ok)
 }
@@ -368,7 +365,6 @@ where
         email: Option<String>,
         phone: Option<String>,
     }
-
 
     let body: VerifyCreateBody = req.body_json().await.map_err(bad_request)?;
 

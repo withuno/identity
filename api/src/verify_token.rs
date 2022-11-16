@@ -51,15 +51,13 @@ pub async fn get(db: &impl Database, id: &str) -> Result<PossibleToken>
 {
     match db.get(&id).await {
         Ok(bytes) => {
-            if serde_json::from_slice::<VerifiedToken>(&bytes).is_ok() {
-                return Ok(PossibleToken::Verified);
+            if serde_json::from_slice::<UnverifiedToken>(&bytes).is_ok() {
+                return Ok(PossibleToken::Unverified);
             }
 
-            match serde_json::from_slice::<UnverifiedToken>(&bytes) {
-                Ok(_) => return Ok(PossibleToken::Unverified),
-                Err(e) => {
-                    return Err(VerifyTokenError::Serde { source: e });
-                },
+            match serde_json::from_slice::<VerifiedToken>(&bytes) {
+                Ok(_) => Ok(PossibleToken::Verified),
+                Err(e) => Err(VerifyTokenError::Serde { source: e }),
             }
         },
         Err(_) => Ok(PossibleToken::Unverified),
@@ -92,12 +90,7 @@ pub async fn create(
     let secret = Mu::new();
     let encoded_secret = base64::encode(secret.0);
 
-    let t = UnverifiedToken {
-        schema_version: 0,
-        secret: encoded_secret,
-        method: method,
-        expires_at: expires_at,
-    };
+    let t = UnverifiedToken::new(0, method, encoded_secret, expires_at);
 
     let bytes = match serde_json::to_vec(&t) {
         Ok(b) => b,
@@ -114,7 +107,6 @@ pub async fn verify(
     db: &impl Database,
     id: &str,
     secret: &str,
-    method: VerifyMethod,
 ) -> Result<VerifiedToken>
 {
     if let Ok(bytes) = db.get(id).await {
@@ -133,7 +125,7 @@ pub async fn verify(
                         return Err(VerifyTokenError::Secret);
                     }
 
-                    let v = VerifiedToken { schema_version: 0, method: method };
+                    let v = VerifiedToken::new(0, u.method);
 
                     let bytes = match serde_json::to_vec(&v) {
                         Ok(b) => b,
@@ -152,6 +144,7 @@ pub async fn verify(
                 },
             },
             Err(e) => {
+                println!("serde error {:?}", e);
                 return Err(VerifyTokenError::Serde { source: e });
             },
         };
@@ -181,7 +174,7 @@ mod tests
 
         let email = VerifyMethod::Email("user@example.com".to_string());
 
-        match verify(&db, &encoded_id, "secret", email.clone()).await {
+        match verify(&db, &encoded_id, "secret").await {
             Err(VerifyTokenError::NotFound) => {},
             _ => {
                 assert!(false);
@@ -197,7 +190,7 @@ mod tests
         .await
         .unwrap();
 
-        match verify(&db, &encoded_id, &u.secret, email.clone()).await {
+        match verify(&db, &encoded_id, &u.secret).await {
             Err(VerifyTokenError::Expired) => {},
             _ => {
                 assert!(false);
@@ -213,17 +206,18 @@ mod tests
         .await
         .unwrap();
 
-        match verify(&db, &encoded_id, "some other secret", email.clone()).await
-        {
+        match verify(&db, &encoded_id, "some other secret").await {
             Err(VerifyTokenError::Secret) => {},
             _ => {
                 assert!(false);
             },
         }
 
-        let v =
-            verify(&db, &encoded_id, &u.secret, email.clone()).await.unwrap();
-        assert_eq!(v.method, VerifyMethod::Email("user@uno.app".to_string()));
+        let v = verify(&db, &encoded_id, &u.secret).await.unwrap();
+        assert_eq!(
+            v.method,
+            VerifyMethod::Email("user@example.com".to_string())
+        );
 
         match create(&db, &encoded_id, email, Utc::now() + Duration::days(1))
             .await
