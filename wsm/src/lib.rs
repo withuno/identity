@@ -312,7 +312,9 @@ use std::str;
 #[wasm_bindgen]
 pub fn wasm_verify_params_from_query(query: String) -> Option<StringTuple>
 {
-    // The form of the query params is 3 strings concated togther
+    // Query is a url encoded, no padding string of the following form:
+    //
+    // 3 strings concated togther:
     // Mu + "::" + PublicKey
     // where Mu is the base64 encoded (regular with padding) secret
     // PublicKey is the base64 encoded (url encoded without padding) vault id
