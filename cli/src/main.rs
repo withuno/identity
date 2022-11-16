@@ -68,7 +68,7 @@ enum SubCommand
     #[clap(display_order = 80)]
     Share(Share),
 
-    #[clap(display_order = 80)]
+    #[clap(display_order = 90)]
     VerifyToken(VerifyToken),
 
     #[clap(display_order = 80)]
