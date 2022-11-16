@@ -322,14 +322,24 @@ where
         secret: String,
     }
 
-    let body: VerifyVerifyBody = req.body_json().await.map_err(server_err)?;
+    let body: VerifyVerifyBody = req.body_json().await.map_err(bad_request)?;
 
     let db = &req.state().db;
     let id = &req.ext::<VaultId>().unwrap().0;
 
-    verify_token::verify(db, id, &body.secret).await.map_err(server_err)?;
-
-    Ok(StatusCode::Ok)
+    match verify_token::verify(db, id, &body.secret).await {
+        Ok(_) => Ok(StatusCode::Ok),
+        Err(verify_token::VerifyTokenError::Done) => {
+            Err(Error::from_str(StatusCode::Conflict, "done"))
+        },
+        Err(verify_token::VerifyTokenError::Expired) => {
+            Err(Error::from_str(StatusCode::Gone, "expired"))
+        },
+        Err(verify_token::VerifyTokenError::Secret) => {
+            Err(Error::from_str(StatusCode::Forbidden, "forbidden"))
+        },
+        Err(_) => Err(server_err("internal server error")),
+    }
 }
 
 async fn get_verification_status<T>(req: Request<State<T>>) -> Result
@@ -380,14 +390,22 @@ where
     let db = &req.state().db;
     let id = &req.ext::<VaultId>().unwrap().0;
 
-    let unverified = verify_token::create(
+    let unverified = match verify_token::create(
         db,
         id,
         VerifyMethod::Email(body.email.unwrap()),
         Utc::now() + Duration::hours(24),
     )
     .await
-    .unwrap();
+    {
+        Ok(v) => v,
+        Err(verify_token::VerifyTokenError::Done) => {
+            return Err(Error::from_str(StatusCode::Conflict, "done"));
+        },
+        Err(_) => {
+            return Err(server_err("internal server error"));
+        },
+    };
 
     let query = format!("{}::{}", unverified.secret, id);
     let encoded_query = base64::encode_config(query, base64::URL_SAFE_NO_PAD);
