@@ -372,6 +372,7 @@ where
     #[derive(Deserialize)]
     struct VerifyCreateBody
     {
+        analytics_id: String,
         email: Option<String>,
         phone: Option<String>,
     }
@@ -393,6 +394,7 @@ where
     let unverified = match verify_token::create(
         db,
         id,
+        body.analytics_id,
         VerifyMethod::Email(body.email.unwrap()),
         Utc::now() + Duration::hours(24),
     )
@@ -407,10 +409,34 @@ where
         },
     };
 
-    let query = format!("{}::{}", unverified.secret, id);
+    match possibly_email_link(id, unverified).await {
+        Ok(_) => Ok(StatusCode::Created),
+        Err(e) => Err(e),
+    }
+}
+
+async fn possibly_email_link(
+    vault_id: &str,
+    token: uno::UnverifiedToken,
+) -> Result<StatusCode>
+{
+    let query = format!("{}::{}", token.secret, vault_id);
     let encoded_query = base64::encode_config(query, base64::URL_SAFE_NO_PAD);
 
-    println!("encoded_query: {:?}", encoded_query);
+    let verify_link = match std::env::var("VERIFY_EMAIL_DOMAIN") {
+        Ok(domain) => {
+            format!("{}/s?={}", domain, encoded_query)
+        },
+        Err(_) => encoded_query,
+    };
+
+    if let (Ok(api_key), VerifyMethod::Email(email)) =
+        (std::env::var("CUSTOMER_IO_API_KEY"), token.method)
+    {
+        println!("{} {}", api_key, email);
+    } else {
+        println!("verify link: {}", verify_link);
+    }
 
     Ok(StatusCode::Created)
 }

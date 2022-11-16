@@ -67,6 +67,7 @@ pub async fn get(db: &impl Database, id: &str) -> Result<PossibleToken>
 pub async fn create(
     db: &impl Database,
     id: &str,
+    analytics_id: String,
     method: VerifyMethod,
     expires_at: DateTime<Utc>,
 ) -> Result<UnverifiedToken>
@@ -90,7 +91,13 @@ pub async fn create(
     let secret = Mu::new();
     let encoded_secret = base64::encode(secret.0);
 
-    let t = UnverifiedToken::new(0, method, encoded_secret, expires_at);
+    let t = UnverifiedToken::new(
+        0,
+        method,
+        analytics_id,
+        encoded_secret,
+        expires_at,
+    );
 
     let bytes = match serde_json::to_vec(&t) {
         Ok(b) => b,
@@ -125,7 +132,7 @@ pub async fn verify(
                         return Err(VerifyTokenError::Secret);
                     }
 
-                    let v = VerifiedToken::new(0, u.method);
+                    let v = VerifiedToken::new(0, u.analytics_id, u.method);
 
                     let bytes = match serde_json::to_vec(&v) {
                         Ok(b) => b,
@@ -184,6 +191,7 @@ mod tests
         let mut u = create(
             &db,
             &encoded_id,
+            "analytics_id".to_string(),
             email.clone(),
             Utc::now() - Duration::days(1),
         )
@@ -200,6 +208,7 @@ mod tests
         u = create(
             &db,
             &encoded_id,
+            "analytics_id".to_string(),
             email.clone(),
             Utc::now() + Duration::days(1),
         )
@@ -219,8 +228,14 @@ mod tests
             VerifyMethod::Email("user@example.com".to_string())
         );
 
-        match create(&db, &encoded_id, email, Utc::now() + Duration::days(1))
-            .await
+        match create(
+            &db,
+            &encoded_id,
+            "analytics_id".to_string(),
+            email,
+            Utc::now() + Duration::days(1),
+        )
+        .await
         {
             Err(VerifyTokenError::Done) => {},
             _ => {

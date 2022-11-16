@@ -51,15 +51,16 @@ pub enum VerifyMethod
 pub struct VerifiedToken
 {
     is_verified: bool, // tag for serde discrimination, always true.
+    pub analytics_id: String, // given by customer.io for now...
     pub schema_version: u64,
     pub method: VerifyMethod,
 }
 
 impl VerifiedToken
 {
-    pub fn new(schema_version: u64, method: VerifyMethod) -> VerifiedToken
+    pub fn new(schema_version: u64, analytics_id: String, method: VerifyMethod) -> VerifiedToken
     {
-        Self { is_verified: true, schema_version, method }
+        Self { is_verified: true, analytics_id, schema_version, method }
     }
 }
 
@@ -68,7 +69,8 @@ pub struct UnverifiedToken
 {
     is_unverified: bool, // tag for serde discrimination, always true.
     pub schema_version: u64,
-    pub secret: String, // Mu, regular base64 encoded with padding
+    pub analytics_id: String, // given by customer.io for now...
+    pub secret: String,       // Mu, regular base64 encoded with padding
     pub expires_at: DateTime<Utc>,
     pub method: VerifyMethod,
 }
@@ -78,11 +80,19 @@ impl UnverifiedToken
     pub fn new(
         schema_version: u64,
         method: VerifyMethod,
+        analytics_id: String,
         secret: String,
         expires_at: DateTime<Utc>,
     ) -> UnverifiedToken
     {
-        Self { is_unverified: true, schema_version, method, secret, expires_at }
+        Self {
+            is_unverified: true,
+            schema_version,
+            analytics_id,
+            method,
+            secret,
+            expires_at,
+        }
     }
 }
 
