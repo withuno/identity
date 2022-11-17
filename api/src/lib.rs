@@ -442,16 +442,10 @@ async fn possibly_email_link(
         token.method,
     ) {
         #[derive(Serialize)]
-        struct MessageDataCustomer
-        {
-            email: String,
-        }
-
-        #[derive(Serialize)]
         struct MessageData
         {
             emailConfirmationURL: String,
-            customer: MessageDataCustomer,
+            customer_email: String,
         }
 
         #[derive(Serialize)]
@@ -469,22 +463,34 @@ async fn possibly_email_link(
             identifiers: Identifiers,
         }
 
-        let body = json!(Body {
+        let body = Body {
             to: email.clone(),
             transactional_message_id: message_id,
             message_data: MessageData {
                 emailConfirmationURL: verify_link,
-                customer: MessageDataCustomer { email: email }
+                customer_email: email,
             },
             identifiers: Identifiers { id: token.analytics_id },
-        });
+        };
 
-        let mut req = surf::get(api_endpoint).build();
-        req.body_json(&body).map_err(server_err)?;
-        req.set_header("Authorization", format!("Bearer {}", api_key));
+        let req = reqwest::blocking::Client::new()
+            .post(api_endpoint)
+            .json(&body)
+            .header(
+                reqwest::header::AUTHORIZATION,
+                format!("Bearer {}", api_key),
+            );
 
-        let client = surf::client();
-        client.send(req).await.map_err(server_err)?;
+        println!("{:?}", json!(body));
+
+        match req.send() {
+            Ok(r) => {
+                println!("{:?}", r.text());
+            },
+            Err(e) => {
+                println!("{:?}", e);
+            },
+        }
     } else {
         println!("verify link: {}", verify_link);
     }

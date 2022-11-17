@@ -21,6 +21,7 @@ http-types = "2.11"
 json-patch = "0.2"
 password-hash = "0.2"
 rand = "0.8"
+reqwest = { version = "0.11", features = ["json", "blocking"] }
 rusty-s3 = "0.3"
 serde = { version = "1.0", features = ["derive"] }
 serde_derive = "1.0"
