@@ -58,7 +58,11 @@ pub struct VerifiedToken
 
 impl VerifiedToken
 {
-    pub fn new(schema_version: u64, analytics_id: String, method: VerifyMethod) -> VerifiedToken
+    pub fn new(
+        schema_version: u64,
+        analytics_id: String,
+        method: VerifyMethod,
+    ) -> VerifiedToken
     {
         Self { is_verified: true, analytics_id, schema_version, method }
     }
