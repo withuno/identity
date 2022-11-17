@@ -31,7 +31,7 @@ use json_patch::merge;
 
 use serde_derive::Deserialize;
 use serde_derive::Serialize;
-use serde_json::Value;
+use serde_json::{json, Value};
 
 use chrono::{Duration, Utc};
 
@@ -425,15 +425,66 @@ async fn possibly_email_link(
 
     let verify_link = match std::env::var("VERIFY_EMAIL_DOMAIN") {
         Ok(domain) => {
-            format!("{}/s?={}", domain, encoded_query)
+            format!("{}/?s={}", domain, encoded_query)
         },
         Err(_) => encoded_query,
     };
 
-    if let (Ok(api_key), VerifyMethod::Email(email)) =
-        (std::env::var("CUSTOMER_IO_API_KEY"), token.method)
-    {
-        println!("{} {}", api_key, email);
+    if let (
+        Ok(api_key),
+        Ok(api_endpoint),
+        Ok(message_id),
+        VerifyMethod::Email(email),
+    ) = (
+        std::env::var("CUSTOMER_IO_API_KEY"),
+        std::env::var("CUSTOMER_IO_API_ENDPOINT"),
+        std::env::var("CUSTOMER_IO_MESSAGE_ID"),
+        token.method,
+    ) {
+        #[derive(Serialize)]
+        struct MessageDataCustomer
+        {
+            email: String,
+        }
+
+        #[derive(Serialize)]
+        struct MessageData
+        {
+            emailConfirmationURL: String,
+            customer: MessageDataCustomer,
+        }
+
+        #[derive(Serialize)]
+        struct Identifiers
+        {
+            id: String,
+        }
+
+        #[derive(Serialize)]
+        struct Body
+        {
+            to: String,
+            transactional_message_id: String,
+            message_data: MessageData,
+            identifiers: Identifiers,
+        }
+
+        let body = json!(Body {
+            to: email.clone(),
+            transactional_message_id: message_id,
+            message_data: MessageData {
+                emailConfirmationURL: verify_link,
+                customer: MessageDataCustomer { email: email }
+            },
+            identifiers: Identifiers { id: token.analytics_id },
+        });
+
+        let mut req = surf::get(api_endpoint).build();
+        req.body_json(&body).map_err(server_err)?;
+        req.set_header("Authorization", format!("Bearer {}", api_key));
+
+        let client = surf::client();
+        client.send(req).await.map_err(server_err)?;
     } else {
         println!("verify link: {}", verify_link);
     }
