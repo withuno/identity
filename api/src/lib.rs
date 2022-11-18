@@ -520,6 +520,13 @@ where
     })
 }
 
+async fn option_ok<T>(_req: Request<State<T>>) -> Result
+where
+    T: Database,
+{
+    Ok(Response::builder(StatusCode::Ok).build())
+}
+
 async fn option_vault<T>(_req: Request<State<T>>) -> Result
 where
     T: Database,
@@ -981,6 +988,20 @@ where
     let mut api = tide::new();
     api.at("health").get(health);
 
+    use http_types::headers::HeaderValue;
+    use tide::security::{CorsMiddleware, Origin};
+
+    let mut cors = CorsMiddleware::new();
+
+    if std::env::var("DEV_CORS").is_ok() {
+        cors = CorsMiddleware::new()
+            .allow_methods(
+                "GET, PUT, POST, OPTIONS".parse::<HeaderValue>().unwrap(),
+            )
+            .allow_origin(Origin::from("*"))
+            .allow_credentials(false);
+    }
+
     {
         let mut vaults =
             tide::with_state(State::new(vault_db, token_db.clone()));
@@ -1067,18 +1088,20 @@ where
             .post(store_share);
         api.at("shares").nest(shares);
     }
-
     {
         // Verification tokens
         let mut verify_tokens =
             tide::with_state(State::new(verify_db.clone(), token_db.clone()));
+
         verify_tokens
             .at(":id")
             .with(ensure_vault_id)
-            .options(option_vault)
+            .with(cors)
+            .options(option_ok)
             .get(get_verification_status)
             .post(create_verification_token)
             .put(verify_verification_token);
+
         api.at("verify_tokens").nest(verify_tokens);
     }
 
