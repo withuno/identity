@@ -6,8 +6,7 @@
 //
 
 #[cfg(test)]
-mod requests
-{
+mod requests {
     use api::mailbox::{
         Mailbox, MessageRequest, MessageStored, MessageToDelete,
     };
@@ -48,12 +47,10 @@ mod requests
 
     use api::Database;
 
-
     const TUNE: &str = "$argon2d$v=19$m=4096,t=3,p=1";
     const SALT: &str = "cm9ja3NhbHQ";
 
-    struct Dbs<T: Database>
-    {
+    struct Dbs<T: Database> {
         tokens: T,
         vaults: T,
         services: T,
@@ -61,14 +58,14 @@ mod requests
         mailboxes: T,
         objects: T,
         shares: T,
+        directory: T,
     }
 
     #[cfg(not(feature = "s3"))]
     pub use api::store::FileStore;
 
     #[cfg(not(feature = "s3"))]
-    async fn setup_tmp_api() -> Result<(tide::Server<()>, Dbs<FileStore>)>
-    {
+    async fn setup_tmp_api() -> Result<(tide::Server<()>, Dbs<FileStore>)> {
         let dir = tempfile::TempDir::new()?;
         let dbs = Dbs {
             objects: FileStore::new(dir.path(), "objs", "v0").await?,
@@ -78,6 +75,7 @@ mod requests
             sessions: FileStore::new(dir.path(), "sess", "v0").await?,
             mailboxes: FileStore::new(dir.path(), "mbxs", "v0").await?,
             shares: FileStore::new(dir.path(), "shrs", "v0").await?,
+            directory: FileStore::new(dir.path(), "directory", "v0").await?,
         };
         // we don't include objects db here because its only used in tests
         // todo: I don't understand this comment ^
@@ -88,6 +86,7 @@ mod requests
             dbs.sessions.clone(),
             dbs.mailboxes.clone(),
             dbs.shares.clone(),
+            dbs.directory.clone(),
         )?;
         Ok((api, dbs))
     }
@@ -96,16 +95,14 @@ mod requests
     pub use api::store::S3Store;
 
     #[cfg(feature = "s3")]
-    async fn setup_dbs() -> Result<Dbs<S3Store>>
-    {
+    async fn setup_dbs() -> Result<Dbs<S3Store>> {
         // modified from:
         // https://doc.servo.org/src/tempfile/util.rs.html#9
         use rand::distributions::Alphanumeric;
         use rand::Rng;
         use std::str;
 
-        fn tmpname(rand_len: usize) -> String
-        {
+        fn tmpname(rand_len: usize) -> String {
             let mut buf = String::with_capacity(rand_len);
 
             // Push each character in one-by-one. Unfortunately, this is the
@@ -186,6 +183,15 @@ mod requests
                 "v0",
             )
             .await?,
+            directory: S3Store::new(
+                "http://localhost:9000",
+                "minio",
+                "minioadmin",
+                "minioadmin",
+                &tmpname(32),
+                "v0",
+            )
+            .await?,
         };
 
         dbs.objects.create_bucket_if_not_exists().await?;
@@ -195,6 +201,7 @@ mod requests
         dbs.sessions.create_bucket_if_not_exists().await?;
         dbs.mailboxes.create_bucket_if_not_exists().await?;
         dbs.shares.create_bucket_if_not_exists().await?;
+        dbs.directory.create_bucket_if_not_exists().await?;
 
         dbs.objects.empty_bucket().await?;
         dbs.tokens.empty_bucket().await?;
@@ -203,13 +210,13 @@ mod requests
         dbs.sessions.empty_bucket().await?;
         dbs.mailboxes.empty_bucket().await?;
         dbs.shares.empty_bucket().await?;
+        dbs.directory.empty_bucket().await?;
 
         Ok(dbs)
     }
 
     #[cfg(feature = "s3")]
-    async fn setup_tmp_api() -> Result<(tide::Server<()>, Dbs<S3Store>)>
-    {
+    async fn setup_tmp_api() -> Result<(tide::Server<()>, Dbs<S3Store>)> {
         // we don't include objects db here because its only used in tests
         let dbs = setup_dbs().await?;
         let api = build_routes(
@@ -219,12 +226,12 @@ mod requests
             dbs.sessions.clone(),
             dbs.mailboxes.clone(),
             dbs.shares.clone(),
+            dbs.directory.clone(),
         )?;
         Ok((api, dbs))
     }
 
-    fn body_challenge(req: &mut Request, n64: &str) -> Result<String>
-    {
+    fn body_challenge(req: &mut Request, n64: &str) -> Result<String> {
         let body = req.take_body();
         let bbytes: Vec<u8> = task::block_on(body.into_bytes())
             .map_err(|_| anyhow!("body bytes failed"))?;
@@ -252,8 +259,7 @@ mod requests
         n64: &str,
         cost: u8,
         id: &Id,
-    ) -> Result<()>
-    {
+    ) -> Result<()> {
         let challenge = body_challenge(req, n64)?;
 
         let n = prove_blake3_work(&challenge.as_bytes(), cost).unwrap();
@@ -277,6 +283,26 @@ mod requests
         Ok(())
     }
 
+    // Sign next request using previous request test helper.
+    // TODO: put this in a util somewhere in the lib crate...
+    fn asym_sign_req_using_res_with_id(
+        prev: &Response,
+        next: &mut Request,
+        id: &Id,
+    ) -> Result<()> {
+        let auth_info_str = prev
+            .header("authentication-info")
+            .ok_or(anyhow!("expected auth-info"))?;
+
+        let auth_info = parse_asym_auth_info(auth_info_str)?;
+        let nonce_b64 = &auth_info.params["nextnonce"];
+        let cost = auth_info.params["blake3"].parse::<u8>()?;
+
+        blake3_sign_req(next, &nonce_b64, cost, id)?;
+
+        Ok(())
+    }
+
     // Add the correct authorization header to the request
     fn sign_req(
         req: &mut Request,
@@ -284,8 +310,7 @@ mod requests
         argon: &str,
         s64: &str,
         id: &Id,
-    ) -> Result<()>
-    {
+    ) -> Result<()> {
         let challenge = body_challenge(req, n64)?;
 
         use argon2::{Argon2, PasswordHash, PasswordHasher};
@@ -326,8 +351,7 @@ mod requests
         prev: &Response,
         next: &mut Request,
         id: &Id,
-    ) -> Result<()>
-    {
+    ) -> Result<()> {
         let auth_info_str = prev
             .header("authentication-info")
             .ok_or(anyhow!("expected auth-info"))?;
@@ -344,18 +368,15 @@ mod requests
         Ok(())
     }
 
-    struct AuthInfoTemp
-    {
+    struct AuthInfoTemp {
         params: HashMap<String, String>,
     }
 
-    struct WwwAuthTemp
-    {
+    struct WwwAuthTemp {
         params: HashMap<String, String>,
     }
 
-    fn parse_www_auth(headers: &HeaderValues) -> Result<WwwAuthTemp>
-    {
+    fn parse_www_auth(headers: &HeaderValues) -> Result<WwwAuthTemp> {
         use regex::Regex;
         let mut map = HashMap::new();
 
@@ -392,8 +413,7 @@ mod requests
         return Err(anyhow!("invalid auth-info"));
     }
 
-    fn parse_asym_www_auth(headers: &HeaderValues) -> Result<WwwAuthTemp>
-    {
+    fn parse_asym_www_auth(headers: &HeaderValues) -> Result<WwwAuthTemp> {
         use regex::Regex;
         let mut map = HashMap::new();
 
@@ -428,8 +448,7 @@ mod requests
         return Err(anyhow!("invalid auth-info"));
     }
 
-    fn parse_auth_info(headers: &HeaderValues) -> Result<AuthInfoTemp>
-    {
+    fn parse_auth_info(headers: &HeaderValues) -> Result<AuthInfoTemp> {
         for header in headers.iter() {
             let items = header.as_str().trim().split(';');
             let mut map = HashMap::new();
@@ -449,8 +468,7 @@ mod requests
         Err(anyhow!("invalid auth-info"))
     }
 
-    fn parse_asym_auth_info(headers: &HeaderValues) -> Result<AuthInfoTemp>
-    {
+    fn parse_asym_auth_info(headers: &HeaderValues) -> Result<AuthInfoTemp> {
         for header in headers.iter() {
             let items = header.as_str().trim().split(';');
             let mut map = HashMap::new();
@@ -473,12 +491,11 @@ mod requests
     async fn init_nonce(
         token_db: &impl Database,
         scopes: &[&'static str],
-    ) -> Result<String>
-    {
+    ) -> Result<String> {
         let n64 = "U4L+xVHzX4qzBSDPv5NJMhB2HJuhkksmFqJe7geX+xA";
         let n = base64::decode_config(&n64, STANDARD_NO_PAD)?;
         let n64url = base64::encode_config(&n, URL_SAFE_NO_PAD);
-        let token = json!({"argon":TUNE,"allow":scopes,"blake3":255});
+        let token = json!({"argon":TUNE,"allow":scopes,"blake3":MIN_COST});
         let tstr = token.to_string();
         let tok_bytes = tstr.as_bytes();
         let _ = token_db.put(&n64url, tok_bytes).await?;
@@ -486,8 +503,7 @@ mod requests
     }
 
     #[async_std::test]
-    async fn health_get() -> Result<()>
-    {
+    async fn health_get() -> Result<()> {
         let (api, _) = setup_tmp_api().await?;
 
         let req: Request = surf::get("http://example.com/health").into();
@@ -498,8 +514,7 @@ mod requests
     }
 
     #[async_std::test]
-    async fn body_size_limit() -> Result<()>
-    {
+    async fn body_size_limit() -> Result<()> {
         let (_, dbs) = setup_tmp_api().await?;
 
         let state = State::new(dbs.objects.clone(), dbs.tokens.clone());
@@ -538,8 +553,7 @@ mod requests
     }
 
     #[async_std::test]
-    async fn blake3_authentication() -> Result<()>
-    {
+    async fn blake3_authentication() -> Result<()> {
         // test www-authenticate
         // test auth-info
         // test scopes
@@ -574,7 +588,6 @@ mod requests
 
         // sign the request this time
         let id = Id([0u8; ID_LENGTH]);
-
 
         let mut req1: Request = surf::get(url.to_string()).into();
         let blake_parts: Vec<&str> =
@@ -678,8 +691,7 @@ mod requests
     }
 
     #[async_std::test]
-    async fn authentication() -> Result<()>
-    {
+    async fn authentication() -> Result<()> {
         // test www-authenticate
         // test auth-info
         // test scopes
@@ -834,8 +846,7 @@ mod requests
     }
 
     #[async_std::test]
-    async fn service_get() -> Result<()>
-    {
+    async fn service_get() -> Result<()> {
         let (api, dbs) = setup_tmp_api().await?;
 
         let id = Id([0u8; ID_LENGTH]); // use the zero id
@@ -924,8 +935,7 @@ mod requests
     }
 
     #[async_std::test]
-    async fn services_put() -> Result<()>
-    {
+    async fn services_put() -> Result<()> {
         let (api, dbs) = setup_tmp_api().await?;
 
         let n64 = init_nonce(&dbs.tokens, &["create", "update"]).await?;
@@ -947,8 +957,7 @@ mod requests
     }
 
     #[async_std::test]
-    async fn services_delete() -> Result<()>
-    {
+    async fn services_delete() -> Result<()> {
         let (api, dbs) = setup_tmp_api().await?;
 
         let n64 = init_nonce(&dbs.tokens, &["delete"]).await?;
@@ -968,8 +977,7 @@ mod requests
     }
 
     #[async_std::test]
-    async fn ssss_get() -> Result<()>
-    {
+    async fn ssss_get() -> Result<()> {
         let (api, dbs) = setup_tmp_api().await?;
 
         let mu = Mu([0u8; MU_LENGTH]);
@@ -1008,8 +1016,7 @@ mod requests
     }
 
     #[async_std::test]
-    async fn ssss_put() -> Result<()>
-    {
+    async fn ssss_put() -> Result<()> {
         let (api, dbs) = setup_tmp_api().await?;
 
         let mu = Mu([0u8; MU_LENGTH]);
@@ -1041,8 +1048,7 @@ mod requests
     }
 
     #[async_std::test]
-    async fn ssss_patch() -> Result<()>
-    {
+    async fn ssss_patch() -> Result<()> {
         let (api, dbs) = setup_tmp_api().await?;
 
         let mu = Mu([0u8; MU_LENGTH]);
@@ -1083,8 +1089,7 @@ mod requests
     }
 
     #[async_std::test]
-    async fn ssss_delete() -> Result<()>
-    {
+    async fn ssss_delete() -> Result<()> {
         let (api, dbs) = setup_tmp_api().await?;
 
         let mu = Mu([0u8; MU_LENGTH]);
@@ -1124,8 +1129,7 @@ mod requests
         dbs: &Dbs<impl Database>,
         signed_by: &Id,
         mut req: Request,
-    ) -> Result<Response>
-    {
+    ) -> Result<Response> {
         let nonce =
             init_nonce(&dbs.tokens, &["read", "create", "delete"]).await?;
         sign_req(&mut req, &nonce, TUNE, SALT, &signed_by)?;
@@ -1136,8 +1140,7 @@ mod requests
     }
 
     #[async_std::test]
-    async fn mailbox_auth() -> Result<()>
-    {
+    async fn mailbox_auth() -> Result<()> {
         let (api, dbs) = setup_tmp_api().await?;
 
         let recipient_id = Id([0u8; ID_LENGTH]);
@@ -1183,8 +1186,7 @@ mod requests
     }
 
     #[async_std::test]
-    async fn mailbox_actions() -> Result<()>
-    {
+    async fn mailbox_actions() -> Result<()> {
         let (api, dbs) = setup_tmp_api().await?;
 
         let recipient_id = Id([0u8; ID_LENGTH]);
@@ -1282,8 +1284,7 @@ mod requests
     }
 
     #[async_std::test]
-    async fn vault_get() -> Result<()>
-    {
+    async fn vault_get() -> Result<()> {
         let (api, dbs) = setup_tmp_api().await?;
 
         let nonce_b64 = init_nonce(&dbs.tokens, &["read"]).await?;
@@ -1382,8 +1383,7 @@ mod requests
     }
 
     #[async_std::test]
-    async fn vault_put() -> Result<()>
-    {
+    async fn vault_put() -> Result<()> {
         let (api, dbs) = setup_tmp_api().await?;
 
         let nonce_b64 = init_nonce(&dbs.tokens, &["create", "update"]).await?;
@@ -1594,8 +1594,7 @@ mod requests
     // This tests that the server can read the data that the server wrote.
     // Technically tested during the put tests but not explicitly.
     #[async_std::test]
-    async fn vault_roundtrip() -> Result<()>
-    {
+    async fn vault_roundtrip() -> Result<()> {
         let (api, dbs) = setup_tmp_api().await?;
 
         let nonce_b64 = init_nonce(&dbs.tokens, &["create", "update"]).await?;
@@ -1683,8 +1682,7 @@ mod requests
     }
 
     #[async_std::test]
-    async fn share_roundtrip() -> Result<()>
-    {
+    async fn share_roundtrip() -> Result<()> {
         let (api, _) = setup_tmp_api().await?;
 
         let id = Id([0u8; ID_LENGTH]);
@@ -1713,8 +1711,7 @@ mod requests
     }
 
     #[async_std::test]
-    async fn vault_delete() -> Result<()>
-    {
+    async fn vault_delete() -> Result<()> {
         let (api, dbs) = setup_tmp_api().await?;
 
         let nonce_b64 = init_nonce(&dbs.tokens, &["delete"]).await?;
@@ -1758,8 +1755,7 @@ mod requests
     }
 
     #[async_std::test]
-    async fn service_list_get() -> Result<()>
-    {
+    async fn service_list_get() -> Result<()> {
         let (api, dbs) = setup_tmp_api().await?;
 
         let id = Id([0u8; ID_LENGTH]); // use the zero id
@@ -1799,9 +1795,111 @@ mod requests
         Ok(())
     }
 
+    const MIN_COST: u8 = 1;
+
+    #[async_std::test]
+    async fn directory_lookup_roundtrip() -> Result<()> {
+        let (api, dbs) = setup_tmp_api().await?;
+
+        let id = Id([0u8; ID_LENGTH]); // use the zero id
+        let n64_1 = init_nonce(&dbs.tokens, &["read"]).await?;
+
+        let resource = "http://example.com/directory/lookup";
+        let url = Url::parse(resource)?;
+        let mut req1: Request = surf::get(url.to_string()).into();
+
+        //let mut req2 = req1.clone(); // for the next request
+
+        blake3_sign_req(&mut req1, &n64_1, MIN_COST, &id)?;
+
+        let res1: Response =
+            api.respond(req1).await.map_err(|_| anyhow!("request failed"))?;
+
+        // expect a 404 since the file does not exist yet
+        //assert_eq!(StatusCode::NotFound, res1.status());
+
+        assert_eq!(StatusCode::NoContent, res1.status());
+
+        let phone = "15005550000";
+        let cid = cid_from_phone(&phone);
+
+        // TODO
+
+        Ok(())
+    }
+
+    fn cid_from_phone(phone: &str) -> String {
+        let hash = blake3::hash(phone.as_bytes());
+        let bytes = hash.as_bytes();
+
+        base64::encode_config(bytes, base64::URL_SAFE_NO_PAD)
+    }
+
+    #[async_std::test]
+    async fn directory_entry_roundtrip() -> Result<()> {
+        let (api, dbs) = setup_tmp_api().await?;
+
+        let id = Id([0u8; ID_LENGTH]); // use the zero id
+        let n64_1 = init_nonce(&dbs.tokens, &["create"]).await?;
+
+        let phone = "15005550000";
+        let cid = cid_from_phone(&phone);
+
+        let resource = format!("http://example.com/directory/entries/{}", cid);
+
+        let mut req1: Request = surf::put(&resource).build();
+        blake3_sign_req(&mut req1, &n64_1, MIN_COST, &id)?;
+        let res1: Response =
+            api.respond(req1).await.map_err(|_| anyhow!("request failed"))?;
+
+        assert_eq!(StatusCode::NoContent, res1.status());
+
+        let mut req2 = surf::get(&resource).build();
+        asym_sign_req_using_res_with_id(&res1, &mut req2, &id)?;
+        let res2: Response =
+            api.respond(req2).await.map_err(|_| anyhow!("request failed"))?;
+
+        assert_eq!(StatusCode::NoContent, res2.status());
+
+        // TODO
+
+        Ok(())
+    }
+
+    #[async_std::test]
+    async fn directory_entry_post() -> Result<()> {
+        let (api, dbs) = setup_tmp_api().await?;
+
+        let id = Id([0u8; ID_LENGTH]); // use the zero id
+        let n64_1 = init_nonce(&dbs.tokens, &["update"]).await?;
+
+        let resource = "http://example.com/directory/entries";
+
+        let phone = "15005550000";
+        let cid = cid_from_phone(&phone);
+
+        let body = json!({ "phone": phone, "cid": cid });
+
+        let mut req1: Request = surf::post(resource)
+            .body_json(&body)
+            .map_err(|_| anyhow!("serialize body"))?
+            .build();
+
+        blake3_sign_req(&mut req1, &n64_1, MIN_COST, &id)?;
+
+        let mut res1: Response =
+            api.respond(req1).await.map_err(|_| anyhow!("request failed"))?;
+
+        print_body(&mut res1)?;
+
+        //assert_eq!(StatusCode::NoContent, res1.status());
+        assert_eq!(StatusCode::BadRequest, res1.status());
+
+        Ok(())
+    }
+
     #[allow(dead_code)]
-    fn print_body(res: &mut Response) -> Result<()>
-    {
+    fn print_body(res: &mut Response) -> Result<()> {
         let body_bytes = task::block_on(res.take_body().into_bytes())
             .map_err(|_| anyhow!("error reading body"))?;
         println!("{:?}", String::from_utf8(body_bytes.clone()));
