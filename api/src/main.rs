@@ -13,8 +13,7 @@ use anyhow::Context;
 #[cfg(not(feature = "s3"))]
 use api::store::FileStore;
 #[cfg(not(feature = "s3"))]
-async fn make_db(name: &'static str, version: &str) -> Result<FileStore>
-{
+async fn make_db(name: &'static str, version: &str) -> Result<FileStore> {
     // use the current directory
     // TODO: figure out a better dir like /var/db but one that doesn't require
     //       root
@@ -24,8 +23,7 @@ async fn make_db(name: &'static str, version: &str) -> Result<FileStore>
 #[cfg(feature = "s3")]
 use api::store::S3Store;
 #[cfg(feature = "s3")]
-async fn make_db(name: &str, version: &str) -> Result<S3Store>
-{
+async fn make_db(name: &str, version: &str) -> Result<S3Store> {
     let key_id = std::env::var("SPACES_ACCESS_KEY_ID")
         .context("Failed to lookup SPACES_ACCESS_KEY_ID")?;
 
@@ -47,16 +45,16 @@ async fn make_db(name: &str, version: &str) -> Result<S3Store>
 }
 
 #[async_std::main]
-async fn main() -> Result<()>
-{
+async fn main() -> Result<()> {
     let tok2 = make_db("tokens", "v2").await?;
     let vau2 = make_db("vaults", "v2").await?;
     let srv2 = make_db("services", "").await?; // not (yet) versioned
     let ses2 = make_db("sessions", "v2").await?;
     let mbx2 = make_db("mailboxes", "v2").await?;
     let shr2 = make_db("shares", "v2").await?;
+    let dir2 = make_db("directory", "v2").await?;
 
-    let api_v2 = api::build_routes(tok2, vau2, srv2, ses2, mbx2, shr2)?;
+    let api_v2 = api::build_routes(tok2, vau2, srv2, ses2, mbx2, shr2, dir2)?;
 
     let mut srv = tide::new();
 

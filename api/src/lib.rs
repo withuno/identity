@@ -53,7 +53,6 @@ where
     })
 }
 
-
 /// Short circuit the middleware chain if the request is not authorized.
 ///
 pub fn signed_pow_auth<'a, T>(
@@ -104,27 +103,27 @@ impl<T> State<T>
 where
     T: Database,
 {
-    pub fn new(db: T, tok: T) -> Self { Self { db, tok } }
+    pub fn new(db: T, tok: T) -> Self {
+        Self { db, tok }
+    }
 }
 
 #[derive(PartialEq, Debug)]
-pub enum ApiError
-{
+pub enum ApiError {
     DecodeError(base64::DecodeError),
     BadRequest(String),
     NotFound,
     Unauthorized,
 }
 
-impl From<base64::DecodeError> for ApiError
-{
-    fn from(e: base64::DecodeError) -> Self { ApiError::DecodeError(e) }
+impl From<base64::DecodeError> for ApiError {
+    fn from(e: base64::DecodeError) -> Self {
+        ApiError::DecodeError(e)
+    }
 }
 
-impl error::Error for ApiError
-{
-    fn source(&self) -> Option<&(dyn error::Error + 'static)>
-    {
+impl error::Error for ApiError {
+    fn source(&self) -> Option<&(dyn error::Error + 'static)> {
         match *self {
             ApiError::DecodeError(ref s) => Some(s),
             ApiError::BadRequest(_) => None,
@@ -134,10 +133,8 @@ impl error::Error for ApiError
     }
 }
 
-impl fmt::Display for ApiError
-{
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result
-    {
+impl fmt::Display for ApiError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match *self {
             ApiError::DecodeError(ref e) => write!(f, "decode error: {}", e),
             ApiError::BadRequest(ref msg) => write!(f, "bad request: {}", msg),
@@ -147,8 +144,7 @@ impl fmt::Display for ApiError
     }
 }
 
-pub fn pubkey_from_b64(id: &str) -> anyhow::Result<uno::PublicKey, ApiError>
-{
+pub fn pubkey_from_b64(id: &str) -> anyhow::Result<uno::PublicKey, ApiError> {
     let v = base64::decode(id)?;
     let pk = uno::PublicKey::from_bytes(&v);
     if pk.is_err() {
@@ -157,9 +153,9 @@ pub fn pubkey_from_b64(id: &str) -> anyhow::Result<uno::PublicKey, ApiError>
     Ok(pk.unwrap())
 }
 
-pub fn pubkey_from_url_b64(id: &str)
--> anyhow::Result<uno::PublicKey, ApiError>
-{
+pub fn pubkey_from_url_b64(
+    id: &str,
+) -> anyhow::Result<uno::PublicKey, ApiError> {
     let v = base64::decode_config(id, base64::URL_SAFE)?;
     let pk = uno::PublicKey::from_bytes(&v);
     if pk.is_err() {
@@ -170,16 +166,14 @@ pub fn pubkey_from_url_b64(id: &str)
 
 pub fn signature_from_b64(
     bytes: &str,
-) -> anyhow::Result<uno::Signature, ApiError>
-{
+) -> anyhow::Result<uno::Signature, ApiError> {
     let decoded_sig = base64::decode(bytes)?;
 
     uno::Signature::from_bytes(&decoded_sig)
         .map_err(|_| ApiError::BadRequest("bad signature".to_string()))
 }
 
-async fn health(_req: Request<()>) -> Result<Response>
-{
+async fn health(_req: Request<()>) -> Result<Response> {
     Ok(Response::new(StatusCode::NoContent))
 }
 
@@ -349,8 +343,7 @@ use vclock::VClock;
 /// together into one document so we don't need transactions.
 ///
 #[derive(Serialize, Deserialize)]
-struct Vault
-{
+struct Vault {
     data: Vec<u8>,
     vclock: VClock<String>,
 }
@@ -482,8 +475,7 @@ where
 ///
 pub fn parse_vclock(
     vc_str: &str,
-) -> std::result::Result<VClock<String>, anyhow::Error>
-{
+) -> std::result::Result<VClock<String>, anyhow::Error> {
     // TODO: write a serde_rfc8941 crate. For now, manually parse.
     //
     let items = vc_str.trim().split(",");
@@ -544,10 +536,8 @@ where
     Ok(Response::new(StatusCode::NoContent))
 }
 
-
 #[derive(Debug, PartialEq, Deserialize)]
-struct ServiceQuery
-{
+struct ServiceQuery {
     branch: String,
 }
 
@@ -654,8 +644,7 @@ where
     Ok(StatusCode::NoContent)
 }
 
-fn magic_share_err(e: magic_share::MagicShareError) -> Error
-{
+fn magic_share_err(e: magic_share::MagicShareError) -> Error {
     match e {
         magic_share::MagicShareError::Serde { source: _ } => {
             Error::from_str(StatusCode::BadRequest, "bad request")
@@ -677,6 +666,49 @@ fn magic_share_err(e: magic_share::MagicShareError) -> Error
             "internal server error",
         ),
     }
+}
+
+async fn post_directory_entry<T>(req: Request<State<T>>) -> Result<StatusCode>
+where
+    T: Database,
+{
+    let db = &req.state().db;
+    let uid = &req.ext::<UserId>().unwrap().0;
+
+    Ok(StatusCode::NoContent)
+}
+
+async fn get_directory_entry<T>(req: Request<State<T>>) -> Result<StatusCode>
+where
+    T: Database,
+{
+    let db = &req.state().db;
+    let uid = &req.ext::<UserId>().unwrap().0;
+    let cid = &req.ext::<ContactId>().unwrap().0;
+
+    Ok(StatusCode::NoContent)
+}
+
+async fn put_directory_entry<T>(req: Request<State<T>>) -> Result<StatusCode>
+where
+    T: Database,
+{
+    let db = &req.state().db;
+    let uid = &req.ext::<UserId>().unwrap().0;
+    let cid = &req.ext::<ContactId>().unwrap().0;
+
+    Ok(StatusCode::NoContent)
+}
+
+async fn get_directory_lookup<T>(req: Request<State<T>>) -> Result<StatusCode>
+where
+    T: Database,
+{
+    let db = &req.state().db;
+    let uid = &req.ext::<UserId>().unwrap().0;
+    let cid = &req.ext::<ContactId>().unwrap().0;
+
+    Ok(StatusCode::NoContent)
 }
 
 fn bad_request<M>(msg: M) -> Error
@@ -718,6 +750,7 @@ where
 struct VaultId(String);
 struct MailboxId(String);
 struct ShareId(String);
+struct ContactId(String);
 
 // Extract the MailboxId from the url parameter for conveniennce.
 //
@@ -771,6 +804,23 @@ where
     })
 }
 
+// Extract the SigningId from the url parameter for conveniennce.
+//
+fn ensure_contact_id<'a, T>(
+    mut req: Request<State<T>>,
+    next: Next<'a, State<T>>,
+) -> Pin<Box<dyn Future<Output = Result> + Send + 'a>>
+where
+    T: Database + 'static,
+{
+    Box::pin(async {
+        let p = req.param("id").map_err(bad_request)?;
+        let cid = ContactId(String::from(p));
+        req.set_ext(cid);
+        Ok(next.run(req).await)
+    })
+}
+
 pub fn build_routes<T>(
     token_db: T,
     vault_db: T,
@@ -778,6 +828,7 @@ pub fn build_routes<T>(
     session_db: T,
     mailbox_db: T,
     share_db: T,
+    directory_db: T,
 ) -> anyhow::Result<tide::Server<()>>
 where
     T: Database + 'static,
@@ -872,7 +923,7 @@ where
 
     {
         let mut shares =
-            tide::with_state(State::new(share_db.clone(), token_db.clone()));
+            tide::with_state(State::new(share_db, token_db.clone()));
         shares
             .at(":id")
             .with(cors)
@@ -880,6 +931,32 @@ where
             .get(fetch_share)
             .post(store_share);
         api.at("shares").nest(shares);
+    }
+
+    {
+        let mut directory =
+            tide::with_state(State::new(directory_db, token_db.clone()));
+        directory
+            .at("lookup")
+            .with(signed_pow_auth)
+            .with(add_auth_info)
+            .get(get_directory_lookup);
+        directory
+            .at("entries")
+            .with(signed_pow_auth)
+            .with(add_auth_info)
+            // need to ensure that the pubkey on the request owns the cid in question
+            .post(post_directory_entry);
+        directory
+            .at("entries/:id")
+            .with(body_size_limit)
+            .with(signed_pow_auth)
+            .with(add_auth_info)
+            .with(ensure_contact_id)
+            // need to ensure that the pubkey on the request owns the cid in question
+            .put(put_directory_entry)
+            .get(get_directory_entry);
+        api.at("directory").nest(directory);
     }
 
     Ok(api)
