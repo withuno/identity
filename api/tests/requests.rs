@@ -1839,7 +1839,39 @@ mod requests
     const MIN_COST: u8 = 1;
 
     #[async_std::test]
-    async fn directory_lookup_roundtrip() -> Result<()>
+    async fn directory_roundtrip() -> Result<()>
+    {
+        let (api, dbs) = setup_tmp_api().await?;
+
+        let id = Id([0u8; ID_LENGTH]); // use the zero id
+        let n64_1 = init_nonce(&dbs.tokens, &["read"]).await?;
+
+        let resource = "http://example.com/directory/lookup";
+        let url = Url::parse(resource)?;
+        let mut req1: Request = surf::get(url.to_string()).into();
+
+        //let mut req2 = req1.clone(); // for the next request
+
+        blake3_sign_req(&mut req1, &n64_1, MIN_COST, &id)?;
+
+        let res1: Response =
+            api.respond(req1).await.map_err(|_| anyhow!("request failed"))?;
+
+        // expect a 404 since the file does not exist yet
+        //assert_eq!(StatusCode::NotFound, res1.status());
+
+        assert_eq!(StatusCode::NoContent, res1.status());
+
+        let phone = "15005550000";
+        let cid = cid_from_phone(&phone);
+
+        // TODO post entry and receive from lookup
+
+        Ok(())
+    }
+
+    #[async_std::test]
+    async fn directory_lookup_query() -> Result<()>
     {
         let (api, dbs) = setup_tmp_api().await?;
 
@@ -1939,6 +1971,70 @@ mod requests
 
         //assert_eq!(StatusCode::NoContent, res1.status());
         assert_eq!(StatusCode::BadRequest, res1.status());
+
+        Ok(())
+    }
+
+    #[async_std::test]
+    async fn directory_entry_get() -> Result<()>
+    {
+        let (api, dbs) = setup_tmp_api().await?;
+
+        let id = Id([0u8; ID_LENGTH]); // use the zero id
+        let n64_1 = init_nonce(&dbs.tokens, &["read"]).await?;
+
+        let phone = "15005550000";
+        let cid = cid_from_phone(&phone);
+
+        let resource = format!("http://example.com/directory/entries/{}", cid);
+
+        let mut req1: Request = surf::get(&resource).build();
+        blake3_sign_req(&mut req1, &n64_1, MIN_COST, &id)?;
+        let res1: Response =
+            api.respond(req1).await.map_err(|_| anyhow!("request failed"))?;
+
+        assert_eq!(StatusCode::NoContent, res1.status());
+
+        let mut req2 = surf::get(&resource).build();
+        asym_sign_req_using_res_with_id(&res1, &mut req2, &id)?;
+        let res2: Response =
+            api.respond(req2).await.map_err(|_| anyhow!("request failed"))?;
+
+        assert_eq!(StatusCode::NoContent, res2.status());
+
+        // TODO
+
+        Ok(())
+    }
+
+    #[async_std::test]
+    async fn directory_entry_put() -> Result<()>
+    {
+        let (api, dbs) = setup_tmp_api().await?;
+
+        let id = Id([0u8; ID_LENGTH]); // use the zero id
+        let n64_1 = init_nonce(&dbs.tokens, &["create"]).await?;
+
+        let phone = "15005550000";
+        let cid = cid_from_phone(&phone);
+
+        let resource = format!("http://example.com/directory/entries/{}", cid);
+
+        let mut req1: Request = surf::put(&resource).build();
+        blake3_sign_req(&mut req1, &n64_1, MIN_COST, &id)?;
+        let res1: Response =
+            api.respond(req1).await.map_err(|_| anyhow!("request failed"))?;
+
+        assert_eq!(StatusCode::NoContent, res1.status());
+
+        let mut req2 = surf::get(&resource).build();
+        asym_sign_req_using_res_with_id(&res1, &mut req2, &id)?;
+        let res2: Response =
+            api.respond(req2).await.map_err(|_| anyhow!("request failed"))?;
+
+        assert_eq!(StatusCode::NoContent, res2.status());
+
+        // TODO
 
         Ok(())
     }
