@@ -6,7 +6,8 @@
 //
 
 #[cfg(test)]
-mod requests {
+mod requests
+{
     use api::mailbox::{
         Mailbox, MessageRequest, MessageStored, MessageToDelete,
     };
@@ -50,7 +51,8 @@ mod requests {
     const TUNE: &str = "$argon2d$v=19$m=4096,t=3,p=1";
     const SALT: &str = "cm9ja3NhbHQ";
 
-    struct Dbs<T: Database> {
+    struct Dbs<T: Database>
+    {
         tokens: T,
         vaults: T,
         services: T,
@@ -66,7 +68,8 @@ mod requests {
     pub use api::store::FileStore;
 
     #[cfg(not(feature = "s3"))]
-    async fn setup_tmp_api() -> Result<(tide::Server<()>, Dbs<FileStore>)> {
+    async fn setup_tmp_api() -> Result<(tide::Server<()>, Dbs<FileStore>)>
+    {
         let dir = tempfile::TempDir::new()?;
         let dbs = Dbs {
             objects: FileStore::new(dir.path(), "objs", "v0").await?,
@@ -98,14 +101,16 @@ mod requests {
     pub use api::store::S3Store;
 
     #[cfg(feature = "s3")]
-    async fn setup_dbs() -> Result<Dbs<S3Store>> {
+    async fn setup_dbs() -> Result<Dbs<S3Store>>
+    {
         // modified from:
         // https://doc.servo.org/src/tempfile/util.rs.html#9
         use rand::distributions::Alphanumeric;
         use rand::Rng;
         use std::str;
 
-        fn tmpname(rand_len: usize) -> String {
+        fn tmpname(rand_len: usize) -> String
+        {
             let mut buf = String::with_capacity(rand_len);
 
             // Push each character in one-by-one. Unfortunately, this is the
@@ -219,7 +224,8 @@ mod requests {
     }
 
     #[cfg(feature = "s3")]
-    async fn setup_tmp_api() -> Result<(tide::Server<()>, Dbs<S3Store>)> {
+    async fn setup_tmp_api() -> Result<(tide::Server<()>, Dbs<S3Store>)>
+    {
         // we don't include objects db here because its only used in tests
         let dbs = setup_dbs().await?;
         let api = build_routes(
@@ -234,7 +240,8 @@ mod requests {
         Ok((api, dbs))
     }
 
-    fn body_challenge(req: &mut Request, n64: &str) -> Result<String> {
+    fn body_challenge(req: &mut Request, n64: &str) -> Result<String>
+    {
         let body = req.take_body();
         let bbytes: Vec<u8> = task::block_on(body.into_bytes())
             .map_err(|_| anyhow!("body bytes failed"))?;
@@ -262,7 +269,8 @@ mod requests {
         n64: &str,
         cost: u8,
         id: &Id,
-    ) -> Result<()> {
+    ) -> Result<()>
+    {
         let challenge = body_challenge(req, n64)?;
 
         let n = prove_blake3_work(&challenge.as_bytes(), cost).unwrap();
@@ -292,7 +300,8 @@ mod requests {
         prev: &Response,
         next: &mut Request,
         id: &Id,
-    ) -> Result<()> {
+    ) -> Result<()>
+    {
         let auth_info_str = prev
             .header("authentication-info")
             .ok_or(anyhow!("expected auth-info"))?;
@@ -313,7 +322,8 @@ mod requests {
         argon: &str,
         s64: &str,
         id: &Id,
-    ) -> Result<()> {
+    ) -> Result<()>
+    {
         let challenge = body_challenge(req, n64)?;
 
         use argon2::{Argon2, PasswordHash, PasswordHasher};
@@ -354,7 +364,8 @@ mod requests {
         prev: &Response,
         next: &mut Request,
         id: &Id,
-    ) -> Result<()> {
+    ) -> Result<()>
+    {
         let auth_info_str = prev
             .header("authentication-info")
             .ok_or(anyhow!("expected auth-info"))?;
@@ -371,15 +382,18 @@ mod requests {
         Ok(())
     }
 
-    struct AuthInfoTemp {
+    struct AuthInfoTemp
+    {
         params: HashMap<String, String>,
     }
 
-    struct WwwAuthTemp {
+    struct WwwAuthTemp
+    {
         params: HashMap<String, String>,
     }
 
-    fn parse_www_auth(headers: &HeaderValues) -> Result<WwwAuthTemp> {
+    fn parse_www_auth(headers: &HeaderValues) -> Result<WwwAuthTemp>
+    {
         use regex::Regex;
         let mut map = HashMap::new();
 
@@ -416,7 +430,8 @@ mod requests {
         return Err(anyhow!("invalid auth-info"));
     }
 
-    fn parse_asym_www_auth(headers: &HeaderValues) -> Result<WwwAuthTemp> {
+    fn parse_asym_www_auth(headers: &HeaderValues) -> Result<WwwAuthTemp>
+    {
         use regex::Regex;
         let mut map = HashMap::new();
 
@@ -451,7 +466,8 @@ mod requests {
         return Err(anyhow!("invalid auth-info"));
     }
 
-    fn parse_auth_info(headers: &HeaderValues) -> Result<AuthInfoTemp> {
+    fn parse_auth_info(headers: &HeaderValues) -> Result<AuthInfoTemp>
+    {
         for header in headers.iter() {
             let items = header.as_str().trim().split(';');
             let mut map = HashMap::new();
@@ -471,7 +487,8 @@ mod requests {
         Err(anyhow!("invalid auth-info"))
     }
 
-    fn parse_asym_auth_info(headers: &HeaderValues) -> Result<AuthInfoTemp> {
+    fn parse_asym_auth_info(headers: &HeaderValues) -> Result<AuthInfoTemp>
+    {
         for header in headers.iter() {
             let items = header.as_str().trim().split(';');
             let mut map = HashMap::new();
@@ -494,7 +511,8 @@ mod requests {
     async fn init_nonce(
         token_db: &impl Database,
         scopes: &[&'static str],
-    ) -> Result<String> {
+    ) -> Result<String>
+    {
         let n64 = "U4L+xVHzX4qzBSDPv5NJMhB2HJuhkksmFqJe7geX+xA";
         let n = base64::decode_config(&n64, STANDARD_NO_PAD)?;
         let n64url = base64::encode_config(&n, URL_SAFE_NO_PAD);
@@ -506,7 +524,8 @@ mod requests {
     }
 
     #[async_std::test]
-    async fn health_get() -> Result<()> {
+    async fn health_get() -> Result<()>
+    {
         let (api, _) = setup_tmp_api().await?;
 
         let req: Request = surf::get("http://example.com/health").into();
@@ -517,7 +536,8 @@ mod requests {
     }
 
     #[async_std::test]
-    async fn body_size_limit() -> Result<()> {
+    async fn body_size_limit() -> Result<()>
+    {
         let (_, dbs) = setup_tmp_api().await?;
 
         let state = State::new(dbs.objects.clone(), dbs.tokens.clone());
@@ -556,7 +576,8 @@ mod requests {
     }
 
     #[async_std::test]
-    async fn blake3_authentication() -> Result<()> {
+    async fn blake3_authentication() -> Result<()>
+    {
         // test www-authenticate
         // test auth-info
         // test scopes
@@ -694,7 +715,8 @@ mod requests {
     }
 
     #[async_std::test]
-    async fn authentication() -> Result<()> {
+    async fn authentication() -> Result<()>
+    {
         // test www-authenticate
         // test auth-info
         // test scopes
@@ -849,7 +871,8 @@ mod requests {
     }
 
     #[async_std::test]
-    async fn service_get() -> Result<()> {
+    async fn service_get() -> Result<()>
+    {
         let (api, dbs) = setup_tmp_api().await?;
 
         let id = Id([0u8; ID_LENGTH]); // use the zero id
@@ -938,7 +961,8 @@ mod requests {
     }
 
     #[async_std::test]
-    async fn services_put() -> Result<()> {
+    async fn services_put() -> Result<()>
+    {
         let (api, dbs) = setup_tmp_api().await?;
 
         let n64 = init_nonce(&dbs.tokens, &["create", "update"]).await?;
@@ -960,7 +984,8 @@ mod requests {
     }
 
     #[async_std::test]
-    async fn services_delete() -> Result<()> {
+    async fn services_delete() -> Result<()>
+    {
         let (api, dbs) = setup_tmp_api().await?;
 
         let n64 = init_nonce(&dbs.tokens, &["delete"]).await?;
@@ -980,7 +1005,8 @@ mod requests {
     }
 
     #[async_std::test]
-    async fn ssss_get() -> Result<()> {
+    async fn ssss_get() -> Result<()>
+    {
         let (api, dbs) = setup_tmp_api().await?;
 
         let mu = Mu([0u8; MU_LENGTH]);
@@ -1019,7 +1045,8 @@ mod requests {
     }
 
     #[async_std::test]
-    async fn ssss_put() -> Result<()> {
+    async fn ssss_put() -> Result<()>
+    {
         let (api, dbs) = setup_tmp_api().await?;
 
         let mu = Mu([0u8; MU_LENGTH]);
@@ -1051,7 +1078,8 @@ mod requests {
     }
 
     #[async_std::test]
-    async fn ssss_patch() -> Result<()> {
+    async fn ssss_patch() -> Result<()>
+    {
         let (api, dbs) = setup_tmp_api().await?;
 
         let mu = Mu([0u8; MU_LENGTH]);
@@ -1092,7 +1120,8 @@ mod requests {
     }
 
     #[async_std::test]
-    async fn ssss_delete() -> Result<()> {
+    async fn ssss_delete() -> Result<()>
+    {
         let (api, dbs) = setup_tmp_api().await?;
 
         let mu = Mu([0u8; MU_LENGTH]);
@@ -1132,7 +1161,8 @@ mod requests {
         dbs: &Dbs<impl Database>,
         signed_by: &Id,
         mut req: Request,
-    ) -> Result<Response> {
+    ) -> Result<Response>
+    {
         let nonce =
             init_nonce(&dbs.tokens, &["read", "create", "delete"]).await?;
         sign_req(&mut req, &nonce, TUNE, SALT, &signed_by)?;
@@ -1143,7 +1173,8 @@ mod requests {
     }
 
     #[async_std::test]
-    async fn mailbox_auth() -> Result<()> {
+    async fn mailbox_auth() -> Result<()>
+    {
         let (api, dbs) = setup_tmp_api().await?;
 
         let recipient_id = Id([0u8; ID_LENGTH]);
@@ -1189,7 +1220,8 @@ mod requests {
     }
 
     #[async_std::test]
-    async fn mailbox_actions() -> Result<()> {
+    async fn mailbox_actions() -> Result<()>
+    {
         let (api, dbs) = setup_tmp_api().await?;
 
         let recipient_id = Id([0u8; ID_LENGTH]);
@@ -1287,7 +1319,8 @@ mod requests {
     }
 
     #[async_std::test]
-    async fn vault_get() -> Result<()> {
+    async fn vault_get() -> Result<()>
+    {
         let (api, dbs) = setup_tmp_api().await?;
 
         let nonce_b64 = init_nonce(&dbs.tokens, &["read"]).await?;
@@ -1386,7 +1419,8 @@ mod requests {
     }
 
     #[async_std::test]
-    async fn vault_put() -> Result<()> {
+    async fn vault_put() -> Result<()>
+    {
         let (api, dbs) = setup_tmp_api().await?;
 
         let nonce_b64 = init_nonce(&dbs.tokens, &["create", "update"]).await?;
@@ -1597,7 +1631,8 @@ mod requests {
     // This tests that the server can read the data that the server wrote.
     // Technically tested during the put tests but not explicitly.
     #[async_std::test]
-    async fn vault_roundtrip() -> Result<()> {
+    async fn vault_roundtrip() -> Result<()>
+    {
         let (api, dbs) = setup_tmp_api().await?;
 
         let nonce_b64 = init_nonce(&dbs.tokens, &["create", "update"]).await?;
@@ -1685,7 +1720,8 @@ mod requests {
     }
 
     #[async_std::test]
-    async fn share_roundtrip() -> Result<()> {
+    async fn share_roundtrip() -> Result<()>
+    {
         let (api, _) = setup_tmp_api().await?;
 
         let id = Id([0u8; ID_LENGTH]);
@@ -1714,7 +1750,8 @@ mod requests {
     }
 
     #[async_std::test]
-    async fn vault_delete() -> Result<()> {
+    async fn vault_delete() -> Result<()>
+    {
         let (api, dbs) = setup_tmp_api().await?;
 
         let nonce_b64 = init_nonce(&dbs.tokens, &["delete"]).await?;
@@ -1758,7 +1795,8 @@ mod requests {
     }
 
     #[async_std::test]
-    async fn service_list_get() -> Result<()> {
+    async fn service_list_get() -> Result<()>
+    {
         let (api, dbs) = setup_tmp_api().await?;
 
         let id = Id([0u8; ID_LENGTH]); // use the zero id
@@ -1801,7 +1839,8 @@ mod requests {
     const MIN_COST: u8 = 1;
 
     #[async_std::test]
-    async fn directory_lookup_roundtrip() -> Result<()> {
+    async fn directory_lookup_roundtrip() -> Result<()>
+    {
         let (api, dbs) = setup_tmp_api().await?;
 
         let id = Id([0u8; ID_LENGTH]); // use the zero id
@@ -1831,7 +1870,8 @@ mod requests {
         Ok(())
     }
 
-    fn cid_from_phone(phone: &str) -> String {
+    fn cid_from_phone(phone: &str) -> String
+    {
         let hash = blake3::hash(phone.as_bytes());
         let bytes = hash.as_bytes();
 
@@ -1839,7 +1879,8 @@ mod requests {
     }
 
     #[async_std::test]
-    async fn directory_entry_roundtrip() -> Result<()> {
+    async fn directory_entry_roundtrip() -> Result<()>
+    {
         let (api, dbs) = setup_tmp_api().await?;
 
         let id = Id([0u8; ID_LENGTH]); // use the zero id
@@ -1870,7 +1911,8 @@ mod requests {
     }
 
     #[async_std::test]
-    async fn directory_entry_post() -> Result<()> {
+    async fn directory_entry_post() -> Result<()>
+    {
         let (api, dbs) = setup_tmp_api().await?;
 
         let id = Id([0u8; ID_LENGTH]); // use the zero id
@@ -1902,7 +1944,8 @@ mod requests {
     }
 
     #[allow(dead_code)]
-    fn print_body(res: &mut Response) -> Result<()> {
+    fn print_body(res: &mut Response) -> Result<()>
+    {
         let body_bytes = task::block_on(res.take_body().into_bytes())
             .map_err(|_| anyhow!("error reading body"))?;
         println!("{:?}", String::from_utf8(body_bytes.clone()));
