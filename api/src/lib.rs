@@ -912,7 +912,7 @@ where
     Ok(StatusCode::NoContent)
 }
 
-async fn get_directory_lookup<T>(req: Request<State<T>>) -> Result<StatusCode>
+async fn directory_lookup<T>(req: Request<State<T>>) -> Result<StatusCode>
 where
     T: Database,
 {
@@ -1176,7 +1176,8 @@ where
             .at("lookup")
             .with(signed_pow_auth)
             .with(add_auth_info)
-            .get(get_directory_lookup);
+            .get(directory_lookup)
+            .post(directory_lookup); // some things don't like get w/ body
         directory
             .at("entries")
             .with(signed_pow_auth)
