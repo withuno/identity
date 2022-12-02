@@ -214,8 +214,22 @@ where
         Method::Patch => "update",
         Method::Delete => "delete",
         Method::Put | Method::Post => {
-            let id = req.param("id").map_err(|_| StatusCode::BadRequest)?;
-            let exists = match req.state().db.exists(&id).await {
+            let id = req.param("id");
+            if id.is_err() {
+                if let Method::Put = req.method() {
+                    return Err(StatusCode::BadRequest);   
+                } else {
+                    // Post requests do not have an ID. But the mailbox kinda
+                    // fudges this and depends on the ID parameter that happens
+                    // to exist during the Post since the resource collection
+                    // being operated on is indexed by the receiving user's ID.
+                    // TODO: fix this above. 
+                    // Fow now, return update after checking for the req id
+                    // param.
+                    return Ok("update");            
+                } 
+            }
+            let exists = match req.state().db.exists(&id.unwrap()).await {
                 Ok(e) => e,
                 Err(e) => {
                     println!("db error: {:?}", e);
@@ -224,6 +238,11 @@ where
             };
             if exists { "update" } else { "create" }
         },
+        //Method::Post => "update",
+        // During a POST, the resource ID is not known to the client and can't
+        // be determined without help from... something. Either the server has
+        // to inspect the body prior to authorization, which seems weird, or
+        // we just consider any POST an update. For now, just do the latter.
         Method::Trace => "debug",
         Method::Connect => "proxy",
         // http_types 2.11 added a bunch of new methods which we're probably

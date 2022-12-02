@@ -1966,8 +1966,7 @@ mod requests
 
         print_body(&mut res1)?;
 
-        //assert_eq!(StatusCode::NoContent, res1.status());
-        assert_eq!(StatusCode::BadRequest, res1.status());
+        assert_eq!(StatusCode::NoContent, res1.status());
 
         Ok(())
     }
