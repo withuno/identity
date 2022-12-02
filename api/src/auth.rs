@@ -217,17 +217,17 @@ where
             let id = req.param("id");
             if id.is_err() {
                 if let Method::Put = req.method() {
-                    return Err(StatusCode::BadRequest);   
+                    return Err(StatusCode::BadRequest);
                 } else {
                     // Post requests do not have an ID. But the mailbox kinda
                     // fudges this and depends on the ID parameter that happens
                     // to exist during the Post since the resource collection
                     // being operated on is indexed by the receiving user's ID.
-                    // TODO: fix this above. 
+                    // TODO: fix this above.
                     // Fow now, return update after checking for the req id
                     // param.
-                    return Ok("update");            
-                } 
+                    return Ok("update");
+                }
             }
             let exists = match req.state().db.exists(&id.unwrap()).await {
                 Ok(e) => e,
