@@ -155,7 +155,6 @@ pub fn share_seed(
     Ok(mnemonic.join(" "))
 }
 
-// session_seed is a string because thats the output of _generate_session_id
 #[wasm_bindgen]
 pub fn wasm_share_seed(seed_to_share: String)
 -> Option<String>
