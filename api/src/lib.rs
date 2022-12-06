@@ -642,6 +642,7 @@ where
             .and_then(|b| serde_json::from_slice(&b).map_err(|e| e.into()))
             .map_err(server_err)?;
     }
+
     let vclock_cur = v_sto.vclock;
 
     // If the vclock the client provides is not a child of the current vclock,

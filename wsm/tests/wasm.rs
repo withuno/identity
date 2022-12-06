@@ -9,21 +9,23 @@ use wasm_bindgen_test::*;
 
 use wsm::*;
 
-#[wasm_bindgen_test]
-fn test_decrypt_share()
+#[test]
+fn test_share_recover_seed()
 {
-    let session_seed = String::from("lxAi2uKDOqW7zg");
+    use rand::prelude::*;
+    let mut rng = rand::thread_rng();
 
-    let share = String::from(
-        r"cGpbsstHz8Gm15DSBtAliDOQpCn0qCY0Ycw8R/2SwwdkxLdxEBpgIeSWOs64nAopMoP5vfElKz5xg3eF7GT30IvMt/zDwO3upEekvUYJLHEfpxYlGVskDBKhR5VPgxwIHKKAC9NhxWGjr4V/CynaWmxXnnmNzG0C8OYGw2zehyzM0P1yyTQFgw0NRcxwSs6r3wjCiiN++k8l5YEXodmt/r/vZpFUecHEFmZc8dv/t8rS+gDhIn7lA8x0SvIfRDTdscoKBI5O4bJVDMrAKGLJjRcHQhaxpFU6o4KqNX4Zh+15sEE3TtKQ4/CrzEZKkHwqkFHuO9GZlHYUO4asbjF8aF25onCNf8VO",
-    );
+    let mut seed_to_share: [u8; 32] = [0; 32];
 
-    let expected_seed = base64::encode(vec![
-        62, 81, 232, 140, 251, 15, 5, 31, 21, 119, 64, 228, 110, 63, 195, 174,
-        244, 154, 5, 22, 230, 100, 168, 91, 92, 127, 43, 139, 42, 113, 74, 167,
-    ]);
+    for _ in 1..100 {
+        rng.fill(&mut seed_to_share);
 
-    assert_eq!(wasm_decrypt_share(share, session_seed).unwrap(), expected_seed);
+        let share = share_seed(&seed_to_share).unwrap();
+
+        let words: Vec<String> =
+            share.split(' ').map(|s| s.to_owned()).collect();
+        assert_eq!(uno::combine(&[words]).unwrap().0.to_vec(), seed_to_share.to_vec());
+    }
 }
 
 #[wasm_bindgen_test]

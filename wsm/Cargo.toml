@@ -11,6 +11,7 @@ crate-type = ['cdylib', 'rlib']
 
 [dev-dependencies]
 wasm-bindgen-test = "0.3"
+rand = "0.8.5"
 
 [dependencies]
 # this is required for a random source in a wasm environment
