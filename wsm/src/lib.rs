@@ -130,9 +130,7 @@ pub fn wasm_async_auth_header(
     }
 }
 
-pub fn share_seed(
-    seed_to_share: &[u8],
-) -> Result<String, Error>
+pub fn share_seed(seed_to_share: &[u8]) -> Result<String, Error>
 {
     let id_to_share = match uno::Id::try_from(seed_to_share) {
         Ok(v) => v,
@@ -156,8 +154,7 @@ pub fn share_seed(
 }
 
 #[wasm_bindgen]
-pub fn wasm_share_seed(seed_to_share: String)
--> Option<String>
+pub fn wasm_share_seed(seed_to_share: String) -> Option<String>
 {
     let decoded_seed_to_share = match base64::decode(seed_to_share) {
         Ok(v) => v,

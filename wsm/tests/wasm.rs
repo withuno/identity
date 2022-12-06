@@ -24,7 +24,10 @@ fn test_share_recover_seed()
 
         let words: Vec<String> =
             share.split(' ').map(|s| s.to_owned()).collect();
-        assert_eq!(uno::combine(&[words]).unwrap().0.to_vec(), seed_to_share.to_vec());
+        assert_eq!(
+            uno::combine(&[words]).unwrap().0.to_vec(),
+            seed_to_share.to_vec()
+        );
     }
 }
 
