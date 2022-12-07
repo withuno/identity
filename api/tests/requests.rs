@@ -2013,26 +2013,19 @@ mod requests
         let (api, dbs) = setup_tmp_api().await?;
 
         let id = Id([0u8; ID_LENGTH]); // use the zero id
-        let n64_1 = init_nonce(&dbs.tokens, &["create"]).await?;
+        let n64_1 = init_nonce(&dbs.tokens, &["create", "read"]).await?;
 
         let phone = "15005550000";
         let cid = cid_from_phone(&phone);
 
         let resource = format!("http://example.com/directory/entries/{}", cid);
 
-        let mut req1: Request = surf::put(&resource).build();
+        let mut req1: Request = surf::get(&resource).build();
         blake3_sign_req(&mut req1, &n64_1, MIN_COST, &id)?;
         let res1: Response =
             api.respond(req1).await.map_err(|_| anyhow!("request failed"))?;
 
-        assert_eq!(StatusCode::NoContent, res1.status());
-
-        let mut req2 = surf::get(&resource).build();
-        asym_sign_req_using_res_with_id(&res1, &mut req2, &id)?;
-        let res2: Response =
-            api.respond(req2).await.map_err(|_| anyhow!("request failed"))?;
-
-        assert_eq!(StatusCode::NotFound, res2.status());
+        assert_eq!(StatusCode::NotFound, res1.status());
 
         // TODO: test all edge cases
 
@@ -2077,38 +2070,6 @@ mod requests
         let actual_entry_string =
             res1.take_body().into_string().await.map_err(|e| anyhow!(e))?;
         assert_eq!(expected_entry_string, actual_entry_string);
-
-        Ok(())
-    }
-
-    #[async_std::test]
-    async fn directory_entry_put() -> Result<()>
-    {
-        let (api, dbs) = setup_tmp_api().await?;
-
-        let id = Id([0u8; ID_LENGTH]); // use the zero id
-        let n64_1 = init_nonce(&dbs.tokens, &["create"]).await?;
-
-        let phone = "15005550000";
-        let cid = cid_from_phone(&phone);
-
-        let resource = format!("http://example.com/directory/entries/{}", cid);
-
-        let mut req1: Request = surf::put(&resource).build();
-        blake3_sign_req(&mut req1, &n64_1, MIN_COST, &id)?;
-        let res1: Response =
-            api.respond(req1).await.map_err(|_| anyhow!("request failed"))?;
-
-        assert_eq!(StatusCode::NoContent, res1.status());
-
-        let mut req2 = surf::get(&resource).build();
-        asym_sign_req_using_res_with_id(&res1, &mut req2, &id)?;
-        let res2: Response =
-            api.respond(req2).await.map_err(|_| anyhow!("request failed"))?;
-
-        assert_eq!(StatusCode::NotFound, res2.status());
-
-        // TODO
 
         Ok(())
     }
