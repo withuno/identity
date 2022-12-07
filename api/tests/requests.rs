@@ -47,6 +47,10 @@ mod requests
     use vclock::VClock;
 
     use api::Database;
+    use api::DirectoryEntry;
+    use api::DirectoryEntryInternal;
+    use api::LookupItem;
+    use api::PendingItem;
 
     const TUNE: &str = "$argon2d$v=19$m=4096,t=3,p=1";
     const SALT: &str = "cm9ja3NhbHQ";
@@ -1916,6 +1920,102 @@ mod requests
         let (api, dbs) = setup_tmp_api().await?;
 
         let id = Id([0u8; ID_LENGTH]); // use the zero id
+        let id_pub_b64 = id_to_b64(&id);
+
+        let n64_1 = init_nonce(&dbs.tokens, &["update"]).await?;
+
+        let resource = "http://example.com/directory/entries";
+
+        let phone = "15005550000";
+        let cid = cid_from_phone(&phone);
+
+        let request_body = json!({
+           "phone": phone,
+           "country": "US",
+           "signing_key": id_pub_b64,
+           "encryption_key": "unimportant",
+        });
+
+        let mut req1: Request = surf::post(resource)
+            .body_json(&request_body)
+            .map_err(|_| anyhow!("serialize body"))?
+            .build();
+
+        blake3_sign_req(&mut req1, &n64_1, MIN_COST, &id)?;
+
+        let res1: Response =
+            api.respond(req1).await.map_err(|_| anyhow!("request failed"))?;
+
+        assert_eq!(StatusCode::PaymentRequired, res1.status());
+
+        // assert that a pending entry was created
+        let pending_key = format!("pending/{}", &phone);
+        let pending_entry = dbs
+            .directory
+            .get(pending_key)
+            .await
+            .context("get pending object")?;
+        let pending_obj: PendingItem = serde_json::from_slice(&pending_entry)?;
+
+        assert_eq!(id_pub_b64, pending_obj.user);
+        assert_eq!("todo-twilio-session-id(VEXXXXX)", pending_obj.sid);
+
+        let mut req2: Request = surf::post(resource)
+            .body_json(&request_body)
+            .map_err(|_| anyhow!("serialize body2"))?
+            .header("verification", "XXXXXX")
+            .build();
+
+        asym_sign_req_using_res_with_id(&res1, &mut req2, &id)?;
+
+        let res2: Response =
+            api.respond(req2).await.map_err(|_| anyhow!("request 2 failed"))?;
+
+        assert_eq!(StatusCode::Created, res2.status());
+
+        let location = res2
+            .header("location")
+            .ok_or(anyhow!("missing location header"))?
+            .last()
+            .as_str();
+
+        assert_eq!(cid, location);
+
+        // get the entry and check the data
+        let created_resource = format!("{}/{}", resource, location);
+        let mut req3 = surf::get(created_resource).build();
+
+        asym_sign_req_using_res_with_id(&res2, &mut req3, &id)?;
+
+        let mut res3: Response =
+            api.respond(req3).await.map_err(|_| anyhow!("req 3 failed"))?;
+
+        assert_eq!(StatusCode::Ok, res3.status());
+
+        let actual_body = res3
+            .take_body()
+            .into_bytes()
+            .await
+            .map_err(|_| anyhow!("res3 body"))?;
+
+        let actual_obj: DirectoryEntry = serde_json::from_slice(&actual_body)?;
+
+        let expected_entry = DirectoryEntry {
+            signing_key: id_pub_b64,
+            encryption_key: "unimportant".into(),
+        };
+
+        assert_eq!(expected_entry, actual_obj);
+
+        Ok(())
+    }
+
+    #[async_std::test]
+    async fn directory_entry_post() -> Result<()>
+    {
+        let (api, dbs) = setup_tmp_api().await?;
+
+        let id = Id([0u8; ID_LENGTH]); // use the zero id
         let n64_1 = init_nonce(&dbs.tokens, &["create"]).await?;
 
         let phone = "15005550000";
@@ -1935,41 +2035,9 @@ mod requests
         let res2: Response =
             api.respond(req2).await.map_err(|_| anyhow!("request failed"))?;
 
-        assert_eq!(StatusCode::NoContent, res2.status());
+        assert_eq!(StatusCode::NotFound, res2.status());
 
-        // TODO
-
-        Ok(())
-    }
-
-    #[async_std::test]
-    async fn directory_entry_post() -> Result<()>
-    {
-        let (api, dbs) = setup_tmp_api().await?;
-
-        let id = Id([0u8; ID_LENGTH]); // use the zero id
-        let n64_1 = init_nonce(&dbs.tokens, &["update"]).await?;
-
-        let resource = "http://example.com/directory/entries";
-
-        let phone = "15005550000";
-        let cid = cid_from_phone(&phone);
-
-        let body = json!({ "phone": phone, "cid": cid });
-
-        let mut req1: Request = surf::post(resource)
-            .body_json(&body)
-            .map_err(|_| anyhow!("serialize body"))?
-            .build();
-
-        blake3_sign_req(&mut req1, &n64_1, MIN_COST, &id)?;
-
-        let mut res1: Response =
-            api.respond(req1).await.map_err(|_| anyhow!("request failed"))?;
-
-        print_body(&mut res1)?;
-
-        assert_eq!(StatusCode::NoContent, res1.status());
+        // TODO: test all edge cases
 
         Ok(())
     }
@@ -1980,6 +2048,8 @@ mod requests
         let (api, dbs) = setup_tmp_api().await?;
 
         let id = Id([0u8; ID_LENGTH]); // use the zero id
+        let uid = id_to_b64url(&id);
+
         let n64_1 = init_nonce(&dbs.tokens, &["read"]).await?;
 
         let phone = "15005550000";
@@ -1987,21 +2057,29 @@ mod requests
 
         let resource = format!("http://example.com/directory/entries/{}", cid);
 
+        let expected =
+            DirectoryEntry { signing_key: uid, encryption_key: "bar".into() };
+
+        let expected_entry_string = serde_json::to_string(&expected)?;
+
+        let internal =
+            DirectoryEntryInternal { entry: expected, phone: phone.into() };
+
+        let db_bytes = serde_json::to_vec(&internal)?;
+
+        let entry_key = format!("entries/{}", cid);
+        dbs.directory.put(entry_key, &db_bytes).await?;
+
         let mut req1: Request = surf::get(&resource).build();
         blake3_sign_req(&mut req1, &n64_1, MIN_COST, &id)?;
-        let res1: Response =
+        let mut res1: Response =
             api.respond(req1).await.map_err(|_| anyhow!("request failed"))?;
 
-        assert_eq!(StatusCode::NoContent, res1.status());
+        assert_eq!(StatusCode::Ok, res1.status());
 
-        let mut req2 = surf::get(&resource).build();
-        asym_sign_req_using_res_with_id(&res1, &mut req2, &id)?;
-        let res2: Response =
-            api.respond(req2).await.map_err(|_| anyhow!("request failed"))?;
-
-        assert_eq!(StatusCode::NoContent, res2.status());
-
-        // TODO
+        let actual_entry_string =
+            res1.take_body().into_string().await.map_err(|e| anyhow!(e))?;
+        assert_eq!(expected_entry_string, actual_entry_string);
 
         Ok(())
     }
@@ -2031,11 +2109,27 @@ mod requests
         let res2: Response =
             api.respond(req2).await.map_err(|_| anyhow!("request failed"))?;
 
-        assert_eq!(StatusCode::NoContent, res2.status());
+        assert_eq!(StatusCode::NotFound, res2.status());
 
         // TODO
 
         Ok(())
+    }
+
+    fn id_to_b64url(id: &Id) -> String
+    {
+        let keypair = KeyPair::from(id);
+        let pubkey = keypair.public.as_bytes();
+
+        base64::encode_config(&pubkey, base64::URL_SAFE_NO_PAD)
+    }
+
+    fn id_to_b64(id: &Id) -> String
+    {
+        let keypair = KeyPair::from(id);
+        let pubkey = keypair.public.as_bytes();
+
+        base64::encode_config(&pubkey, base64::STANDARD)
     }
 
     #[allow(dead_code)]

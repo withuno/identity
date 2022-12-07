@@ -23,6 +23,7 @@ use anyhow::bail;
 
 pub mod auth;
 use auth::UserId;
+use uno::PublicKey;
 
 use std::future::Future;
 use std::pin::Pin;
@@ -880,25 +881,275 @@ fn magic_share_err(e: magic_share::MagicShareError) -> Error
     }
 }
 
-async fn post_directory_entry<T>(req: Request<State<T>>) -> Result<StatusCode>
-where
-    T: Database,
+#[derive(Serialize, Deserialize, Debug)]
+pub struct DirectoryEntryCreate
 {
-    let db = &req.state().db;
-    let uid = &req.ext::<UserId>().unwrap().0;
-
-    Ok(StatusCode::NoContent)
+    pub phone: String,
+    pub country: String,
+    pub signing_key: String,
+    pub encryption_key: String,
 }
 
-async fn get_directory_entry<T>(req: Request<State<T>>) -> Result<StatusCode>
+#[derive(Serialize, Deserialize, Debug, PartialEq)]
+pub struct DirectoryEntry
+{
+    pub signing_key: String,
+    pub encryption_key: String,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct DirectoryEntryInternal
+{
+    pub entry: DirectoryEntry,
+    pub phone: String,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct PendingItem
+{
+    pub sid: String,
+    pub user: String,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct LookupItem
+{
+    pub cid: String,
+}
+
+
+async fn post_directory_entry<T>(mut req: Request<State<T>>) -> Result<Response>
+where
+    T: Database,
+{
+    let entry_bytes = req.body_bytes().await.map_err(server_err)?;
+
+    let db = &req.state().db;
+    let uid = &req.ext::<UserId>().unwrap().0;
+    let user_b64 = base64::encode(uid.as_bytes());
+
+    let entry: DirectoryEntryCreate =
+        serde_json::from_slice(&entry_bytes).map_err(bad_request)?;
+
+    let validated_phone = validate_phone(&entry.phone, &entry.country).await?;
+    let pending_key = format!("pending/{}", validated_phone);
+
+    let start_verification = || {
+        let phone = validated_phone.clone();
+        let user_id = user_b64.clone();
+        let p_key = pending_key.clone();
+
+        async move {
+            let session_id = verify_phone_start(&phone.clone()).await?;
+
+            let pending_item = PendingItem { sid: session_id, user: user_id };
+            let pending_item_bytes = serde_json::to_vec(&pending_item)?;
+            db.put(p_key, &pending_item_bytes).await.map_err(server_err)?;
+
+            // The payment required is a verification code.
+            let response = Response::builder(StatusCode::PaymentRequired)
+                .body(json!({"cause": "verification.needed"}))
+                .build();
+
+            Ok::<tide::Response, tide::Error>(response)
+        }
+    };
+
+    let accept_entry = || {
+        let phone = validated_phone.clone();
+        let user_id = user_b64.clone();
+        let p_key = pending_key.clone();
+
+        async move {
+            let cid = cid_from_phone(&phone);
+            let lookup_key = format!("lookup/{}", phone);
+
+            let lookup_item = LookupItem { cid: cid.clone() };
+            let lookup_bytes =
+                serde_json::to_vec(&lookup_item).map_err(server_err)?;
+
+            db.put(&lookup_key, &lookup_bytes).await.map_err(server_err)?;
+
+            let entry_key = format!("entries/{}", cid);
+            let entry_value = DirectoryEntryInternal {
+                phone,
+                entry: DirectoryEntry {
+                    signing_key: user_id,
+                    encryption_key: entry.encryption_key,
+                },
+            };
+
+            let entry_bytes =
+                serde_json::to_vec(&entry_value).map_err(server_err)?;
+
+            db.put(&entry_key, &entry_bytes).await.map_err(server_err)?;
+            db.del(p_key).await.map_err(server_err)?;
+
+            let response = Response::builder(StatusCode::Created)
+                .header("location", cid)
+                .build();
+
+            Ok::<tide::Response, tide::Error>(response)
+        }
+    };
+
+    if db.exists(&pending_key).await.map_err(server_err)? {
+        //
+        // If pending data exists, check if the session has been verified, and
+        // if so, allow the entry to be posted.
+        //
+        let pending_bytes = db.get(&pending_key).await.map_err(server_err)?;
+        let pending: PendingItem =
+            serde_json::from_slice(&pending_bytes).map_err(server_err)?;
+
+        if user_b64 != pending.user {
+            // The user making the request is not the user who initiated the
+            // previous one. Cancel the pending request and start a new one.
+            return Ok(start_verification().await?);
+        }
+        //
+        // else: The user making this request matches the user that initiated
+        // the verification in the first place. Check if they provided a code
+        // this time and verify the status of the code, allowing the POST to
+        // proceed if the verification code provided by the client is correct.
+        //
+
+        let status =
+            verify_check_status(&pending.sid).await.map_err(server_err)?;
+
+        match status.as_str() {
+            //
+            // Seems unlikely this could happen before verifying the code, but
+            // if it does we can accept the entry. Maybe the user is retrying
+            // after a previous error.
+            "approved" => return Ok(accept_entry().await?),
+            //
+            // Expected, move along.
+            "pending" => {},
+            //
+            // If the verification session is canceled at this point then
+            // we need to send a new code regardless of whether the user
+            // provided a (now old) one or not.
+            "canceled" => return Ok(start_verification().await?),
+            //
+            // Otherwise bail.
+            _ => return Err(server_err("unknown status")),
+        }
+
+        // Now actually verify the code.
+        // 1. Get the code from the header
+        let code = match req.header("verification") {
+            Some(values) => values.last().as_str(),
+            None => {
+                // If the client didn't provide a code, this would normally be
+                // a BadRequest. But it is unlikely the client would behave
+                // incorrectly here. Instead, simply restart the verification
+                // session. This allows the client to request the code be
+                // resent while the current pending session is still active.
+                //
+                // let response = Response::builder(StatusCode::BadRequest)
+                //    .body(json!({"cause": "missing.verification"}))
+                //    .build();
+                //
+                // TODO: perhaps "retry_verification" instead of start
+                return Ok(start_verification().await?);
+            },
+        };
+        // 2. Verify the code.
+        let status =
+            verify_code_submit(&pending.sid, code).await.map_err(server_err)?;
+
+        match status.as_str() {
+            //
+            // 3. Accept the entry.
+            "approved" => return Ok(accept_entry().await?),
+            //
+            // The provided code was likely not correct. Don't resend the code
+            // automatically here. Just respond that payment is still required
+            // so the client can try again by asking the user for the code.
+            // If the client wants to indicate that the code should be re-sent
+            // then it can elect to send a post without the code header.
+            "pending" => {
+                let response = Response::builder(StatusCode::PaymentRequired)
+                    .body(json!({"cause": "verification.needed"}))
+                    .build();
+
+                return Ok(response);
+            },
+            //
+            // We already checked for "canceled" above, but if the session
+            // happened to expire or something while this flow is in flight
+            // then we handle it here by restarting it.
+            "canceled" => return Ok(start_verification().await?),
+            //
+            // Otherwise bail.
+            _ => return Err(server_err("unknown status")),
+        }
+    } else {
+        //
+        // If there is no pending verification, create one.
+        //
+        return Ok(start_verification().await?);
+    }
+}
+
+
+async fn validate_phone(phone: &str, country: &str) -> Result<String>
+{
+    // TODO: use Twilio API, but make this plugable so you can run locally.
+    // We only care about real validation in dev/prod/etc.
+    Ok(phone.into())
+}
+
+async fn verify_phone_start(phone: &str) -> Result<String>
+{
+    // TODO: use Twilio API, but make this plugable so you can run locally.
+    Ok("todo-twilio-session-id(VEXXXXX)".into())
+}
+
+async fn verify_check_status(sid: &str) -> Result<String>
+{
+    // TODO: use Twilio API to lookup verification_check using sid
+    // https://www.twilio.com/docs/verify/api/verification-check
+    // "approved", "pending", "canceled"
+    Ok("pending".into())
+}
+
+async fn verify_code_submit(sid: &str, code: &str) -> Result<String>
+{
+    // TODO: use Twilio API to lookup verification_check using sid
+    // https://www.twilio.com/docs/verify/api/verification-check
+    // "approved", "pending", "canceled"
+    Ok("approved".into())
+}
+
+// Generate a `cid` from a validated phone string.
+fn cid_from_phone(phone: &str) -> String
+{
+    let hash = blake3::hash(phone.as_bytes());
+    let bytes = hash.as_bytes();
+
+    base64::encode_config(bytes, base64::URL_SAFE_NO_PAD)
+}
+
+async fn get_directory_entry<T>(req: Request<State<T>>) -> Result<Response>
 where
     T: Database,
 {
     let db = &req.state().db;
-    let uid = &req.ext::<UserId>().unwrap().0;
     let cid = &req.ext::<ContactId>().unwrap().0;
 
-    Ok(StatusCode::NoContent)
+    let entry_key = format!("entries/{}", cid);
+
+    let bytes = db.get(entry_key).await.map_err(not_found)?;
+    let data: DirectoryEntryInternal =
+        serde_json::from_slice(&bytes).map_err(server_err)?;
+
+    let response = Response::builder(StatusCode::Ok)
+        .body(serde_json::to_vec(&data.entry).map_err(server_err)?)
+        .build();
+
+    Ok(response)
 }
 
 async fn put_directory_entry<T>(req: Request<State<T>>) -> Result<StatusCode>
