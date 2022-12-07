@@ -1152,17 +1152,6 @@ where
     Ok(response)
 }
 
-async fn put_directory_entry<T>(req: Request<State<T>>) -> Result<StatusCode>
-where
-    T: Database,
-{
-    let db = &req.state().db;
-    let uid = &req.ext::<UserId>().unwrap().0;
-    let cid = &req.ext::<ContactId>().unwrap().0;
-
-    Ok(StatusCode::NoContent)
-}
-
 async fn directory_lookup<T>(req: Request<State<T>>) -> Result<StatusCode>
 where
     T: Database,
@@ -1442,7 +1431,6 @@ where
             .with(add_auth_info)
             .with(ensure_contact_id)
             // need to ensure that the pubkey on the request owns the cid in question
-            .put(put_directory_entry)
             .get(get_directory_entry);
         api.at("directory").nest(directory);
     }
