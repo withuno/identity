@@ -10,6 +10,8 @@ use std::fmt;
 use std::fmt::{Debug, Display};
 
 pub mod store;
+use futures::StreamExt;
+use futures::stream::FuturesUnordered;
 pub use store::Database;
 
 pub mod magic_share;
@@ -19,7 +21,6 @@ use anyhow::bail;
 
 pub mod auth;
 use auth::UserId;
-use uno::PublicKey;
 
 use std::future::Future;
 use std::pin::Pin;
@@ -715,6 +716,33 @@ pub struct LookupItem
     pub cid: String,
 }
 
+#[derive(Serialize, Deserialize, Debug)]
+pub struct LookupQuery
+{
+    pub country: String,
+    pub phone_numbers: Vec<String>,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct LookupResult
+{
+    pub cids: Vec<LookupItemClientSuccess>,
+    pub errors: Vec<LookupItemClientError>,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct LookupItemClientSuccess
+{
+    pub phone_number: String,
+    pub cid: String,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct LookupItemClientError
+{
+    pub phone_number: String,
+    pub cause: String,
+}
 
 async fn post_directory_entry<T>(mut req: Request<State<T>>) -> Result<Response>
 where
@@ -866,7 +894,7 @@ where
             // automatically here. Just respond that payment is still required
             // so the client can try again by asking the user for the code.
             // If the client wants to indicate that the code should be re-sent
-            // then it can elect to send a post without the code header.
+            // then it can elect to send a post without the code header. 
             "pending" => {
                 let response = Response::builder(StatusCode::PaymentRequired)
                     .body(json!({"cause": "verification.needed"}))
@@ -896,7 +924,7 @@ async fn validate_phone(phone: &str, country: &str) -> Result<String>
 {
     // TODO: use Twilio API, but make this plugable so you can run locally.
     // We only care about real validation in dev/prod/etc.
-    Ok(phone.into())
+    Ok(String::from(phone))
 }
 
 async fn verify_phone_start(phone: &str) -> Result<String>
@@ -938,7 +966,7 @@ where
     let cid = &req.ext::<ContactId>().unwrap().0;
 
     let entry_key = format!("entries/{}", cid);
-
+    
     let bytes = db.get(entry_key).await.map_err(not_found)?;
     let data: DirectoryEntryInternal =
         serde_json::from_slice(&bytes).map_err(server_err)?;
@@ -950,17 +978,81 @@ where
     Ok(response)
 }
 
-async fn directory_lookup<T>(req: Request<State<T>>) -> Result<StatusCode>
+async fn directory_lookup<T>(mut req: Request<State<T>>) -> Result<Response>
 where
     T: Database,
 {
+    let body_bytes = req.body_bytes().await.map_err(server_err)?;
+    let query: LookupQuery = serde_json::from_slice(&body_bytes)
+        .map_err(bad_request)?;
+
     let db = &req.state().db;
-    let uid = &req.ext::<UserId>().unwrap().0;
+    
+    let validate = |phone: &str| {
+        let p = String::from(phone);
+        let c = query.country.clone();
+        async move { (p.clone(), validate_phone(&p, &c).await) }
+    };
+    
+    let validated_phone_numbers = query.phone_numbers.iter()
+        .map(|s| s.as_ref())
+        .map(validate)
+        .collect::<FuturesUnordered<_>>()
+        .collect::<Vec<_>>()
+        .await;
+        
+    let lookup = |tuple: (String, String)| {
+        let orig = tuple.0.clone();
+        let validated = tuple.1.clone();
+        async move { (orig, lookup_phone(db, &validated).await) }        
+    };
 
-    //let query = serde_json::parse::<LookupQuery>(req.body_bytes);
-    //let cid = req.body_bytes();
+    let lookup_pairs = validated_phone_numbers.iter()
+        .filter(|t| t.1.is_ok() )
+        .map(|t| (t.0.clone(), t.1.as_ref().ok().unwrap().clone()) )
+        .map(lookup)
+        .collect::<FuturesUnordered<_>>()
+        .collect::<Vec<_>>()
+        .await;
+        
+    let results = lookup_pairs.iter()
+        .filter(|t| t.1.is_ok() )
+        .map(|t| (t.0.clone(), t.1.as_ref().ok().unwrap()) )
+        .filter(|t| t.1.is_some() )
+        .map(|t| (t.0, t.1.as_ref().unwrap()) )
+        .collect::<Vec<_>>();
+    
+    let items = results.iter()
+        .map(|t| LookupItemClientSuccess { 
+            phone_number: t.0.clone(), 
+            cid: t.1.cid.clone(), 
+        })
+        .collect::<Vec<_>>();
+    
+    let body = LookupResult {
+        cids: items,
+        errors: Vec::new(), // don't report errors
+    };
+    
+    let body_bytes = serde_json::to_vec(&body).map_err(server_err)?;
+    
+    let response = Response::builder(StatusCode::Ok)
+        .body(body_bytes)
+        .build();
 
-    Ok(StatusCode::NoContent)
+    Ok(response)
+}
+
+async fn lookup_phone<T>(db: &T, phone: &str) -> Result<Option<LookupItem>>
+where
+    T: Database
+{
+    let key = format!("lookup/{}", phone);
+    if db.exists(key).await.map_err(server_err)? {
+        Ok(Some(LookupItem { cid: cid_from_phone(phone), }))  
+    } else {
+        Ok(None)
+    }   
 }
 
 fn bad_request<M>(msg: M) -> Error
