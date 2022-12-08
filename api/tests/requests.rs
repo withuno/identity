@@ -11,7 +11,10 @@ mod requests
     use api::mailbox::{
         Mailbox, MessageRequest, MessageStored, MessageToDelete,
     };
-    use api::{add_auth_info, build_routes, signed_pow_auth};
+    use api::{
+        add_auth_info, build_routes, signed_pow_auth, LookupItemClientSuccess,
+        LookupQuery, LookupResult,
+    };
 
     use api::State;
     use tide::{Body, Response, StatusCode};
@@ -1861,10 +1864,7 @@ mod requests
         let res1: Response =
             api.respond(req1).await.map_err(|_| anyhow!("request failed"))?;
 
-        // expect a 404 since the file does not exist yet
-        //assert_eq!(StatusCode::NotFound, res1.status());
-
-        assert_eq!(StatusCode::NoContent, res1.status());
+        assert_eq!(StatusCode::BadRequest, res1.status());
 
         let phone = "15005550000";
         let cid = cid_from_phone(&phone);
@@ -1883,25 +1883,186 @@ mod requests
         let n64_1 = init_nonce(&dbs.tokens, &["read"]).await?;
 
         let resource = "http://example.com/directory/lookup";
-        let url = Url::parse(resource)?;
-        let mut req1: Request = surf::get(url.to_string()).into();
 
-        //let mut req2 = req1.clone(); // for the next request
+        let numbers = vec![
+            "15005550001",
+            "5005550002",
+            "+1 500 555 0003",
+            "500.555.0004",
+            "1 (500) 555-0005",
+            "not a number",
+            "15005559000", // not found
+        ];
+
+        let owned_numbers =
+            numbers.iter().map(|s| s.to_string()).collect::<Vec<_>>();
+
+        let body1 = LookupQuery {
+            country: "US".into(),
+            phone_numbers: owned_numbers.clone(),
+        };
+        let body1_bytes = serde_json::to_vec(&body1)?;
+
+        let mut req1: Request =
+            surf::get(resource).body_bytes(body1_bytes).build();
 
         blake3_sign_req(&mut req1, &n64_1, MIN_COST, &id)?;
 
-        let res1: Response =
+        let mut res1: Response =
             api.respond(req1).await.map_err(|_| anyhow!("request failed"))?;
 
-        // expect a 404 since the file does not exist yet
-        //assert_eq!(StatusCode::NotFound, res1.status());
+        // the db is empty. expect a 200 with empty cids and errors arrays
 
-        assert_eq!(StatusCode::NoContent, res1.status());
+        assert_eq!(StatusCode::Ok, res1.status());
 
-        let phone = "15005550000";
-        let cid = cid_from_phone(&phone);
+        let res1_body: LookupResult = res1
+            .take_body()
+            .into_json()
+            .await
+            .map_err(|_| anyhow!("deserialize body1"))?;
 
-        // TODO
+        let expected_body1 =
+            LookupResult { cids: Vec::new(), errors: Vec::new() };
+
+        assert_eq!(expected_body1, res1_body);
+
+        // add a phone number to the lookup table
+
+        let phone2 = "15005550001";
+        let cid2 = cid_from_phone(&phone2);
+        let item2 = LookupItem { cid: cid2.clone() };
+        let item2_bytes = serde_json::to_vec(&item2)?;
+        let key2 = format!("lookup/{}", phone2);
+        dbs.directory.put(key2, &item2_bytes).await?;
+
+        let mut req2 = surf::post(resource)
+            .body_json(&json!({
+                "country": "US".to_string(),
+                "phone_numbers": owned_numbers.clone(),
+            }))
+            .map_err(|_| anyhow!("req2 body json"))?
+            .build();
+
+        asym_sign_req_using_res_with_id(&res1, &mut req2, &id)?;
+
+        let mut res2: Response =
+            api.respond(req2).await.map_err(|_| anyhow!("req2 error"))?;
+
+        assert_eq!(StatusCode::Ok, res2.status());
+
+        let res2_body: LookupResult = res2
+            .take_body()
+            .into_json()
+            .await
+            .map_err(|_| anyhow!("deserialize res2 body"))?;
+
+        let expected_body2 = LookupResult {
+            cids: vec![LookupItemClientSuccess {
+                phone_number: String::from(phone2),
+                cid: cid2.clone(),
+            }],
+            errors: Vec::new(),
+        };
+
+        assert_eq!(expected_body2, res2_body);
+
+        // add a few more entries
+
+        let phone3_1 = "15005550001";
+        let cid3_1 = cid_from_phone(&phone3_1);
+        let item3_1 = LookupItem { cid: cid3_1.clone() };
+        let item3_1_bytes = serde_json::to_vec(&item3_1)?;
+        let key3_1 = format!("lookup/{}", phone3_1);
+
+        let phone3_2 = "5005550002";
+        let cid3_2 = cid_from_phone(&phone3_2);
+        let item3_2 = LookupItem { cid: cid3_2.clone() };
+        let item3_2_bytes = serde_json::to_vec(&item3_2)?;
+        let key3_2 = format!("lookup/{}", phone3_2);
+
+        let phone3_3 = "+1 500 555 0003";
+        let cid3_3 = cid_from_phone(&phone3_3);
+        let item3_3 = LookupItem { cid: cid3_3.clone() };
+        let item3_3_bytes = serde_json::to_vec(&item3_3)?;
+        let key3_3 = format!("lookup/{}", phone3_3);
+
+        dbs.directory.put(key3_1, &item3_1_bytes).await?;
+        dbs.directory.put(key3_2, &item3_2_bytes).await?;
+        dbs.directory.put(key3_3, &item3_3_bytes).await?;
+
+        let mut req3 = surf::post(resource)
+            .body_json(&json!({
+                "country": "US".to_string(),
+                "phone_numbers": owned_numbers.clone(),
+            }))
+            .map_err(|_| anyhow!("req3 body json"))?
+            .build();
+
+        asym_sign_req_using_res_with_id(&res2, &mut req3, &id)?;
+
+        let mut res3: Response =
+            api.respond(req3).await.map_err(|_| anyhow!("req3 error"))?;
+
+        assert_eq!(StatusCode::Ok, res3.status());
+
+        let res3_body: LookupResult = res3
+            .take_body()
+            .into_json()
+            .await
+            .map_err(|_| anyhow!("deserialize res3 body"))?;
+
+        let phone3_1 = "15005550001";
+        let result3_1 = LookupItemClientSuccess {
+            phone_number: phone3_1.into(),
+            cid: cid_from_phone(&phone3_1),
+        };
+
+        let phone3_2 = "5005550002";
+        let result3_2 = LookupItemClientSuccess {
+            phone_number: phone3_2.into(),
+            cid: cid_from_phone(&phone3_2),
+        };
+
+        let phone3_3 = "+1 500 555 0003";
+        let result3_3 = LookupItemClientSuccess {
+            phone_number: phone3_3.into(),
+            cid: cid_from_phone(&phone3_3),
+        };
+
+        let phone3_4 = "555.500.0004";
+        let result3_4 = LookupItemClientSuccess {
+            phone_number: phone3_4.into(),
+            cid: cid_from_phone(&phone3_4),
+        };
+
+        let phone3_5 = "+1 (555) 500-0005";
+        let result3_5 = LookupItemClientSuccess {
+            phone_number: phone3_5.into(),
+            cid: cid_from_phone(&phone3_5),
+        };
+
+        let phone3_6 = "not a number";
+        let result3_6 = LookupItemClientSuccess {
+            phone_number: phone3_6.into(),
+            cid: cid_from_phone(&phone3_6),
+        };
+
+        let phone3_7 = "15005559000";
+        let result3_7 = LookupItemClientSuccess {
+            phone_number: phone3_7.into(),
+            cid: cid_from_phone(&phone3_7),
+        };
+
+        assert_eq!(res3_body.cids.contains(&result3_1), true);
+        assert_eq!(res3_body.cids.contains(&result3_2), true);
+        assert_eq!(res3_body.cids.contains(&result3_3), true);
+        assert_eq!(res3_body.cids.contains(&result3_4), false);
+        assert_eq!(res3_body.cids.contains(&result3_5), false);
+        assert_eq!(res3_body.cids.contains(&result3_6), false);
+        assert_eq!(res3_body.cids.contains(&result3_7), false);
+        assert_eq!(res3_body.errors.is_empty(), true);
+
+        // TODO: are there edge cases?
 
         Ok(())
     }
