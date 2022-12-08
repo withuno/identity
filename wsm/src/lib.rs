@@ -298,28 +298,31 @@ pub fn wasm_decrypt_vault(vault: &[u8], seed: String) -> Option<String>
     }
 }
 
-pub fn generate_session_id(seed: &[u8]) -> Result<Vec<u8>, Error>
+pub fn generate_session_id(mu_bytes: &[u8]) -> Result<uno::Session, Error>
 {
-    let salt = b"uno recovery session id";
+    let mu = match uno::Mu::try_from(&mu_bytes[..]) {
+        Ok(v) => v,
+        Err(e) => return Err(Error::Fatal(e.to_string())),
+    };
 
-    match argon_hash(32, 256, 2, salt, seed) {
+    match uno::Session::try_from(mu) {
         Ok(v) => Ok(v),
-        Err(e) => Err(e),
+        Err(e) => return Err(Error::Fatal(e.to_string())),
     }
 }
 
 #[wasm_bindgen]
-pub fn wasm_generate_session_id(seed: String) -> Option<String>
+pub fn wasm_generate_session_id(mu: String) -> Option<String>
 {
     // assert len(seed) == 32
 
-    let decoded_seed = match base64::decode(seed) {
+    let decoded_mu_bytes = match base64::decode(mu) {
         Ok(v) => v,
         Err(_) => return None,
     };
 
-    match generate_session_id(&decoded_seed) {
-        Ok(v) => Some(base64::encode_config(v, base64::URL_SAFE_NO_PAD)),
+    match generate_session_id(&decoded_mu_bytes) {
+        Ok(v) => Some(base64::encode_config(v.0, base64::URL_SAFE_NO_PAD)),
         Err(_) => None,
     }
 }
