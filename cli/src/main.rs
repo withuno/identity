@@ -79,6 +79,9 @@ enum SubCommand
 
     #[clap(display_order = 50)]
     S39(S39Cmd),
+
+    #[clap(display_order = 90)]
+    Directory(DirectoryCmd),
 }
 
 ///
@@ -833,6 +836,7 @@ enum S39
     #[clap(display_order = 3)]
     View(S39View),
 }
+
 ///
 /// SLIP-0039 recovery shares options
 ///
@@ -843,6 +847,7 @@ struct S39Cmd
     #[clap(subcommand)]
     subcmd: S39,
 }
+
 ///
 /// Split the configured uno identity seed into a number of shares. .
 ///
@@ -964,6 +969,101 @@ fn do_s39_view(c: S39View) -> Result<String>
     Ok(view)
 }
 
+
+///
+/// Directory options
+///
+#[derive(Parser)]
+struct DirectoryCmd
+{
+    #[clap(subcommand)]
+    subcmd: Directory,
+}
+
+fn do_directory(ctx: Context, s: DirectoryCmd) -> Result<String>
+{
+    match s.subcmd {
+        Directory::Lookup(c) => do_directory_lookup(c),
+        Directory::Entry(c) => do_directory_entry(c),
+        Directory::Verify(c) => do_directory_verify(c),
+    }
+}
+
+///
+/// Directory subcommands
+///
+#[derive(Parser)]
+enum Directory
+{
+    #[clap(display_order = 1)]
+    Lookup(DirectoryLookup),
+
+    #[clap(display_order = 2)]
+    Entry(DirectoryEntry),
+
+    #[clap(display_order = 3)]
+    Verify(DirectoryVerify),
+}
+
+
+///
+/// Lookup directory entry cids by phone number.
+///
+#[derive(Parser)]
+struct DirectoryLookup
+{
+    /// A default locale used to validate any phone numbers without a country
+    /// code.
+    #[clap(long, value_name = "ISO 3166", display_order = 1)]
+    country: Option<String>,
+
+    /// A list of phone numbers to query.
+    #[clap(long, value_name = "E.164", display_order = 1)]
+    phone: Vec<String>,
+}
+
+fn do_directory_lookup(c: DirectoryLookup) -> Result<String> { Ok("".into()) }
+
+///
+/// Get a directory entry by cid.
+///
+#[derive(Parser)]
+struct DirectoryEntry
+{
+    /// The cid of the resource to get.
+    #[clap(long, value_name = "b64", display_order = 1)]
+    cid: String,
+}
+
+
+fn do_directory_entry(c: DirectoryEntry) -> Result<String> { Ok("".into()) }
+
+///
+/// Verify a phone number, associating it with your Uno signing and encryption
+/// keys.
+///
+/// This allows other people to find you on the Uno network to make
+/// social backup and recovery easier.
+///
+#[derive(Parser)]
+struct DirectoryVerify
+{
+    /// Country code to use if the provided phone does not have one.
+    #[clap(long, value_name = "ISO 3166", display_order = 1)]
+    country: Option<String>,
+
+    /// Phone number to verify.
+    #[clap(long, value_name = "E.164", display_order = 1)]
+    phone: String,
+
+    /// Verification code in the event that one is required.
+    #[clap(long, value_name = "code", display_order = 1)]
+    verification: Option<String>,
+}
+
+fn do_directory_verify(c: DirectoryVerify) -> Result<String> { Ok("".into()) }
+
+
 fn main() -> Result<()>
 {
     let cli = Opts::parse();
@@ -984,6 +1084,7 @@ fn main() -> Result<()>
         SubCommand::Share(cmd) => do_share(ctx, cmd),
         SubCommand::S39(cmd) => do_s39(ctx, cmd),
         SubCommand::VerifyToken(cmd) => do_verify_token(ctx, cmd),
+        SubCommand::Directory(cmd) => do_directory(ctx, cmd),
     }?;
 
     println!("{}", out);
