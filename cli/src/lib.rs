@@ -12,6 +12,10 @@ use anyhow::Context;
 use anyhow::Result;
 use anyhow::{anyhow, bail};
 
+use api::DirectoryEntry;
+use api::DirectoryEntryCreate;
+use api::LookupQuery;
+use api::LookupResult;
 use chrono::{Duration, Utc};
 
 use rand::RngCore;
@@ -581,6 +585,100 @@ fn verify_token_url_from_public_key(
     Ok(base.join(&sid)?)
 }
 
+pub fn lookup_cids(
+    host: &str,
+    id: &uno::Id,
+    country: &str,
+    phones: &[&str],
+) -> Result<LookupResult>
+{
+    let url = directory_lookup_url(host)?;
+
+    // TODO: take query as a parameter
+    let query = LookupQuery {
+        country: String::from(country),
+        phone_numbers: phones.iter().map(|s| String::from(*s)).collect(),
+    };
+
+    let req = surf::get(url.as_str())
+        .body_json(&query)
+        .map_err(|e| anyhow!("{}", e))?
+        .build();
+
+    let bytes = async_std::task::block_on(do_http_signed(req, id))
+        .map_err(|e| anyhow!("{}", e))?;
+
+    let result: LookupResult = serde_json::from_slice(&bytes)?;
+
+    Ok(result)
+}
+
+fn directory_lookup_url(endpoint: &str) -> Result<Url>
+{
+    let host = Url::parse(&endpoint)?;
+
+    Ok(host.join("v2/directory/lookup")?)
+}
+
+
+pub fn post_entry(
+    host: &str,
+    id: &uno::Id,
+    entry: DirectoryEntryCreate,
+    code: Option<&str>,
+) -> Result<DirectoryEntry>
+{
+    let url = directory_entries_url(host)?;
+
+    let mut builder =
+        surf::post(url.as_str()).body_json(&entry).map_err(|e| anyhow!(e))?;
+
+    if let Some(code) = code {
+        builder = builder.header("verification", code);
+    }
+
+    let req = builder.build();
+
+    let bytes = async_std::task::block_on(do_http_signed(req, id))
+        .map_err(|e| anyhow!("{}", e))?;
+
+    let result: DirectoryEntry = serde_json::from_slice(&bytes)?;
+
+    Ok(result)
+}
+
+
+fn directory_entries_url(endpoint: &str) -> Result<Url>
+{
+    let host = Url::parse(&endpoint)?;
+
+    Ok(host.join("v2/directory/entries")?)
+}
+
+
+pub fn get_entry(host: &str, id: &uno::Id, cid: &[u8])
+-> Result<DirectoryEntry>
+{
+    let url = directory_entry_url_from_cid(host, cid)?;
+    let req = surf::get(url.as_str()).build();
+    let bytes = async_std::task::block_on(do_http_signed(req, id))
+        .map_err(|e| anyhow!("{}", e))?;
+
+    let result: DirectoryEntry = serde_json::from_slice(&bytes)?;
+
+    Ok(result)
+}
+
+fn directory_entry_url_from_cid(endpoint: &str, cid: &[u8]) -> Result<Url>
+{
+    let host = Url::parse(&endpoint)?;
+    let base = host.join("v2/directory/entries")?;
+    let cid = base64::encode_config(cid, base64::URL_SAFE_NO_PAD);
+
+    Ok(base.join(&cid)?)
+}
+
+
 async fn do_http_simple(req: surf::Request) -> Result<Vec<u8>>
 {
     let client = surf::client().with(surf::middleware::Logger::new());
@@ -596,7 +694,6 @@ async fn do_http_simple(req: surf::Request) -> Result<Vec<u8>>
     Ok(body)
 }
 
-#[allow(dead_code)]
 async fn do_http_signed(req: surf::Request, id: &uno::Id) -> Result<Vec<u8>>
 {
     let client = surf::client()

@@ -6,9 +6,11 @@
 //
 
 use anyhow::{anyhow, bail, Context as AnyContext, Result};
+use api::DirectoryEntryCreate;
 /// The uno utility is a cli frontend to operations that can be performed with
 /// an uno identity.
 use clap::{Args, Parser};
+use uno::encrypt;
 use uno::Binding;
 
 use std::convert::TryFrom;
@@ -978,14 +980,29 @@ struct DirectoryCmd
 {
     #[clap(subcommand)]
     subcmd: Directory,
+    #[clap(flatten)]
+    opts: DirectoryOpts,
+}
+
+#[derive(Parser)]
+struct DirectoryOpts
+{
+    /// Vault service API endpoint. If specified, supersedes the configured the
+    /// configured value.
+    #[clap(long, value_name = "endpoint", display_order = 1)]
+    url: Option<String>,
+
+    /// Identity seed to use. If specified, supersedes the configured value.
+    #[clap(long, value_name = "b64", display_order = 1)]
+    seed: Option<String>,
 }
 
 fn do_directory(ctx: Context, s: DirectoryCmd) -> Result<String>
 {
     match s.subcmd {
-        Directory::Lookup(c) => do_directory_lookup(c),
-        Directory::Entry(c) => do_directory_entry(c),
-        Directory::Verify(c) => do_directory_verify(c),
+        Directory::Lookup(c) => do_directory_lookup(ctx, s.opts, c),
+        Directory::Entry(c) => do_directory_entry(ctx, s.opts, c),
+        Directory::Verify(c) => do_directory_verify(ctx, s.opts, c),
     }
 }
 
@@ -1014,15 +1031,39 @@ struct DirectoryLookup
 {
     /// A default locale used to validate any phone numbers without a country
     /// code.
-    #[clap(long, value_name = "ISO 3166", display_order = 1)]
-    country: Option<String>,
+    #[clap(
+        long,
+        value_name = "ISO 3166",
+        default_value = "US",
+        display_order = 1
+    )]
+    country: String,
 
     /// A list of phone numbers to query.
     #[clap(long, value_name = "E.164", display_order = 1)]
-    phone: Vec<String>,
+    phones: Vec<String>,
 }
 
-fn do_directory_lookup(c: DirectoryLookup) -> Result<String> { Ok("".into()) }
+fn do_directory_lookup(
+    ctx: Context,
+    opts: DirectoryOpts,
+    c: DirectoryLookup,
+) -> Result<String>
+{
+    let cfg = load_conf(&ctx)?;
+    let id = match opts.seed {
+        Some(s) => id_from_b64(s)?,
+        None => cli::load_seed(&cfg)?,
+    };
+    let url = opts.url.as_ref().unwrap_or(&cfg.api_host);
+
+    let phones = c.phones.iter().map(|s| s.as_str()).collect::<Vec<_>>();
+
+    let result = cli::lookup_cids(url, &id, &c.country, &phones)?;
+    let output = serde_json::to_string_pretty(&result)?;
+
+    Ok(output)
+}
 
 ///
 /// Get a directory entry by cid.
@@ -1036,7 +1077,26 @@ struct DirectoryEntry
 }
 
 
-fn do_directory_entry(c: DirectoryEntry) -> Result<String> { Ok("".into()) }
+fn do_directory_entry(
+    ctx: Context,
+    opts: DirectoryOpts,
+    c: DirectoryEntry,
+) -> Result<String>
+{
+    let cfg = load_conf(&ctx)?;
+    let id = match opts.seed {
+        Some(s) => id_from_b64(s)?,
+        None => cli::load_seed(&cfg)?,
+    };
+    let url = opts.url.as_ref().unwrap_or(&cfg.api_host);
+
+    let cid = base64::decode(c.cid)?;
+
+    let result = cli::get_entry(url, &id, &cid)?;
+    let output = serde_json::to_string_pretty(&result)?;
+
+    Ok(output)
+}
 
 ///
 /// Verify a phone number, associating it with your Uno signing and encryption
@@ -1049,8 +1109,13 @@ fn do_directory_entry(c: DirectoryEntry) -> Result<String> { Ok("".into()) }
 struct DirectoryVerify
 {
     /// Country code to use if the provided phone does not have one.
-    #[clap(long, value_name = "ISO 3166", display_order = 1)]
-    country: Option<String>,
+    #[clap(
+        long,
+        value_name = "ISO 3166",
+        default_value = "US",
+        display_order = 1
+    )]
+    country: String,
 
     /// Phone number to verify.
     #[clap(long, value_name = "E.164", display_order = 1)]
@@ -1061,7 +1126,38 @@ struct DirectoryVerify
     verification: Option<String>,
 }
 
-fn do_directory_verify(c: DirectoryVerify) -> Result<String> { Ok("".into()) }
+fn do_directory_verify(
+    ctx: Context,
+    opts: DirectoryOpts,
+    c: DirectoryVerify,
+) -> Result<String>
+{
+    let cfg = load_conf(&ctx)?;
+    let id = match opts.seed {
+        Some(s) => id_from_b64(s)?,
+        None => cli::load_seed(&cfg)?,
+    };
+    let url = opts.url.as_ref().unwrap_or(&cfg.api_host);
+
+    let key = uno::KeyPair::from(id);
+
+    let signing_key_b64 = base64::encode(key.public.as_bytes());
+    let encryption_key_b64 = "TODO: XXX".into();
+    // TODO: I don't think we have dh lib support yet.
+
+    let model = DirectoryEntryCreate {
+        country: c.country,
+        phone: c.phone,
+        signing_key: signing_key_b64,
+        encryption_key: encryption_key_b64,
+    };
+
+    let code = c.verification.as_deref();
+    let result = cli::post_entry(url, &id, model, code)?;
+    let output = serde_json::to_string_pretty(&result)?;
+
+    Ok(output)
+}
 
 
 fn main() -> Result<()>
