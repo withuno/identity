@@ -5,10 +5,8 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 //
 
-use anyhow::Result;
-
-#[cfg(feature = "s3")]
 use anyhow::Context;
+use anyhow::Result;
 
 #[cfg(not(feature = "s3"))]
 use api::store::FileStore;
@@ -49,6 +47,20 @@ async fn make_db(name: &str, version: &str) -> Result<S3Store>
 #[async_std::main]
 async fn main() -> Result<()>
 {
+    if cfg!(feature = "twilio") && cfg!(not(test)) {
+        let twilio_endpoint = std::env::var("TWILIO_API_ENDPOINT")
+            .context("Must specify TWILIO_API_ENDPOINT")?;
+        let _account_sid = std::env::var("TWILIO_ACCOUNT_SID")
+            .context("Must specify TWILIO_ACCOUNT_SID")?;
+        let _service_sid = std::env::var("TWILIO_SERVICE_SID")
+            .context("Must specify TWILIO_SERVICE_SID")?;
+        let _auth_token = std::env::var("TWILIO_AUTH_TOKEN")
+            .context("Must specify TWILIO_AUTH_TOKEN")?;
+
+        let _ = surf::Url::parse(&twilio_endpoint)
+            .context("twilio API endpoint must be a url")?;
+    }
+
     let tok2 = make_db("tokens", "v2").await?;
     let vau2 = make_db("vaults", "v2").await?;
     let srv2 = make_db("services", "").await?; // not (yet) versioned
