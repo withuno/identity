@@ -18,7 +18,7 @@ async fn make_db(name: &'static str, version: &str) -> Result<FileStore>
     // use the current directory
     // TODO: figure out a better dir like /var/db but one that doesn't require
     //       root
-    FileStore::new(".", name, version).await
+    FileStore::new("./throwaway_local_dbs", name, version).await
 }
 
 #[cfg(feature = "s3")]
@@ -58,16 +58,8 @@ async fn main() -> Result<()>
     let vdb2 = make_db("verify", "v2").await?;
     let dir2 = make_db("directory", "v2").await?;
 
-    let api_v2 = api::build_routes(
-        tok2,
-        vau2,
-        srv2,
-        ses2,
-        mbx2,
-        shr2,
-        vdb2,
-        dir2,
-    )?;
+    let api_v2 =
+        api::build_routes(tok2, vau2, srv2, ses2, mbx2, shr2, vdb2, dir2)?;
 
     let mut srv = tide::new();
 

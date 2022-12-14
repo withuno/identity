@@ -18,6 +18,7 @@ use api::LookupQuery;
 use api::LookupResult;
 use chrono::{Duration, Utc};
 
+use http_types::headers::HeaderValues;
 use rand::RngCore;
 
 use surf::middleware::{Middleware, Next};
@@ -626,7 +627,7 @@ pub fn post_entry(
     id: &uno::Id,
     entry: DirectoryEntryCreate,
     code: Option<&str>,
-) -> Result<DirectoryEntry>
+) -> Result<String>
 {
     let url = directory_entries_url(host)?;
 
@@ -639,12 +640,27 @@ pub fn post_entry(
 
     let req = builder.build();
 
-    let bytes = async_std::task::block_on(do_http_signed(req, id))
+    let mut res = async_std::task::block_on(do_http_signed_asym(req, id))
         .map_err(|e| anyhow!("{}", e))?;
 
-    let result: DirectoryEntry = serde_json::from_slice(&bytes)?;
+    let status = res.status();
 
-    Ok(result)
+    if status != 201 {
+        let body = async_std::task::block_on(res.body_string())
+            .map_err(|e| anyhow!(e))?;
+
+        bail!("unexpected status: {}\n{}", status, body)
+    }
+
+    let location = res
+        .header("location")
+        .ok_or_else(|| anyhow!("missing location header"))?
+        .last()
+        .as_str();
+
+    let output = format!("cid: {}", location);
+
+    Ok(output)
 }
 
 
@@ -686,12 +702,15 @@ async fn do_http_simple(req: surf::Request) -> Result<Vec<u8>>
     let mut res = client.send(req).await.map_err(|e| anyhow!("{}", e))?;
 
     let status = res.status();
-    if status != 201 && status != 200 {
+    if status != 200 && status != 201 {
         bail!("server returned: {}", status);
     }
-    let body = res.body_bytes().await.map_err(|e| anyhow!("{}", e))?;
 
-    Ok(body)
+    if status == 200 {
+        Ok(res.body_bytes().await.map_err(|e| anyhow!("{}", e))?)
+    } else {
+        Ok(Vec::default())
+    }
 }
 
 async fn do_http_signed(req: surf::Request, id: &uno::Id) -> Result<Vec<u8>>
@@ -704,13 +723,15 @@ async fn do_http_signed(req: surf::Request, id: &uno::Id) -> Result<Vec<u8>>
 
     let status = res.status();
 
-    if status != 200 {
+    if status != 200 && status != 201 {
         let msg = res.body_string().await.map_err(|e| anyhow!("{}", e))?;
         bail!("server returned: {}\n{}", status, msg);
     }
-    let body = res.body_bytes().await.map_err(|e| anyhow!("{}", e))?;
-
-    Ok(body)
+    if status == 200 {
+        Ok(res.body_bytes().await.map_err(|e| anyhow!("{}", e))?)
+    } else {
+        Ok(Vec::default())
+    }
 }
 
 async fn do_http_signed_vc(req: surf::Request, id: &uno::Id)
@@ -731,6 +752,19 @@ async fn do_http_signed_vc(req: surf::Request, id: &uno::Id)
 
     Ok(res)
 }
+
+async fn do_http_signed_asym(
+    req: surf::Request,
+    id: &uno::Id,
+) -> Result<Response>
+{
+    let client = surf::client()
+        .with(AsymAuthClient { id: uno::Id(id.0) })
+        .with(surf::middleware::Logger::new());
+
+    Ok(client.send(req).await.map_err(|e| anyhow!(e))?)
+}
+
 
 struct AuthClient
 {
@@ -758,8 +792,7 @@ impl Middleware for AuthClient
             req_c.set_body(&*bytes);
             // if there's no header, skip sign + retry
             if let Some(www_auth) = res.header("www-authenticate") {
-                let hstr = www_auth.last().as_str();
-                let _ = sign(&mut req_c, bytes, hstr, &self.id)?;
+                let _ = sign(&mut req_c, bytes, &www_auth, &self.id)?;
                 res = next.run(req_c, cli).await?;
             }
         }
@@ -777,7 +810,7 @@ use uno::KeyPair;
 fn sign(
     req: &mut Request,
     body: Vec<u8>,
-    header: &str,
+    header: &HeaderValues,
     id: &uno::Id,
 ) -> Result<()>
 {
@@ -836,27 +869,174 @@ struct WwwAuthTemp
     params: HashMap<String, String>,
 }
 
-fn parse_www_auth(header: &str) -> anyhow::Result<WwwAuthTemp>
+fn parse_www_auth(headers: &HeaderValues) -> Result<WwwAuthTemp>
 {
-    let items = match header.strip_prefix("tuned-digest-signature") {
-        Some(s) => s.trim().split(';'),
-        None => {
-            bail!("wrong auth type");
-        },
-    };
-
     let mut map = HashMap::new();
-    for i in items {
-        let kv: Vec<&str> = i.trim().splitn(2, "=").collect();
-        map.insert(kv[0].into(), kv[1].into());
+
+    // tuned-digest-signature nonce=E2nl6WRukjQrm9pYcJB/LVwqGEZRU4ik+TM1NgvDSjk;algorithm=$argon2d$v=19$m=65536,t=3,p=8;actions=read
+    let sym_tuned_re = regex::Regex::new(
+        r"tuned-digest-signature nonce=([A-Za-z0-9/+]+=*);algorithm=(\$argon2d\$v=[0-9]+\$m=[0-9]+,t=[0-9]+,p=[0-9]+);actions=([a-z,]+)",
+    )
+    .unwrap();
+
+    for header in headers.iter() {
+        match sym_tuned_re.captures(header.as_str()) {
+            Some(caps) => {
+                map.insert(
+                    "nonce".to_string(),
+                    caps.get(1).unwrap().as_str().to_string(),
+                );
+
+                map.insert(
+                    "algorithm".to_string(),
+                    caps.get(2).unwrap().as_str().to_string(),
+                );
+
+                map.insert(
+                    "actions".to_string(),
+                    caps.get(3).unwrap().as_str().to_string(),
+                );
+
+                return Ok(WwwAuthTemp { params: map });
+            },
+            None => {},
+        }
     }
-    let keys = ["nonce", "algorithm", "actions"];
-    if keys.iter().fold(true, |a, k| a && map.contains_key(&k.to_string())) {
-        Ok(WwwAuthTemp { params: map })
-    } else {
-        Err(anyhow!("invalid www-auth"))
+
+    bail!("invalid www-auth");
+}
+
+
+struct AsymAuthClient
+{
+    id: uno::Id,
+}
+
+#[surf::utils::async_trait]
+impl Middleware for AsymAuthClient
+{
+    async fn handle(
+        &self,
+        mut req: Request,
+        cli: Client,
+        next: Next<'_>,
+    ) -> surf::Result<Response>
+    {
+        let mut req_c = req.clone();
+        // copy the request and body bytes in case we have to redo it
+        let bytes = req.take_body().into_bytes().await?;
+        req.set_body(&*bytes);
+        // run the request
+        let mut res = next.run(req, cli.clone()).await?;
+        if let http_types::StatusCode::Unauthorized = res.status() {
+            req_c.set_body(&*bytes);
+            // if there's no header, skip sign + retry
+            if let Some(www_auth) = res.header("www-authenticate") {
+                let _ = blake3_sign(&mut req_c, &www_auth, &self.id)?;
+                res = next.run(req_c, cli).await?;
+            }
+        }
+        Ok(res)
     }
 }
+
+fn blake3_sign(
+    req: &mut Request,
+    header: &HeaderValues,
+    id: &uno::Id,
+) -> Result<()>
+{
+    let www_auth = parse_asym_www_auth(header)?;
+
+    let n64 = www_auth.params["nonce"].as_str();
+    let challenge = body_challenge(req, n64)?;
+
+    let alg = www_auth.params["algorithm"].as_str();
+    let cost: u8 = alg
+        .split("$")
+        .last()
+        .ok_or_else(|| anyhow!("missing cost"))?
+        .parse()?;
+
+    let n = uno::prove_blake3_work(&challenge.as_bytes(), cost).unwrap();
+    let response = format!("blake3${}${}", n, n64);
+
+    let kp: KeyPair = KeyPair::from(id);
+    let pub_bytes = kp.public.to_bytes();
+    let pub64 = base64::encode_config(&pub_bytes, base64::STANDARD_NO_PAD);
+    let sig = kp.sign(&response.as_bytes());
+    let sig64 = base64::encode_config(sig, base64::STANDARD_NO_PAD);
+
+    let i = format!("identity={}", pub64);
+    let n = format!("nonce={}", n64);
+    let r = format!("response={}", response);
+    let s = format!("signature={}", sig64);
+    let auth = format!("asym-tuned-digest-signature {};{};{};{}", i, n, r, s);
+
+    req.insert_header("authorization", auth);
+
+    Ok(())
+}
+
+fn parse_asym_www_auth(headers: &HeaderValues) -> Result<WwwAuthTemp>
+{
+    let mut map = HashMap::new();
+
+    let asym_tuned_re = regex::Regex::new(
+       r"asym-tuned-digest-signature nonce=([A-Za-z0-9/+]+=*);algorithm=(blake3\$[0-9]+);actions=([a-z,]+)",
+    ).unwrap();
+
+    for header in headers.iter() {
+        match asym_tuned_re.captures(header.as_str()) {
+            Some(caps) => {
+                map.insert(
+                    "nonce".to_string(),
+                    caps.get(1).unwrap().as_str().to_string(),
+                );
+
+                map.insert(
+                    "algorithm".to_string(),
+                    caps.get(2).unwrap().as_str().to_string(),
+                );
+
+                map.insert(
+                    "actions".to_string(),
+                    caps.get(3).unwrap().as_str().to_string(),
+                );
+
+                return Ok(WwwAuthTemp { params: map });
+            },
+            None => {},
+        }
+    }
+
+    bail!("invalid auth-info");
+}
+
+fn body_challenge(req: &mut Request, n64: &str) -> Result<String>
+{
+    let body = req.take_body();
+    let bbytes: Vec<u8> = async_std::task::block_on(body.into_bytes())
+        .map_err(|_| anyhow!("body bytes failed"))?;
+    let bhash = blake3::hash(&bbytes);
+    let bhashb = bhash.as_bytes();
+    let bhash_enc = base64::encode_config(bhashb, base64::STANDARD_NO_PAD);
+    req.set_body(surf::Body::from_bytes(bbytes));
+
+    let method = req.method();
+
+    let path = req
+        .url()
+        .path()
+        .split("/")
+        .last()
+        .ok_or_else(|| anyhow!("bad path"))?;
+
+    let challenge = format!("{}:{}:/{}:{}", n64, method, path, bhash_enc);
+
+    return Ok(challenge);
+}
+
 
 #[cfg(test)]
 mod unit

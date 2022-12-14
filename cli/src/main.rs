@@ -10,7 +10,6 @@ use api::DirectoryEntryCreate;
 /// The uno utility is a cli frontend to operations that can be performed with
 /// an uno identity.
 use clap::{Args, Parser};
-use uno::encrypt;
 use uno::Binding;
 
 use std::convert::TryFrom;
@@ -1154,9 +1153,8 @@ fn do_directory_verify(
 
     let code = c.verification.as_deref();
     let result = cli::post_entry(url, &id, model, code)?;
-    let output = serde_json::to_string_pretty(&result)?;
 
-    Ok(output)
+    Ok(result)
 }
 
 
