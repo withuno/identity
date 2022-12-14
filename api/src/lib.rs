@@ -40,6 +40,8 @@ use chrono::{Duration, Utc};
 use http_types::Method;
 use tide::{Body, Error, Next, Request, Response, Result, StatusCode};
 
+mod twilio;
+
 /// Enforce a global size limit on the body of requests
 ///
 pub fn body_size_limit<'a, T>(
@@ -1084,8 +1086,9 @@ where
             },
         };
         // 2. Verify the code.
-        let status =
-            verify_code_submit(&pending.sid, code).await.map_err(server_err)?;
+        let status = verify_code_submit(&pending.sid, &validated_phone, code)
+            .await
+            .map_err(server_err)?;
 
         match status.as_str() {
             //
@@ -1124,31 +1127,46 @@ where
 
 async fn validate_phone(phone: &str, country: &str) -> Result<String>
 {
-    // TODO: use Twilio API, but make this plugable so you can run locally.
-    // We only care about real validation in dev/prod/etc.
-    Ok(String::from(phone))
+    let validated_phone = match cfg!(all(feature = "twilio", not(test))) {
+        true => twilio::validate_phone(phone, country).await?,
+        false => String::from(phone),
+    };
+
+    Ok(validated_phone)
 }
 
 async fn verify_phone_start(phone: &str) -> Result<String>
 {
-    // TODO: use Twilio API, but make this plugable so you can run locally.
-    Ok("todo-twilio-session-id(VEXXXXX)".into())
+    let sid = match cfg!(feature = "twilio") && cfg!(not(test)) {
+        true => twilio::verify_phone(phone).await?,
+        false => String::from("verification-disabled"),
+    };
+
+    Ok(sid)
 }
 
 async fn verify_check_status(sid: &str) -> Result<String>
 {
-    // TODO: use Twilio API to lookup verification_check using sid
-    // https://www.twilio.com/docs/verify/api/verification-check
-    // "approved", "pending", "canceled"
-    Ok("pending".into())
+    let status = match cfg!(feature = "twilio") && cfg!(not(test)) {
+        true => twilio::verify_check_status(sid).await?,
+        false => String::from("pending"),
+    };
+
+    Ok(status)
 }
 
-async fn verify_code_submit(sid: &str, code: &str) -> Result<String>
+async fn verify_code_submit(
+    sid: &str,
+    phone: &str,
+    code: &str,
+) -> Result<String>
 {
-    // TODO: use Twilio API to lookup verification_check using sid
-    // https://www.twilio.com/docs/verify/api/verification-check
-    // "approved", "pending", "canceled"
-    Ok("approved".into())
+    let status = match cfg!(feature = "twilio") && cfg!(not(test)) {
+        true => twilio::verify_code_submit(sid, phone, code).await?,
+        false => String::from("approved"),
+    };
+
+    Ok(status)
 }
 
 // Generate a `cid` from a validated phone string.

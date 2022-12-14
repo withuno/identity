@@ -2119,7 +2119,7 @@ mod requests
         let pending_obj: PendingItem = serde_json::from_slice(&pending_entry)?;
 
         assert_eq!(id_pub_b64, pending_obj.user);
-        assert_eq!("todo-twilio-session-id(VEXXXXX)", pending_obj.sid);
+        assert_eq!("verification-disabled", pending_obj.sid);
 
         let mut req2: Request = surf::post(resource)
             .body_json(&request_body)

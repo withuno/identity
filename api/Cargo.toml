@@ -7,6 +7,7 @@ edition = "2021"
 
 [features]
 s3 = []
+twilio = []
 
 [dependencies]
 anyhow = "1.0"
@@ -26,6 +27,8 @@ rusty-s3 = "0.3"
 serde = { version = "1.0", features = ["derive"] }
 serde_derive = "1.0"
 serde_json = "1.0"
+strum = "0.24"
+strum_macros = "0.24"
 surf = "2.2.0"
 tempfile = "3.2"
 thiserror = "1.0"
