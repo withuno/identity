@@ -1089,7 +1089,7 @@ fn do_directory_entry(
     };
     let url = opts.url.as_ref().unwrap_or(&cfg.api_host);
 
-    let cid = base64::decode(c.cid)?;
+    let cid = base64::decode_config(c.cid, base64::URL_SAFE_NO_PAD)?;
 
     let result = cli::get_entry(url, &id, &cid)?;
     let output = serde_json::to_string_pretty(&result)?;

@@ -606,8 +606,19 @@ pub fn lookup_cids(
         .map_err(|e| anyhow!("{}", e))?
         .build();
 
-    let bytes = async_std::task::block_on(do_http_signed(req, id))
+    let mut res = async_std::task::block_on(do_http_signed_asym(req, id))
         .map_err(|e| anyhow!("{}", e))?;
+
+    let status = res.status();
+    if status != 200 {
+        let body = async_std::task::block_on(res.body_string())
+            .map_err(|e| anyhow!(e))?;
+
+        bail!("unexpected status: {}\n{}", status, body)
+    }
+
+    let bytes =
+        async_std::task::block_on(res.body_bytes()).map_err(|e| anyhow!(e))?;
 
     let result: LookupResult = serde_json::from_slice(&bytes)?;
 
@@ -677,8 +688,19 @@ pub fn get_entry(host: &str, id: &uno::Id, cid: &[u8])
 {
     let url = directory_entry_url_from_cid(host, cid)?;
     let req = surf::get(url.as_str()).build();
-    let bytes = async_std::task::block_on(do_http_signed(req, id))
-        .map_err(|e| anyhow!("{}", e))?;
+    let mut res = async_std::task::block_on(do_http_signed_asym(req, id))
+        .map_err(|e| anyhow!(e))?;
+
+    let status = res.status();
+    if status != 200 {
+        let body = async_std::task::block_on(res.body_string())
+            .map_err(|e| anyhow!(e))?;
+
+        bail!("unexpected status: {}\n{}", status, body)
+    }
+
+    let bytes =
+        async_std::task::block_on(res.body_bytes()).map_err(|e| anyhow!(e))?;
 
     let result: DirectoryEntry = serde_json::from_slice(&bytes)?;
 
@@ -688,7 +710,7 @@ pub fn get_entry(host: &str, id: &uno::Id, cid: &[u8])
 fn directory_entry_url_from_cid(endpoint: &str, cid: &[u8]) -> Result<Url>
 {
     let host = Url::parse(&endpoint)?;
-    let base = host.join("v2/directory/entries")?;
+    let base = host.join("v2/directory/entries/")?;
     let cid = base64::encode_config(cid, base64::URL_SAFE_NO_PAD);
 
     Ok(base.join(&cid)?)
@@ -1027,10 +1049,11 @@ fn body_challenge(req: &mut Request, n64: &str) -> Result<String>
 
     let path = req
         .url()
-        .path()
-        .split("/")
-        .last()
-        .ok_or_else(|| anyhow!("bad path"))?;
+        .path_segments()
+        .ok_or_else(|| anyhow!("missing path"))?
+        .skip(2)
+        .collect::<Vec<_>>()
+        .join("/");
 
     let challenge = format!("{}:{}:/{}:{}", n64, method, path, bhash_enc);
 
