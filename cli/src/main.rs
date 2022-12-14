@@ -973,7 +973,7 @@ fn do_s39_view(c: S39View) -> Result<String>
 
 
 ///
-/// Directory options
+/// Interact with the Uno directory.
 ///
 #[derive(Parser)]
 struct DirectoryCmd
@@ -987,8 +987,8 @@ struct DirectoryCmd
 #[derive(Parser)]
 struct DirectoryOpts
 {
-    /// Vault service API endpoint. If specified, supersedes the configured the
-    /// configured value.
+    /// Directory service API endpoint. If specified, supersedes the configured
+    /// value.
     #[clap(long, value_name = "endpoint", display_order = 1)]
     url: Option<String>,
 
