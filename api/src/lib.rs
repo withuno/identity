@@ -444,6 +444,7 @@ async fn possibly_email_link(
         std::env::var("CUSTOMER_IO_MESSAGE_ID"),
         token.method,
     ) {
+        #[allow(non_snake_case)]
         #[derive(Serialize)]
         struct MessageData
         {
