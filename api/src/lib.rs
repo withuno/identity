@@ -431,7 +431,7 @@ async fn possibly_email_link(
         Err(_) => encoded_query,
     };
 
-    println!("DEBUG: {}", encoded_query);
+    println!("DEBUG: encoded query");
 
     if let (
         Ok(api_key),
@@ -476,7 +476,7 @@ async fn possibly_email_link(
             identifiers: Identifiers { id: token.analytics_id },
         };
 
-        println!("DEBUG {}", body);
+        println!("DEBUG body");
 
         let req = reqwest::blocking::Client::new()
             .post(api_endpoint)
