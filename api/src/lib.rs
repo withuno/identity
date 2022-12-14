@@ -409,9 +409,11 @@ where
         },
     };
 
+    // If the email fails to send, we should return Ok anyway because
+    // the user can ask for a new email in the extension...
     match possibly_email_link(id, unverified).await {
         Ok(_) => Ok(StatusCode::Created),
-        Err(e) => Err(e),
+        Err(e) => Ok(StatusCode::Ok),
     }
 }
 
