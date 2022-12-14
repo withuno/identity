@@ -405,7 +405,6 @@ where
             return Err(Error::from_str(StatusCode::Conflict, "done"));
         },
         Err(e) => {
-            println!("DEBUG: {:?}", e);
             return Err(server_err("internal server error"));
         },
     };
@@ -430,8 +429,6 @@ async fn possibly_email_link(
         },
         Err(_) => encoded_query,
     };
-
-    println!("DEBUG: encoded query");
 
     if let (
         Ok(api_key),
@@ -476,8 +473,6 @@ async fn possibly_email_link(
             identifiers: Identifiers { id: token.analytics_id },
         };
 
-        println!("DEBUG body");
-
         let req = reqwest::blocking::Client::new()
             .post(api_endpoint)
             .json(&body)
@@ -486,12 +481,8 @@ async fn possibly_email_link(
                 format!("Bearer {}", api_key),
             );
 
-        println!("{:?}", json!(body));
-
         match req.send() {
-            Ok(r) => {
-                println!("{:?}", r.text());
-            },
+            Ok(_) => {},
             Err(e) => {
                 println!("{:?}", e);
             },
