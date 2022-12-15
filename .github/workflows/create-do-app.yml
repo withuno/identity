@@ -70,6 +70,18 @@ jobs:
                 - key: SPACES_BUCKET_PREFIX
                   value: "u1o.dev"
                   scope: RUN_TIME
+                - key: TWILIO_API_ENDPOINT
+                  value: "https://twilio.com/"
+                  scope: RUN_TIME
+                - key: TWILIO_SERVICE_SID
+                  value: ${{ secrets.TWILIO_SERVICE_SID }}
+                  scope: RUN_TIME                
+                - key: TWILIO_ACCOUNT_SID
+                  value: ${{ secrets.TWILIO_ACCOUNT_SID }}
+                  scope: RUN_TIME
+                - key: TWILIO_AUTH_TOKEN
+                  value: ${{ secrets.TWILIO_AUTH_TOKEN }}
+                  scope: RUN_TIME
           EOF
 
       - name: Create New App
