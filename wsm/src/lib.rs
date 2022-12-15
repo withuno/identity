@@ -190,15 +190,7 @@ pub fn decrypt_share(
         Err(e) => return Err(Error::Fatal(e.to_string())),
     };
 
-    let words: Vec<String> =
-        string_share.split(' ').map(|s| s.to_owned()).collect();
-
-    let shares = vec![words];
-
-    match uno::combine(&shares) {
-        Ok(v) => Ok(v.0),
-        Err(e) => Err(Error::Fatal(e.to_string())),
-    }
+    share_from_mnemonic(&string_share)
 }
 
 #[wasm_bindgen]
@@ -215,6 +207,27 @@ pub fn wasm_decrypt_share(share: String, seed: String) -> Option<String>
     };
 
     match decrypt_share(&decoded_share, &decoded_seed) {
+        Ok(v) => Some(base64::encode(v)),
+        Err(_) => None,
+    }
+}
+
+pub fn share_from_mnemonic(share: &str) -> Result<[u8; uno::ID_LENGTH], Error>
+{
+    let words: Vec<String> = share.split(' ').map(|s| s.to_owned()).collect();
+
+    let shares = vec![words];
+
+    match uno::combine(&shares) {
+        Ok(v) => Ok(v.0),
+        Err(e) => Err(Error::Fatal(e.to_string())),
+    }
+}
+
+#[wasm_bindgen]
+pub fn wasm_share_from_mnemonic(share: String) -> Option<String>
+{
+    match share_from_mnemonic(&share) {
         Ok(v) => Some(base64::encode(v)),
         Err(_) => None,
     }
