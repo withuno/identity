@@ -5,10 +5,8 @@
 use anyhow::anyhow;
 use anyhow::bail;
 
+use http_types::StatusCode;
 use surf::Body;
-use surf::Client;
-use surf::Request;
-use surf::Response;
 
 use anyhow::Result;
 
@@ -38,20 +36,25 @@ pub async fn validate_phone(phone: &str, country: &str) -> Result<String>
     #[allow(non_snake_case)]
     struct Query<'a>
     {
-        PhoneNumber: &'a str,
         CountryCode: &'a str,
     }
 
-    let query = Query { PhoneNumber: phone, CountryCode: country };
+    let query = Query { CountryCode: country };
 
-    let req = surf::get("PhoneNumbers")
+    let path = format!("PhoneNumbers/{}", phone);
+    let url = build_url(Products::Lookups, &path)?;
+
+    let mut res = surf::get(url.as_str())
+        .header("Authorization", basic_auth()?)
         .query(&query)
         .map_err(|e| anyhow!(e))?
-        .build();
-
-    let mut res = do_twilio_request(req, Products::Lookups)
         .await
         .map_err(|e| anyhow!(e))?;
+
+    let status = res.status();
+    if status != StatusCode::Ok {
+        bail!("unexpected twilio response {}", status);
+    }
 
     let json: Value = res.body_json().await.map_err(|e| anyhow!(e))?;
 
@@ -75,19 +78,24 @@ pub async fn verify_phone(phone: &str) -> Result<String>
 
     let form = Form { To: phone, Channel: "sms" };
 
-    let req = surf::post("Verifications")
-        .body(Body::from_form(&form).map_err(|e| anyhow!(e))?)
-        .build();
+    let url = build_url(Products::Verify, "Verifications")?;
 
-    let mut res = do_twilio_request(req, Products::Verify)
+    let mut res = surf::post(url.as_str())
+        .header("Authorization", basic_auth()?)
+        .body(Body::from_form(&form).map_err(|e| anyhow!(e))?)
         .await
         .map_err(|e| anyhow!(e))?;
 
+    let status = res.status();
+    if status != StatusCode::Created {
+        bail!("unexpected twilio response {}", status);
+    }
+
     let json: Value = res.body_json().await.map_err(|e| anyhow!(e))?;
 
-    let status = match json["status"].as_str() {
+    let status = match json["sid"].as_str() {
         Some(p) => p,
-        None => bail!("missing property `phone_number`"),
+        None => bail!("missing property `sid`"),
     };
 
     Ok(String::from(status))
@@ -96,27 +104,34 @@ pub async fn verify_phone(phone: &str) -> Result<String>
 pub async fn verify_check_status(sid: &str) -> Result<String>
 {
     let path = format!("Verifications/{}", sid);
+    let url = build_url(Products::Verify, &path)?;
 
-    let req = surf::get(path).build();
-    let mut res = do_twilio_request(req, Products::Verify)
+    let mut res = surf::get(url.as_str())
+        .header("Authorization", basic_auth()?)
         .await
         .map_err(|e| anyhow!(e))?;
+
+    let status = res.status();
+
+    if status == StatusCode::NotFound {
+        return Ok("canceled".into());
+    }
+
+    if status != StatusCode::Ok {
+        bail!("unexpected twilio response {}", status);
+    }
 
     let json: Value = res.body_json().await.map_err(|e| anyhow!(e))?;
 
     let status = match json["status"].as_str() {
         Some(p) => p,
-        None => bail!("missing property `phone_number`"),
+        None => bail!("missing property `status`"),
     };
 
     Ok(String::from(status))
 }
 
-pub async fn verify_code_submit(
-    sid: &str,
-    phone: &str,
-    code: &str,
-) -> Result<String>
+pub async fn verify_code_submit(phone: &str, code: &str) -> Result<String>
 {
     #[derive(Debug, Serialize, Deserialize)]
     #[allow(non_snake_case)]
@@ -128,55 +143,70 @@ pub async fn verify_code_submit(
 
     let form = Form { To: phone, Code: code };
 
-    let path = format!("VerificationCheck/{}", sid);
+    let url = build_url(Products::Verify, "VerificationCheck")?;
 
-    let req = surf::post(path)
+    let mut res = surf::post(url.as_str())
+        .header("Authorization", basic_auth()?)
         .body(Body::from_form(&form).map_err(|e| anyhow!(e))?)
-        .build();
-
-    let mut res = do_twilio_request(req, Products::Verify)
         .await
         .map_err(|e| anyhow!(e))?;
+
+    let status = res.status();
+    if status != 200 {
+        bail!("unexpected twilio response {}", status);
+    }
 
     let json: Value = res.body_json().await.map_err(|e| anyhow!(e))?;
 
     let status = match json["status"].as_str() {
         Some(p) => p,
-        None => bail!("missing property `phone_number`"),
+        None => bail!("missing property `status`"),
     };
 
     Ok(String::from(status))
 }
 
-
-async fn do_twilio_request(
-    req: Request,
-    product: Products,
-) -> surf::Result<Response>
+fn build_url(product: Products, function: &str) -> Result<surf::Url>
 {
     // e.g. twilio.com/v2
     let twilio_endpoint = env::var("TWILIO_API_ENDPOINT")?;
 
     let mut url = surf::Url::parse(&twilio_endpoint)?;
 
-    let account_sid = env::var("TWILIO_ACCOUNT_SID")?;
     let service_sid = env::var("TWILIO_SERVICE_SID")?;
-    let auth_token = env::var("TWILIO_AUTH_TOKEN")?;
 
     let host = url.host().ok_or_else(|| anyhow!("missing twilio host"))?;
     let host = format!("{}.{}", product.as_ref(), host);
 
     url.set_host(Some(&host))?;
     url.set_scheme("https").map_err(|_| anyhow!("bad scheme"))?;
-    url.set_username(&account_sid).map_err(|_| anyhow!("bad username"))?;
-    url.set_password(Some(&auth_token)).map_err(|_| anyhow!("bad password"))?;
 
-    url.path_segments_mut()
-        .map_err(|_| anyhow!("bad url path segments"))?
-        .pop_if_empty()
-        .extend(&["Services", &service_sid]);
+    {
+        let mut segments = url
+            .path_segments_mut()
+            .map_err(|_| anyhow!("bad url path segments"))?;
 
-    let client: Client = surf::Config::new().set_base_url(url).try_into()?;
+        match product {
+            Products::Lookups => segments.pop_if_empty().extend(&["v2"]),
+            Products::Verify => segments.pop_if_empty().extend(&[
+                "v2",
+                "Services",
+                &service_sid,
+            ]),
+        };
 
-    Ok(client.send(req).await?)
+        segments.extend(function.split("/"));
+    }
+
+    Ok(url)
+}
+
+fn basic_auth() -> Result<String>
+{
+    let account_sid = env::var("TWILIO_ACCOUNT_SID")?;
+    let auth_token = env::var("TWILIO_AUTH_TOKEN")?;
+
+    let credential = format!("{}:{}", account_sid, auth_token);
+
+    Ok(format!("Basic {}", base64::encode(credential)))
 }

@@ -1087,7 +1087,7 @@ where
             },
         };
         // 2. Verify the code.
-        let status = verify_code_submit(&pending.sid, &validated_phone, code)
+        let status = verify_code_submit(&validated_phone, code)
             .await
             .map_err(server_err)?;
 
@@ -1156,14 +1156,10 @@ async fn verify_check_status(sid: &str) -> Result<String>
     Ok(status)
 }
 
-async fn verify_code_submit(
-    sid: &str,
-    phone: &str,
-    code: &str,
-) -> Result<String>
+async fn verify_code_submit(phone: &str, code: &str) -> Result<String>
 {
     let status = match cfg!(feature = "twilio") && cfg!(not(test)) {
-        true => twilio::verify_code_submit(sid, phone, code).await?,
+        true => twilio::verify_code_submit(phone, code).await?,
         false => String::from("approved"),
     };
 

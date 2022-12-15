@@ -19,6 +19,7 @@ use api::LookupResult;
 use chrono::{Duration, Utc};
 
 use http_types::headers::HeaderValues;
+use http_types::StatusCode;
 use rand::RngCore;
 
 use surf::middleware::{Middleware, Next};
@@ -656,11 +657,18 @@ pub fn post_entry(
 
     let status = res.status();
 
-    if status != 201 {
+    if status == StatusCode::PaymentRequired {
+        bail!(
+            "Verification code required.\nCheck SMS and retry with \
+             --verification <code>"
+        );
+    }
+
+    if status != StatusCode::Created {
         let body = async_std::task::block_on(res.body_string())
             .map_err(|e| anyhow!(e))?;
 
-        bail!("unexpected status: {}\n{}", status, body)
+        bail!("unexpected status: {}\n{}", status, body);
     }
 
     let location = res
