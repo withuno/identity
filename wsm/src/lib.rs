@@ -190,15 +190,7 @@ pub fn decrypt_share(
         Err(e) => return Err(Error::Fatal(e.to_string())),
     };
 
-    let words: Vec<String> =
-        string_share.split(' ').map(|s| s.to_owned()).collect();
-
-    let shares = vec![words];
-
-    match uno::combine(&shares) {
-        Ok(v) => Ok(v.0),
-        Err(e) => Err(Error::Fatal(e.to_string())),
-    }
+    share_from_mnemonic(&string_share)
 }
 
 #[wasm_bindgen]
@@ -215,6 +207,27 @@ pub fn wasm_decrypt_share(share: String, seed: String) -> Option<String>
     };
 
     match decrypt_share(&decoded_share, &decoded_seed) {
+        Ok(v) => Some(base64::encode(v)),
+        Err(_) => None,
+    }
+}
+
+pub fn share_from_mnemonic(share: &str) -> Result<[u8; uno::ID_LENGTH], Error>
+{
+    let words: Vec<String> = share.split(' ').map(|s| s.to_owned()).collect();
+
+    let shares = vec![words];
+
+    match uno::combine(&shares) {
+        Ok(v) => Ok(v.0),
+        Err(e) => Err(Error::Fatal(e.to_string())),
+    }
+}
+
+#[wasm_bindgen]
+pub fn wasm_share_from_mnemonic(share: String) -> Option<String>
+{
+    match share_from_mnemonic(&share) {
         Ok(v) => Some(base64::encode(v)),
         Err(_) => None,
     }
@@ -298,19 +311,6 @@ pub fn wasm_decrypt_vault(vault: &[u8], seed: String) -> Option<String>
     }
 }
 
-pub fn generate_session_id(mu_bytes: &[u8]) -> Result<uno::Session, Error>
-{
-    let mu = match uno::Mu::try_from(&mu_bytes[..]) {
-        Ok(v) => v,
-        Err(e) => return Err(Error::Fatal(e.to_string())),
-    };
-
-    match uno::Session::try_from(mu) {
-        Ok(v) => Ok(v),
-        Err(e) => return Err(Error::Fatal(e.to_string())),
-    }
-}
-
 #[wasm_bindgen]
 pub fn wasm_generate_session_id(mu: String) -> Option<String>
 {
@@ -321,8 +321,10 @@ pub fn wasm_generate_session_id(mu: String) -> Option<String>
         Err(_) => return None,
     };
 
-    match generate_session_id(&decoded_mu_bytes) {
-        Ok(v) => Some(base64::encode_config(v.0, base64::URL_SAFE_NO_PAD)),
+    let salt = b"uno recovery session id";
+
+    match argon_hash(32, 256, 2, salt, &decoded_mu_bytes) {
+        Ok(v) => Some(base64::encode_config(v, base64::URL_SAFE_NO_PAD)),
         Err(_) => None,
     }
 }

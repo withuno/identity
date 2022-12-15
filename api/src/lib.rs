@@ -407,14 +407,16 @@ where
         Err(verify_token::VerifyTokenError::Done) => {
             return Err(Error::from_str(StatusCode::Conflict, "done"));
         },
-        Err(_) => {
+        Err(e) => {
             return Err(server_err("internal server error"));
         },
     };
 
+    // If the email fails to send, we should return Ok anyway because
+    // the user can ask for a new email in the extension...
     match possibly_email_link(id, unverified).await {
         Ok(_) => Ok(StatusCode::Created),
-        Err(e) => Err(e),
+        Err(e) => Ok(StatusCode::Ok),
     }
 }
 
@@ -485,12 +487,8 @@ async fn possibly_email_link(
                 format!("Bearer {}", api_key),
             );
 
-        println!("{:?}", json!(body));
-
         match req.send() {
-            Ok(r) => {
-                println!("{:?}", r.text());
-            },
+            Ok(_) => {},
             Err(e) => {
                 println!("{:?}", e);
             },

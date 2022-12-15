@@ -10,7 +10,7 @@ use wasm_bindgen_test::*;
 use wsm::*;
 
 #[test]
-fn test_share_recover_seed()
+fn test_share_roundtrip()
 {
     use rand::prelude::*;
     let mut rng = rand::thread_rng();
@@ -21,13 +21,9 @@ fn test_share_recover_seed()
         rng.fill(&mut seed_to_share);
 
         let share = share_seed(&seed_to_share).unwrap();
+        let recovered = share_from_mnemonic(&share).unwrap();
 
-        let words: Vec<String> =
-            share.split(' ').map(|s| s.to_owned()).collect();
-        assert_eq!(
-            uno::combine(&[words]).unwrap().0.to_vec(),
-            seed_to_share.to_vec()
-        );
+        assert_eq!(recovered, seed_to_share);
     }
 }
 
