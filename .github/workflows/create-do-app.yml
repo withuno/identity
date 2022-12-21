@@ -96,7 +96,7 @@ jobs:
                   value: "4"
                   scope: RUN_TIME
                 - key: VERIFY_EMAIL_DOMAIN
-                  value: ${_self.PUBLIC_URL}
+                  value: \${_self.PUBLIC_URL}
                   scope: RUN_TIME
           EOF
 
