@@ -76,18 +76,22 @@ jobs:
                 - key: TWILIO_SERVICE_SID
                   value: ${{ secrets.TWILIO_SERVICE_SID }}
                   scope: RUN_TIME                
+                  type: SECRET
                 - key: TWILIO_ACCOUNT_SID
                   value: ${{ secrets.TWILIO_ACCOUNT_SID }}
                   scope: RUN_TIME
+                  type: SECRET
                 - key: TWILIO_AUTH_TOKEN
                   value: ${{ secrets.TWILIO_AUTH_TOKEN }}
                   scope: RUN_TIME
+                  type: SECRET
                 - key: CUSTOMER_IO_API_ENDPOINT
                   value: "https://api.customer.io/v1/send/email"
                   scope: RUN_TIME
                 - key: CUSTOMER_IO_API_KEY
                   value: ${{ secrets.CUSTOMER_IO_API_KEY }}
                   scope: RUN_TIME
+                  type: SECRET
                 - key: CUSTOMER_IO_MESSAGE_ID
                   value: "4"
                   scope: RUN_TIME
