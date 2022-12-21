@@ -82,6 +82,18 @@ jobs:
                 - key: TWILIO_AUTH_TOKEN
                   value: ${{ secrets.TWILIO_AUTH_TOKEN }}
                   scope: RUN_TIME
+                - key: CUSTOMER_IO_API_ENDPOINT
+                  value: "https://api.customer.io/v1/send/email"
+                  scope: RUN_TIME
+                - key: CUSTOMER_IO_API_KEY
+                  value: ${{ secrets.CUSTOMER_IO_API_KEY }}
+                  scope: RUN_TIME
+                - key: CUSTOMER_IO_MESSAGE_ID
+                  value: "4"
+                  scope: RUN_TIME
+                - key: VERIFY_EMAIL_DOMAIN
+                  value: ${_self.PUBLIC_URL}
+                  scope: RUN_TIME
           EOF
 
       - name: Create New App
