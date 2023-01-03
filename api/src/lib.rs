@@ -430,7 +430,7 @@ async fn possibly_email_link(
 
     let verify_link = match std::env::var("VERIFY_EMAIL_DOMAIN") {
         Ok(domain) => {
-            format!("{}/?s={}", domain, encoded_query)
+            format!("{}?s={}", domain, encoded_query)
         },
         Err(_) => encoded_query,
     };
