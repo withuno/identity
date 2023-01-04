@@ -98,6 +98,9 @@ jobs:
                 - key: VERIFY_EMAIL_DOMAIN
                   value: \${_self.PUBLIC_URL}
                   scope: RUN_TIME
+                - key: VERIFICATION_CODE_OVERRIDE_SMS
+                  value: "42424242"
+                  scope: RUN_TIME
           EOF
 
       - name: Create New App

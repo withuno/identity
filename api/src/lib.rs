@@ -5,6 +5,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 //
 
+use std::env;
 use std::error;
 use std::fmt;
 use std::fmt::{Debug, Display};
@@ -1156,6 +1157,11 @@ async fn verify_check_status(sid: &str) -> Result<String>
 
 async fn verify_code_submit(phone: &str, code: &str) -> Result<String>
 {
+    if let Ok(override_code) = env::var("VERIFICATION_CODE_OVERRIDE_SMS") {
+        if code == override_code {
+            return Ok(String::from("approved"));
+        }
+    }
     let status = match cfg!(feature = "twilio") && cfg!(not(test)) {
         true => twilio::verify_code_submit(phone, code).await?,
         false => String::from("approved"),
