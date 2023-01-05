@@ -970,7 +970,15 @@ where
         let p_key = pending_key.clone();
 
         async move {
-            let session_id = verify_phone_start(&phone.clone()).await?;
+            let session_id = match verify_phone_start(&phone.clone()).await {
+                Ok(s) => s,
+                Err(e) => {
+                    let ise = StatusCode::InternalServerError;
+                    return Ok(Response::builder(ise)
+                        .body(format!("cause: {}", e))
+                        .build());
+                },
+            };
 
             let pending_item = PendingItem { sid: session_id, user: user_id };
             let pending_item_bytes = serde_json::to_vec(&pending_item)?;
@@ -1044,8 +1052,15 @@ where
         // proceed if the verification code provided by the client is correct.
         //
 
-        let status =
-            verify_check_status(&pending.sid).await.map_err(server_err)?;
+        // expose the internal error here for now (will be twilio error)
+        let status = match verify_check_status(&pending.sid).await {
+            Ok(s) => s,
+            Err(e) => {
+                return Ok(Response::builder(StatusCode::InternalServerError)
+                    .body(format!("cause: {}", e))
+                    .build());
+            },
+        };
 
         match status.as_str() {
             //
@@ -1086,9 +1101,16 @@ where
             },
         };
         // 2. Verify the code.
-        let status = verify_code_submit(&validated_phone, code)
-            .await
-            .map_err(server_err)?;
+
+        // expose the internal error here for now (will be twilio error)
+        let status = match verify_code_submit(&validated_phone, code).await {
+            Ok(s) => s,
+            Err(e) => {
+                return Ok(Response::builder(StatusCode::InternalServerError)
+                    .body(format!("cause: {}", e))
+                    .build());
+            },
+        };
 
         match status.as_str() {
             //

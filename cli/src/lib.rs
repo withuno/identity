@@ -615,7 +615,7 @@ pub fn lookup_cids(
         let body = async_std::task::block_on(res.body_string())
             .map_err(|e| anyhow!(e))?;
 
-        bail!("unexpected status: {}\n{}", status, body)
+        bail!("unexpected status: {}\nbody: {}", status, body)
     }
 
     let bytes =
@@ -668,7 +668,7 @@ pub fn post_entry(
         let body = async_std::task::block_on(res.body_string())
             .map_err(|e| anyhow!(e))?;
 
-        bail!("unexpected status: {}\n{}", status, body);
+        bail!("unexpected status: {}\nbody: {}", status, body);
     }
 
     let location = res
@@ -704,7 +704,7 @@ pub fn get_entry(host: &str, id: &uno::Id, cid: &[u8])
         let body = async_std::task::block_on(res.body_string())
             .map_err(|e| anyhow!(e))?;
 
-        bail!("unexpected status: {}\n{}", status, body)
+        bail!("unexpected status: {}\nbody: {}", status, body)
     }
 
     let bytes =
