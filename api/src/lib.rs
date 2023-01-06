@@ -1190,7 +1190,7 @@ async fn verify_code_submit(
     if let Ok(override_code) = env::var("VERIFICATION_CODE_OVERRIDE_SMS") {
         if code == override_code {
             if use_twilio {
-                twilio::verify_status_update(sid, "approved").await;
+                twilio::verify_status_update(sid, "approved").await?;
             }
             return Ok(String::from("approved"));
         }
