@@ -408,7 +408,7 @@ where
         Err(verify_token::VerifyTokenError::Done) => {
             return Err(Error::from_str(StatusCode::Conflict, "done"));
         },
-        Err(e) => {
+        Err(_e) => {
             return Err(server_err("internal server error"));
         },
     };
@@ -417,7 +417,7 @@ where
     // the user can ask for a new email in the extension...
     match possibly_email_link(id, unverified).await {
         Ok(_) => Ok(StatusCode::Created),
-        Err(e) => Ok(StatusCode::Ok),
+        Err(_e) => Ok(StatusCode::Ok),
     }
 }
 
@@ -1101,7 +1101,7 @@ where
             },
         };
         // 2. Verify the code.
-
+        
         // expose the internal error here for now (will be twilio error)
         let status = match verify_code_submit(&validated_phone, code).await {
             Ok(s) => s,
