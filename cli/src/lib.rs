@@ -658,10 +658,9 @@ pub fn post_entry(
     let status = res.status();
 
     if status == StatusCode::PaymentRequired {
-        bail!(
-            "Verification code required.\nCheck SMS and retry with \
-             --verification <code>"
-        );
+        return Ok("Verification code required.\nCheck SMS and retry with \
+                   --verification <code>"
+            .into());
     }
 
     if status != StatusCode::Created {
