@@ -1101,9 +1101,11 @@ where
             },
         };
         // 2. Verify the code.
-        
+        let verify_result =
+            verify_code_submit(&validated_phone, code, &pending.sid).await;
+
         // expose the internal error here for now (will be twilio error)
-        let status = match verify_code_submit(&validated_phone, code).await {
+        let status = match verify_result {
             Ok(s) => s,
             Err(e) => {
                 return Ok(Response::builder(StatusCode::InternalServerError)
@@ -1177,14 +1179,23 @@ async fn verify_check_status(sid: &str) -> Result<String>
     Ok(status)
 }
 
-async fn verify_code_submit(phone: &str, code: &str) -> Result<String>
+async fn verify_code_submit(
+    phone: &str,
+    code: &str,
+    sid: &str,
+) -> Result<String>
 {
+    let use_twilio = cfg!(feature = "twilio") && cfg!(not(test));
+
     if let Ok(override_code) = env::var("VERIFICATION_CODE_OVERRIDE_SMS") {
         if code == override_code {
+            if use_twilio {
+                twilio::verify_status_update(sid, "approved").await;
+            }
             return Ok(String::from("approved"));
         }
     }
-    let status = match cfg!(feature = "twilio") && cfg!(not(test)) {
+    let status = match use_twilio {
         true => twilio::verify_code_submit(phone, code).await?,
         false => String::from("approved"),
     };

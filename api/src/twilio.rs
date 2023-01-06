@@ -131,6 +131,46 @@ pub async fn verify_check_status(sid: &str) -> Result<String>
     Ok(String::from(status))
 }
 
+pub async fn verify_status_update(sid: &str, status: &str) -> Result<()>
+{
+    #[derive(Debug, Serialize, Deserialize)]
+    #[allow(non_snake_case)]
+    struct Form<'a>
+    {
+        Status: &'a str,
+    }
+
+    let form = Form { Status: status };
+
+    let path = format!("Verifications/{}", sid);
+    let url = build_url(Products::Verify, &path)?;
+
+    let mut res = surf::post(url.as_str())
+        .header("Authorization", basic_auth()?)
+        .body(Body::from_form(&form).map_err(|e| anyhow!(e))?)
+        .await
+        .map_err(|e| anyhow!(e))?;
+
+    let status = res.status();
+
+    if status != StatusCode::Ok {
+        bail!("unexpected twilio response {}", status);
+    }
+
+    let json: Value = res.body_json().await.map_err(|e| anyhow!(e))?;
+
+    let status = match json["status"].as_str() {
+        Some(p) => p,
+        None => bail!("missing property `status`"),
+    };
+
+    if form.Status == status {
+        Ok(())
+    } else {
+        bail!("update mismatch");
+    }
+}
+
 pub async fn verify_code_submit(phone: &str, code: &str) -> Result<String>
 {
     #[derive(Debug, Serialize, Deserialize)]
