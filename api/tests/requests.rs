@@ -69,6 +69,7 @@ mod requests
         shares: T,
         verify: T,
         directory: T,
+        devices: T,
     }
 
     #[cfg(not(feature = "s3"))]
@@ -88,6 +89,7 @@ mod requests
             shares: FileStore::new(dir.path(), "shrs", "v0").await?,
             verify: FileStore::new(dir.path(), "vdb", "v0").await?,
             directory: FileStore::new(dir.path(), "directory", "v0").await?,
+            devices: FileStore::new(dir.path(), "devices", "v0").await?,
         };
         // we don't include objects db here because its only used in tests
         // todo: I don't understand this comment ^
@@ -100,6 +102,7 @@ mod requests
             dbs.shares.clone(),
             dbs.verify.clone(),
             dbs.directory.clone(),
+            dbs.devices.clone(),
         )?;
         Ok((api, dbs))
     }
@@ -207,6 +210,15 @@ mod requests
                 "v0",
             )
             .await?,
+            directory: S3Store::new(
+                "http://localhost:9000",
+                "minio",
+                "minioadmin",
+                "minioadmin",
+                &tmpname(32),
+                "v0",
+            )
+            .await?,
         };
 
         dbs.objects.create_bucket_if_not_exists().await?;
@@ -217,6 +229,7 @@ mod requests
         dbs.mailboxes.create_bucket_if_not_exists().await?;
         dbs.shares.create_bucket_if_not_exists().await?;
         dbs.directory.create_bucket_if_not_exists().await?;
+        dbs.devices.create_bucket_if_not_exists().await?;
 
         dbs.objects.empty_bucket().await?;
         dbs.tokens.empty_bucket().await?;
@@ -226,6 +239,7 @@ mod requests
         dbs.mailboxes.empty_bucket().await?;
         dbs.shares.empty_bucket().await?;
         dbs.directory.empty_bucket().await?;
+        dbs.devices.empty_bucket().await?;
 
         Ok(dbs)
     }
@@ -243,6 +257,7 @@ mod requests
             dbs.mailboxes.clone(),
             dbs.shares.clone(),
             dbs.directory.clone(),
+            dbs.devices.clone(),
         )?;
         Ok((api, dbs))
     }
@@ -1867,7 +1882,7 @@ mod requests
         assert_eq!(StatusCode::BadRequest, res1.status());
 
         let phone = "15005550000";
-        let cid = cid_from_phone(&phone);
+        let _cid = cid_from_phone(&phone);
 
         // TODO post entry and receive from lookup
 
