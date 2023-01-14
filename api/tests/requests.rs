@@ -55,6 +55,8 @@ mod requests
     use api::LookupItem;
     use api::PendingItem;
 
+    use api::DevicesList;
+
     const TUNE: &str = "$argon2d$v=19$m=4096,t=3,p=1";
     const SALT: &str = "cm9ja3NhbHQ";
 
@@ -2249,6 +2251,78 @@ mod requests
         let actual_entry_string =
             res1.take_body().into_string().await.map_err(|e| anyhow!(e))?;
         assert_eq!(expected_entry_string, actual_entry_string);
+
+        Ok(())
+    }
+
+    #[async_std::test]
+    async fn devices_post() -> Result<()>
+    {
+        let (api, dbs) = setup_tmp_api().await?;
+
+        let id = Id([0u8; ID_LENGTH]); // use the zero id
+        let uid = id_to_b64url(&id);
+
+        let n64_1 = init_nonce(&dbs.tokens, &["create"]).await?;
+
+        let resource = format!("http://example.com/devices/{}", uid);
+
+        let mut req1: Request = surf::post(&resource)
+            .body_json(&json!({"token": "opaque"}))
+            .map_err(|_| anyhow!("serialize body1"))?
+            .build();
+        blake3_sign_req(&mut req1, &n64_1, MIN_COST, &id)?;
+
+        let res1: Response =
+            api.respond(req1).await.map_err(|_| anyhow!("request failed"))?;
+
+        assert_eq!(StatusCode::Ok, res1.status());
+
+        let stored_bytes1 = dbs.devices.get(&uid).await?;
+        let stored1: DevicesList = serde_json::from_slice(&stored_bytes1)?;
+
+        let element1 = stored1.tokens.last().unwrap();
+        assert_eq!("opaque", element1.token);
+
+        let mut req2: Request = surf::post(&resource)
+            .body_json(&json!({"token": "other"}))
+            .map_err(|_| anyhow!("serialize body2"))?
+            .build();
+
+        asym_sign_req_using_res_with_id(&res1, &mut req2, &id)?;
+
+        let res2: Response =
+            api.respond(req2).await.map_err(|_| anyhow!("request 2 failed"))?;
+
+        assert_eq!(StatusCode::Ok, res2.status());
+
+        let stored_bytes2 = dbs.devices.get(&uid).await?;
+        let stored2: DevicesList = serde_json::from_slice(&stored_bytes2)?;
+
+        let element2 =
+            stored2.tokens.iter().find(|e| e.token == "other").unwrap();
+        assert_eq!("other", element2.token);
+
+        let mut req3: Request = surf::post(&resource)
+            .body_json(&json!({"token": "opaque"}))
+            .map_err(|_| anyhow!("serialize body3"))?
+            .build();
+
+        asym_sign_req_using_res_with_id(&res2, &mut req3, &id)?;
+
+        let res3: Response =
+            api.respond(req3).await.map_err(|_| anyhow!("request 3 failed"))?;
+
+        assert_eq!(StatusCode::Ok, res3.status());
+
+        let stored_bytes3 = dbs.devices.get(&uid).await?;
+        let stored3: DevicesList = serde_json::from_slice(&stored_bytes3)?;
+
+        let element3 =
+            stored3.tokens.iter().find(|e| e.token == "opaque").unwrap();
+
+        use core::cmp::Ordering;
+        assert_eq!(Ordering::Less, element1.timestamp.cmp(&element3.timestamp));
 
         Ok(())
     }

@@ -1316,20 +1316,20 @@ where
 #[derive(Serialize, Deserialize, Debug, PartialEq)]
 pub struct DevicesPost
 {
-    token: String,
+    pub token: String,
 }
 
 #[derive(Serialize, Deserialize, Debug, PartialEq)]
 pub struct DevicesList
 {
-    tokens: Vec<DeviceToken>,
+    pub tokens: Vec<DeviceToken>,
 }
 
 #[derive(Serialize, Deserialize, Debug, PartialEq)]
 pub struct DeviceToken
 {
-    token: String,
-    timestamp: DateTime<Utc>,
+    pub token: String,
+    pub timestamp: DateTime<Utc>,
 }
 
 async fn devices_post<T>(mut req: Request<State<T>>) -> Result<Response>
