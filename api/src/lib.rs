@@ -36,7 +36,7 @@ use serde_derive::Deserialize;
 use serde_derive::Serialize;
 use serde_json::{json, Value};
 
-use chrono::{Duration, Utc};
+use chrono::{DateTime, Duration, Utc};
 
 use http_types::Method;
 use tide::{Body, Error, Next, Request, Response, Result, StatusCode};
@@ -1312,6 +1312,68 @@ where
     }
 }
 
+
+#[derive(Serialize, Deserialize, Debug, PartialEq)]
+pub struct DevicesPost
+{
+    pub token: String,
+}
+
+#[derive(Serialize, Deserialize, Debug, PartialEq)]
+pub struct DevicesList
+{
+    pub tokens: Vec<DeviceToken>,
+}
+
+#[derive(Serialize, Deserialize, Debug, PartialEq)]
+pub struct DeviceToken
+{
+    pub token: String,
+    pub timestamp: DateTime<Utc>,
+}
+
+async fn devices_post<T>(mut req: Request<State<T>>) -> Result<Response>
+where
+    T: Database,
+{
+    let body_bytes = req.body_bytes().await.map_err(server_err)?;
+    let post: DevicesPost =
+        serde_json::from_slice(&body_bytes).map_err(bad_request)?;
+
+    let db = &req.state().db;
+    let id = &req.ext::<AccountId>().unwrap().0;
+
+    if !db.exists(&id).await.map_err(server_err)? {
+        let empty = DevicesList { tokens: Vec::new() };
+        let ebytes = serde_json::to_vec(&empty).map_err(server_err)?;
+        db.put(id, &ebytes).await.map_err(server_err)?;
+    }
+
+    let devices_bytes = db.get(id).await.map_err(server_err)?;
+    let mut devices: DevicesList =
+        serde_json::from_slice(&devices_bytes).map_err(server_err)?;
+
+    // if there's a token in the list, update it, otherwise append a new entry
+    let mut tokens = devices.tokens;
+    let mut updated = false;
+    for i in 0..tokens.len() {
+        if tokens[i].token == post.token {
+            tokens[i].timestamp = Utc::now();
+            updated = true;
+        }
+    }
+    // if not found, add token to device list
+    if !updated {
+        tokens.push(DeviceToken { token: post.token, timestamp: Utc::now() });
+    }
+
+    devices.tokens = tokens;
+    let tokens_list_bytes = serde_json::to_vec(&devices).map_err(server_err)?;
+    db.put(id, &tokens_list_bytes).await.map_err(server_err)?;
+
+    Ok(Response::builder(StatusCode::Ok).build())
+}
+
 fn bad_request<M>(msg: M) -> Error
 where
     M: Display + Debug + Send + Sync + 'static,
@@ -1352,6 +1414,7 @@ struct VaultId(String);
 struct MailboxId(String);
 struct ShareId(String);
 struct ContactId(String);
+struct AccountId(String);
 
 // Extract the MailboxId from the url parameter for conveniennce.
 //
@@ -1422,6 +1485,45 @@ where
     })
 }
 
+// Extract the AccountId from the url parameter for conveniennce.
+//
+fn ensure_account_id<'a, T>(
+    mut req: Request<State<T>>,
+    next: Next<'a, State<T>>,
+) -> Pin<Box<dyn Future<Output = Result> + Send + 'a>>
+where
+    T: Database + 'static,
+{
+    Box::pin(async {
+        let p = req.param("id").map_err(bad_request)?;
+        let aid = AccountId(String::from(p));
+        req.set_ext(aid);
+        Ok(next.run(req).await)
+    })
+}
+
+// Make sure the id in the url matches the public key that generated the
+// signature on the request. Requires AccountId middleware. Returns status 403
+// forbidden if there is a mismatch.
+//
+fn check_account_ownership<'a, T>(
+    req: Request<State<T>>,
+    next: Next<'a, State<T>>,
+) -> Pin<Box<dyn Future<Output = Result> + Send + 'a>>
+where
+    T: Database + 'static,
+{
+    Box::pin(async {
+        let id = req.ext::<AccountId>().unwrap();
+        let target = pubkey_from_url_b64(&id.0).map_err(bad_request)?;
+        let user = req.ext::<UserId>().unwrap().0;
+        if target != user {
+            return Err(forbidden("pubkey mismatch"));
+        }
+        Ok(next.run(req).await)
+    })
+}
+
 pub fn build_routes<T>(
     token_db: T,
     vault_db: T,
@@ -1431,6 +1533,7 @@ pub fn build_routes<T>(
     share_db: T,
     verify_db: T,
     directory_db: T,
+    devices_db: T,
 ) -> anyhow::Result<tide::Server<()>>
 where
     T: Database + 'static,
@@ -1569,7 +1672,6 @@ where
             .at("entries")
             .with(signed_pow_auth)
             .with(add_auth_info)
-            // need to ensure that the pubkey on the request owns the cid in question
             .post(post_directory_entry);
         directory
             .at("entries/:id")
@@ -1577,9 +1679,22 @@ where
             .with(signed_pow_auth)
             .with(add_auth_info)
             .with(ensure_contact_id)
-            // need to ensure that the pubkey on the request owns the cid in question
             .get(get_directory_entry);
         api.at("directory").nest(directory);
+    }
+
+    {
+        let mut devices =
+            tide::with_state(State::new(devices_db, token_db.clone()));
+
+        devices
+            .at(":id")
+            .with(signed_pow_auth)
+            .with(add_auth_info)
+            .with(ensure_account_id)
+            .with(check_account_ownership)
+            .post(devices_post);
+        api.at("devices").nest(devices);
     }
 
     Ok(api)
