@@ -19,6 +19,8 @@ use std::env;
 use std::convert::AsRef;
 use strum_macros::AsRefStr;
 
+use tide::log;
+
 
 #[derive(AsRefStr, Debug)]
 enum Products
@@ -53,6 +55,11 @@ pub async fn validate_phone(phone: &str, country: &str) -> Result<String>
 
     let status = res.status();
     if status != StatusCode::Ok {
+        log::error!(
+            "unexpected twilio lookup response: {}, phone: {}",
+            status,
+            phone
+        );
         bail!("unexpected twilio response {}", status);
     }
 
@@ -88,6 +95,7 @@ pub async fn verify_phone(phone: &str) -> Result<String>
 
     let status = res.status();
     if status != StatusCode::Created {
+        log::error!("unexpected twilio verify start response: {}", status);
         bail!("unexpected twilio response {}", status);
     }
 
@@ -118,6 +126,7 @@ pub async fn verify_check_status(sid: &str) -> Result<String>
     }
 
     if status != StatusCode::Ok {
+        log::error!("unexpected twilio verify check response: {}", status);
         bail!("unexpected twilio response {}", status);
     }
 
@@ -154,6 +163,7 @@ pub async fn verify_status_update(sid: &str, status: &str) -> Result<()>
     let status = res.status();
 
     if status != StatusCode::Ok {
+        log::error!("unexpected twilio verify update response: {}", status);
         bail!("unexpected twilio response {}", status);
     }
 
@@ -193,6 +203,7 @@ pub async fn verify_code_submit(phone: &str, code: &str) -> Result<String>
 
     let status = res.status();
     if status != 200 {
+        log::error!("unexpected twilio verify confirm response: {}", status);
         bail!("unexpected twilio response {}", status);
     }
 
