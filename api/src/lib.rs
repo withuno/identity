@@ -367,6 +367,39 @@ where
     }
 }
 
+#[derive(Serialize, Deserialize, Debug)]
+pub struct GetVerificationByEmailForm
+{
+    pub email: String,
+}
+
+async fn get_verification_status_by_email<T>(
+    mut req: Request<State<T>>,
+) -> Result
+where
+    T: Database,
+{
+    let body_bytes = req.body_bytes().await.map_err(server_err)?;
+    let form: GetVerificationByEmailForm =
+        serde_json::from_slice(&body_bytes).map_err(bad_request)?;
+
+    let db = &req.state().db;
+
+    let response = Response::builder(StatusCode::Ok)
+        .header("content-type", "application/json");
+
+    match verify_token::get_by_email(db, &form.email).await.map_err(server_err)
+    {
+        Ok(verify_token::PossibleToken::Verified) => {
+            Ok(response.body("true").build())
+        },
+        Ok(verify_token::PossibleToken::Unverified) => {
+            Ok(response.body("false").build())
+        },
+        Err(e) => Err(e),
+    }
+}
+
 async fn create_verification_token<T>(
     mut req: Request<State<T>>,
 ) -> Result<StatusCode>
@@ -1545,15 +1578,19 @@ where
             tide::with_state(State::new(verify_db.clone(), token_db.clone()));
 
         verify_tokens
-            .at(":id")
+            .at("tokens/:id")
             .with(ensure_vault_id)
             .with(cors)
             .options(option_ok)
             .get(get_verification_status)
             .post(create_verification_token)
             .put(verify_verification_token);
+        verify_tokens
+            .at("lookup")
+            .get(get_verification_status_by_email)
+            .post(get_verification_status_by_email);
 
-        api.at("verify_tokens").nest(verify_tokens);
+        api.at("verify").nest(verify_tokens);
     }
 
     {

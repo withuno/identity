@@ -16,6 +16,8 @@ use serde_json::Error as SerdeError;
 
 use thiserror::Error;
 
+use serde::{Deserialize, Serialize};
+
 #[derive(Error, Debug)]
 pub enum VerifyTokenError
 {
@@ -49,7 +51,9 @@ pub enum PossibleToken
 
 pub async fn get(db: &impl Database, id: &str) -> Result<PossibleToken>
 {
-    match db.get(&id).await {
+    let key = format!("entries/{}", id);
+
+    match db.get(&key).await {
         Ok(bytes) => {
             if serde_json::from_slice::<UnverifiedToken>(&bytes).is_ok() {
                 return Ok(PossibleToken::Unverified);
@@ -64,6 +68,30 @@ pub async fn get(db: &impl Database, id: &str) -> Result<PossibleToken>
     }
 }
 
+#[derive(Serialize, Deserialize, Debug)]
+pub struct LookupItem
+{
+    pub id: String,
+}
+
+pub async fn get_by_email(
+    db: &impl Database,
+    email: &str,
+) -> Result<PossibleToken>
+{
+    let key = format!("lookup/{}", email);
+
+    if db.exists(&key).await.map_err(|_| VerifyTokenError::Unknown)? {
+        let bytes =
+            db.get(&key).await.map_err(|_| VerifyTokenError::Unknown)?;
+        let item: LookupItem = serde_json::from_slice(&bytes)?;
+        Ok(get(db, &item.id).await?)
+    } else {
+        Err(VerifyTokenError::NotFound)
+    }
+}
+
+
 pub async fn create(
     db: &impl Database,
     id: &str,
@@ -72,7 +100,9 @@ pub async fn create(
     expires_at: DateTime<Utc>,
 ) -> Result<UnverifiedToken>
 {
-    if let Ok(bytes) = db.get(&id).await {
+    let key = format!("entries/{}", id);
+
+    if let Ok(bytes) = db.get(&key).await {
         if serde_json::from_slice::<VerifiedToken>(&bytes).is_ok() {
             return Err(VerifyTokenError::Done);
         }
@@ -104,7 +134,7 @@ pub async fn create(
         Err(e) => return Err(VerifyTokenError::Serde { source: e }),
     };
 
-    match db.put(id, &bytes).await {
+    match db.put(&key, &bytes).await {
         Ok(_) => Ok(t),
         Err(_) => Err(VerifyTokenError::Unknown),
     }
@@ -116,7 +146,9 @@ pub async fn verify(
     secret: &str,
 ) -> Result<VerifiedToken>
 {
-    if let Ok(bytes) = db.get(id).await {
+    let key = format!("entries/{}", id);
+
+    if let Ok(bytes) = db.get(&key).await {
         if serde_json::from_slice::<VerifiedToken>(&bytes).is_ok() {
             return Err(VerifyTokenError::Done);
         }
@@ -132,7 +164,8 @@ pub async fn verify(
                         return Err(VerifyTokenError::Secret);
                     }
 
-                    let v = VerifiedToken::new(0, u.analytics_id, u.method);
+                    let v =
+                        VerifiedToken::new(0, u.analytics_id, u.method.clone());
 
                     let bytes = match serde_json::to_vec(&v) {
                         Ok(b) => b,
@@ -141,10 +174,24 @@ pub async fn verify(
                         },
                     };
 
-                    return match db.put(id, &bytes).await {
-                        Ok(_) => Ok(v),
-                        Err(_) => Err(VerifyTokenError::Unknown),
+                    let _ = db
+                        .put(&key, &bytes)
+                        .await
+                        .map_err(|_| VerifyTokenError::Unknown)?;
+
+                    let item = LookupItem { id: id.into() };
+                    let item_bytes = serde_json::to_vec(&item)?;
+                    let email = match u.method {
+                        VerifyMethod::Email(e) => e,
+                        _ => return Err(VerifyTokenError::Unknown),
                     };
+                    let lookup_key = format!("lookup/{}", email);
+                    let _ = db
+                        .put(&lookup_key, &item_bytes)
+                        .await
+                        .map_err(|_| VerifyTokenError::Unknown)?;
+
+                    return Ok(v);
                 },
                 _ => {
                     return Err(VerifyTokenError::Schema);
