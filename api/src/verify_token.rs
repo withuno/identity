@@ -77,6 +77,7 @@ pub struct LookupItem
 pub async fn get_by_email(
     db: &impl Database,
     email: &str,
+    pubkey: Option<&str>,
 ) -> Result<PossibleToken>
 {
     let key = format!("lookup/{}", email);
@@ -85,6 +86,11 @@ pub async fn get_by_email(
         let bytes =
             db.get(&key).await.map_err(|_| VerifyTokenError::Unknown)?;
         let item: LookupItem = serde_json::from_slice(&bytes)?;
+        if let Some(pk) = pubkey {
+            if pk != item.id {
+                return Ok(PossibleToken::Unverified);
+            }
+        }
         Ok(get(db, &item.id).await?)
     } else {
         Err(VerifyTokenError::NotFound)

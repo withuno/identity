@@ -371,6 +371,7 @@ where
 pub struct GetVerificationByEmailForm
 {
     pub email: String,
+    pub pubkey: Option<String>,
 }
 
 async fn get_verification_status_by_email<T>(
@@ -388,8 +389,12 @@ where
     let response = Response::builder(StatusCode::Ok)
         .header("content-type", "application/json");
 
-    match verify_token::get_by_email(db, &form.email).await.map_err(server_err)
-    {
+    let result =
+        verify_token::get_by_email(db, &form.email, form.pubkey.as_deref())
+            .await
+            .map_err(server_err);
+
+    match result {
         Ok(verify_token::PossibleToken::Verified) => {
             Ok(response.body("true").build())
         },
@@ -1578,7 +1583,7 @@ where
             tide::with_state(State::new(verify_db.clone(), token_db.clone()));
 
         verify_tokens
-            .at("tokens/:id")
+            .at("entries/:id")
             .with(ensure_vault_id)
             .with(cors)
             .options(option_ok)
