@@ -392,17 +392,9 @@ where
     let result =
         verify_token::get_by_email(db, &form.email, form.pubkey.as_deref())
             .await
-            .map_err(server_err);
+            .map_err(server_err)?;
 
-    match result {
-        Ok(verify_token::PossibleToken::Verified) => {
-            Ok(response.body("true").build())
-        },
-        Ok(verify_token::PossibleToken::Unverified) => {
-            Ok(response.body("false").build())
-        },
-        Err(e) => Err(e),
-    }
+    Ok(response.body(json!(result).to_string()).build())
 }
 
 async fn create_verification_token<T>(

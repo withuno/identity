@@ -78,22 +78,22 @@ pub async fn get_by_email(
     db: &impl Database,
     email: &str,
     pubkey: Option<&str>,
-) -> Result<PossibleToken>
+) -> Result<bool>
 {
     let key = format!("lookup/{}", email);
 
     if db.exists(&key).await.map_err(|_| VerifyTokenError::Unknown)? {
-        let bytes =
-            db.get(&key).await.map_err(|_| VerifyTokenError::Unknown)?;
-        let item: LookupItem = serde_json::from_slice(&bytes)?;
         if let Some(pk) = pubkey {
+            let bytes =
+                db.get(&key).await.map_err(|_| VerifyTokenError::Unknown)?;
+            let item: LookupItem = serde_json::from_slice(&bytes)?;
             if pk != item.id {
-                return Ok(PossibleToken::Unverified);
+                return Ok(false);
             }
         }
-        Ok(get(db, &item.id).await?)
+        Ok(true)
     } else {
-        Err(VerifyTokenError::NotFound)
+        Ok(false)
     }
 }
 

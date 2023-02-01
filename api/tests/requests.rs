@@ -1867,7 +1867,7 @@ mod requests
         assert_eq!(StatusCode::BadRequest, res1.status());
 
         let phone = "15005550000";
-        let cid = cid_from_phone(&phone);
+        let _cid = cid_from_phone(&phone);
 
         // TODO post entry and receive from lookup
 
@@ -2237,6 +2237,84 @@ mod requests
 
         Ok(())
     }
+
+    #[async_std::test]
+    async fn email_verify_lookup() -> Result<()>
+    {
+        let (api, dbs) = setup_tmp_api().await?;
+
+        let id = Id([0u8; ID_LENGTH]); // use the zero id
+        let uid = id_to_b64url(&id);
+
+        let resource = "http://example.com/verify/lookup";
+
+        let email = "test@example.com";
+
+        let req1: Request = surf::get(&resource)
+            .body_json(&json!({ "email": email.clone() }))
+            .map_err(|e| anyhow!(e))?
+            .build();
+
+        let mut res1: Response =
+            api.respond(req1).await.map_err(|_| anyhow!("request failed"))?;
+
+        assert_eq!(StatusCode::Ok, res1.status());
+
+        let actual_res_body1 =
+            res1.take_body().into_string().await.map_err(|e| anyhow!(e))?;
+        assert_eq!("false", actual_res_body1);
+
+        let item = api::verify_token::LookupItem { id: String::from(&uid) };
+        let item_data = serde_json::to_vec(&item)?;
+        let key = format!("lookup/{}", email);
+        let _ = dbs.verify.put(key, &item_data).await?;
+
+        //let req2 = req1.clone();
+        let req2: Request = surf::get(&resource)
+            .body_json(&json!({ "email": email.clone(), "pubkey": null }))
+            .map_err(|e| anyhow!(e))?
+            .build();
+
+        let mut res2: Response =
+            api.respond(req2).await.map_err(|_| anyhow!("request failed"))?;
+
+        assert_eq!(StatusCode::Ok, res2.status());
+
+        let actual_res_body2 =
+            res2.take_body().into_string().await.map_err(|e| anyhow!(e))?;
+        assert_eq!("true", actual_res_body2);
+
+        let req3: Request = surf::get(&resource)
+            .body_json(&json!({ "email": email.clone(), "pubkey": uid }))
+            .map_err(|e| anyhow!(e))?
+            .build();
+
+        let mut res3: Response =
+            api.respond(req3).await.map_err(|_| anyhow!("request failed"))?;
+
+        assert_eq!(StatusCode::Ok, res3.status());
+
+        let actual_res_body3 =
+            res3.take_body().into_string().await.map_err(|e| anyhow!(e))?;
+        assert_eq!("true", actual_res_body3);
+
+        let req4: Request = surf::get(&resource)
+            .body_json(&json!({ "email": email.clone(), "pubkey": "xxx" }))
+            .map_err(|e| anyhow!(e))?
+            .build();
+
+        let mut res4: Response =
+            api.respond(req4).await.map_err(|_| anyhow!("request failed"))?;
+
+        assert_eq!(StatusCode::Ok, res4.status());
+
+        let actual_res_body4 =
+            res4.take_body().into_string().await.map_err(|e| anyhow!(e))?;
+        assert_eq!("false", actual_res_body4);
+
+        Ok(())
+    }
+
 
     fn id_to_b64url(id: &Id) -> String
     {
