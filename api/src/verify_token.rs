@@ -43,29 +43,72 @@ pub enum VerifyTokenError
 
 type Result<T> = result::Result<T, VerifyTokenError>;
 
-pub enum PossibleToken
+pub enum VerificationStatus
 {
-    Verified,
+    Verified(String),
+    Pending(String, PreviousStatus),
     Unverified,
 }
 
-pub async fn get(db: &impl Database, id: &str) -> Result<PossibleToken>
+pub enum PreviousStatus
 {
-    let key = format!("entries/{}", id);
+    Verified(String),
+    Unverified,
+}
 
-    match db.get(&key).await {
-        Ok(bytes) => {
-            if serde_json::from_slice::<UnverifiedToken>(&bytes).is_ok() {
-                return Ok(PossibleToken::Unverified);
-            }
+pub async fn get(db: &impl Database, id: &str) -> Result<VerificationStatus>
+{
+    let pending_key = format!("pending/{}", id);
+    let entries_key = format!("entries/{}", id);
 
-            match serde_json::from_slice::<VerifiedToken>(&bytes) {
-                Ok(_) => Ok(PossibleToken::Verified),
-                Err(e) => Err(VerifyTokenError::Serde { source: e }),
-            }
-        },
-        Err(_) => Ok(PossibleToken::Unverified),
+    let pending_exists =
+        db.exists(&pending_key).await.map_err(|_| VerifyTokenError::Unknown)?;
+
+    let entry_exists =
+        db.exists(&entries_key).await.map_err(|_| VerifyTokenError::Unknown)?;
+
+    if pending_exists {
+        // TODO: && not expired?
+
+        let pending_bytes = db
+            .get(&pending_key)
+            .await
+            .map_err(|_| VerifyTokenError::Unknown)?;
+        let pending_entry: UnverifiedToken =
+            serde_json::from_slice(&pending_bytes)?;
+
+        if entry_exists {
+            let entry_bytes = db
+                .get(&entries_key)
+                .await
+                .map_err(|_| VerifyTokenError::Unknown)?;
+            let verified_entry: VerifiedToken =
+                serde_json::from_slice(&entry_bytes)?;
+
+            return Ok(VerificationStatus::Pending(
+                pending_entry.email,
+                PreviousStatus::Verified(verified_entry.email),
+            ));
+        } else {
+            return Ok(VerificationStatus::Pending(
+                pending_entry.email,
+                PreviousStatus::Unverified,
+            ));
+        }
+    } else {
+        if entry_exists {
+            let entry_bytes = db
+                .get(&entries_key)
+                .await
+                .map_err(|_| VerifyTokenError::Unknown)?;
+            let verified_entry: VerifiedToken =
+                serde_json::from_slice(&entry_bytes)?;
+
+            return Ok(VerificationStatus::Verified(verified_entry.email));
+        }
     }
+
+    return Ok(VerificationStatus::Unverified);
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -135,6 +178,7 @@ pub async fn verify(
     // get pending entry
     // match secrets
     // delete old entry
+    // delete pending entry
     // commit new entry
 
     let pending_exists =
@@ -160,6 +204,9 @@ pub async fn verify(
     }
 
     // request is allowed
+
+    let _ =
+        db.del(&pending_key).await.map_err(|_| VerifyTokenError::Unknown)?;
 
     let lookup_key = format!("lookup/{}", pending_token.email);
 

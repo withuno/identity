@@ -331,9 +331,6 @@ where
 
     match verify_token::verify(db, id, &body.secret).await {
         Ok(_) => Ok(StatusCode::Ok),
-        Err(verify_token::VerifyTokenError::Done) => {
-            Err(Error::from_str(StatusCode::Conflict, "done"))
-        },
         Err(verify_token::VerifyTokenError::Expired) => {
             Err(Error::from_str(StatusCode::Gone, "expired"))
         },
@@ -342,6 +339,23 @@ where
         },
         Err(_) => Err(server_err("internal server error")),
     }
+}
+
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct GetVerificationStatusResponse
+{
+    pub status: String,
+    pub email: Option<String>,
+    pub previous_status: Option<GetVerificationStatusPrevious>,
+}
+
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct GetVerificationStatusPrevious
+{
+    pub status: String,
+    pub email: Option<String>,
 }
 
 async fn get_verification_status<T>(req: Request<State<T>>) -> Result
@@ -357,15 +371,46 @@ where
     let response = Response::builder(StatusCode::Ok)
         .header("content-type", "application/json");
 
-    match verify_token::get(db, &user_b64url).await.map_err(server_err) {
-        Ok(verify_token::PossibleToken::Verified) => {
-            Ok(response.body("true").build())
+    use verify_token::VerificationStatus;
+    let body = match verify_token::get(db, &user_b64url).await {
+        Ok(VerificationStatus::Verified(email)) => {
+            GetVerificationStatusResponse {
+                status: "verified".into(),
+                email: Some(email),
+                previous_status: None,
+            }
         },
-        Ok(verify_token::PossibleToken::Unverified) => {
-            Ok(response.body("false").build())
+        Ok(VerificationStatus::Pending(email, previous)) => {
+            let previous_status = match previous {
+                PreviousStatus::Verified(previous_email) => {
+                    GetVerificationStatusPrevious {
+                        status: "verified".into(),
+                        email: Some(previous_email),
+                    }
+                },
+                PreviousStatus::Unverified => GetVerificationStatusPrevious {
+                    status: "unverified".into(),
+                    email: None,
+                },
+            };
+
+            GetVerificationStatusResponse {
+                status: "pending".into(),
+                email: Some(email),
+                previous_status: Some(previous_status),
+            }
         },
-        Err(e) => Err(e),
-    }
+        Ok(VerificationStatus::Unverified) => GetVerificationStatusResponse {
+            status: "unverified".into(),
+            email: None,
+            previous_status: None,
+        },
+        Err(e) => return Err(server_err(e)),
+    };
+
+    let body_bytes = serde_json::to_vec(&body).map_err(server_err)?;
+
+    Ok(response.body(body_bytes).build())
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -555,6 +600,8 @@ where
 }
 
 use vclock::VClock;
+
+use crate::verify_token::PreviousStatus;
 
 ///
 /// We need to store both the vault data and the version (vclock). Wrap them
