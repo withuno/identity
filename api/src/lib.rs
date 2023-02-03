@@ -1630,8 +1630,8 @@ where
         verify
             .at("entries/:id")
             .with(ensure_vault_id)
-            .options(option_ok)
             .with(cors)
+            .options(option_ok)
             .put(verify_verification_token);
         verify
             .at("entries/:id")
