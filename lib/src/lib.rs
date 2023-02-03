@@ -39,62 +39,53 @@ pub struct MagicShare
     pub encrypted_credential: String,
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
-pub enum VerifyMethod
-{
-    Phone(String),
-    Email(String),
-    Cli,
-}
-
 #[derive(Serialize, Deserialize, Debug)]
 pub struct VerifiedToken
 {
-    is_verified: bool, // tag for serde discrimination, always true.
+    pub email: String,
     pub analytics_id: String, // given by customer.io for now...
-    pub schema_version: u64,
-    pub method: VerifyMethod,
 }
 
 impl VerifiedToken
 {
-    pub fn new(
-        schema_version: u64,
-        analytics_id: String,
-        method: VerifyMethod,
-    ) -> VerifiedToken
+    pub fn new<S, T>(email: S, analytics_id: T) -> VerifiedToken
+    where
+        S: AsRef<str>,
+        T: AsRef<str>,
     {
-        Self { is_verified: true, analytics_id, schema_version, method }
+        Self {
+            email: email.as_ref().into(),
+            analytics_id: analytics_id.as_ref().into(),
+        }
     }
 }
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct UnverifiedToken
 {
-    is_unverified: bool, // tag for serde discrimination, always true.
-    pub schema_version: u64,
+    pub email: String,
     pub analytics_id: String, // given by customer.io for now...
     pub secret: String,       // Mu, regular base64 encoded with padding
     pub expires_at: DateTime<Utc>,
-    pub method: VerifyMethod,
 }
 
 impl UnverifiedToken
 {
-    pub fn new(
-        schema_version: u64,
-        method: VerifyMethod,
-        analytics_id: String,
-        secret: String,
+    pub fn new<S, T, U>(
+        email: S,
+        analytics_id: T,
+        secret: U,
         expires_at: DateTime<Utc>,
     ) -> UnverifiedToken
+    where
+        S: AsRef<str>,
+        T: AsRef<str>,
+        U: AsRef<str>,
     {
         Self {
-            is_unverified: true,
-            schema_version,
-            analytics_id,
-            method,
-            secret,
+            email: email.as_ref().into(),
+            analytics_id: analytics_id.as_ref().into(),
+            secret: secret.as_ref().into(),
             expires_at,
         }
     }

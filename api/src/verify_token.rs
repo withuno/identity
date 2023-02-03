@@ -9,7 +9,7 @@ pub use crate::store::Database;
 
 use std::result;
 
-use uno::{Mu, UnverifiedToken, VerifiedToken, VerifyMethod};
+use uno::{Mu, UnverifiedToken, VerifiedToken};
 
 use chrono::{DateTime, Utc};
 use serde_json::Error as SerdeError;
@@ -101,49 +101,26 @@ pub async fn get_by_email(
 pub async fn create(
     db: &impl Database,
     id: &str,
-    analytics_id: String,
-    method: VerifyMethod,
+    analytics_id: &str,
+    email: &str,
     expires_at: DateTime<Utc>,
 ) -> Result<UnverifiedToken>
 {
-    let key = format!("entries/{}", id);
-
-    if let Ok(bytes) = db.get(&key).await {
-        if serde_json::from_slice::<VerifiedToken>(&bytes).is_ok() {
-            return Err(VerifyTokenError::Done);
-        }
-
-        match serde_json::from_slice::<UnverifiedToken>(&bytes) {
-            Ok(_) => {},
-            Err(e) => {
-                return Err(VerifyTokenError::Serde { source: e });
-            },
-        };
-
-        // otherwise overwrite the unverified token, which corresponds
-        // to the case of "resend the confirmation email", etc.
-    }
+    let key = format!("pending/{}", id);
 
     let secret = Mu::new();
     let encoded_secret = base64::encode(secret.0);
 
-    let t = UnverifiedToken::new(
-        0,
-        method,
-        analytics_id,
-        encoded_secret,
-        expires_at,
-    );
+    let token =
+        UnverifiedToken::new(email, analytics_id, encoded_secret, expires_at);
 
-    let bytes = match serde_json::to_vec(&t) {
-        Ok(b) => b,
-        Err(e) => return Err(VerifyTokenError::Serde { source: e }),
-    };
+    let bytes = serde_json::to_vec(&token)
+        .map_err(|e| VerifyTokenError::Serde { source: e })?;
 
-    match db.put(&key, &bytes).await {
-        Ok(_) => Ok(t),
-        Err(_) => Err(VerifyTokenError::Unknown),
-    }
+    let _ =
+        db.put(&key, &bytes).await.map_err(|_| VerifyTokenError::Unknown)?;
+
+    Ok(token)
 }
 
 pub async fn verify(
@@ -152,65 +129,71 @@ pub async fn verify(
     secret: &str,
 ) -> Result<VerifiedToken>
 {
-    let key = format!("entries/{}", id);
+    let pending_key = format!("pending/{}", id);
+    let entries_key = format!("entries/{}", id);
 
-    if let Ok(bytes) = db.get(&key).await {
-        if serde_json::from_slice::<VerifiedToken>(&bytes).is_ok() {
-            return Err(VerifyTokenError::Done);
-        }
+    // get pending entry
+    // match secrets
+    // delete old entry
+    // commit new entry
 
-        match serde_json::from_slice::<UnverifiedToken>(&bytes) {
-            Ok(u) => match u.schema_version {
-                0 => {
-                    if Utc::now() > u.expires_at {
-                        return Err(VerifyTokenError::Expired);
-                    }
-
-                    if u.secret != secret {
-                        return Err(VerifyTokenError::Secret);
-                    }
-
-                    let v =
-                        VerifiedToken::new(0, u.analytics_id, u.method.clone());
-
-                    let bytes = match serde_json::to_vec(&v) {
-                        Ok(b) => b,
-                        Err(e) => {
-                            return Err(VerifyTokenError::Serde { source: e });
-                        },
-                    };
-
-                    let _ = db
-                        .put(&key, &bytes)
-                        .await
-                        .map_err(|_| VerifyTokenError::Unknown)?;
-
-                    let item = LookupItem { id: id.into() };
-                    let item_bytes = serde_json::to_vec(&item)?;
-                    let email = match u.method {
-                        VerifyMethod::Email(e) => e,
-                        _ => return Err(VerifyTokenError::Unknown),
-                    };
-                    let lookup_key = format!("lookup/{}", email);
-                    let _ = db
-                        .put(&lookup_key, &item_bytes)
-                        .await
-                        .map_err(|_| VerifyTokenError::Unknown)?;
-
-                    return Ok(v);
-                },
-                _ => {
-                    return Err(VerifyTokenError::Schema);
-                },
-            },
-            Err(e) => {
-                println!("serde error {:?}", e);
-                return Err(VerifyTokenError::Serde { source: e });
-            },
-        };
+    let pending_exists =
+        db.exists(&pending_key).await.map_err(|_| VerifyTokenError::Unknown)?;
+    if !pending_exists {
+        return Err(VerifyTokenError::NotFound);
     }
 
-    Err(VerifyTokenError::NotFound)
+    let pending_bytes =
+        db.get(&pending_key).await.map_err(|_| VerifyTokenError::Unknown)?;
+
+    let pending_token: UnverifiedToken =
+        serde_json::from_slice(&pending_bytes)?;
+
+    // check
+
+    if Utc::now() > pending_token.expires_at {
+        return Err(VerifyTokenError::Expired);
+    }
+
+    if secret != pending_token.secret {
+        return Err(VerifyTokenError::Secret);
+    }
+
+    // request is allowed
+
+    let lookup_key = format!("lookup/{}", pending_token.email);
+
+    let old_exists =
+        db.exists(&lookup_key).await.map_err(|_| VerifyTokenError::Unknown)?;
+    if old_exists {
+        let old_bytes =
+            db.get(&lookup_key).await.map_err(|_| VerifyTokenError::Unknown)?;
+        let old_item: LookupItem = serde_json::from_slice(&old_bytes)?;
+        let old_entry_key = format!("entries/{}", old_item.id);
+        db.del(&old_entry_key).await.map_err(|_| VerifyTokenError::Unknown)?;
+
+        db.del(&lookup_key).await.map_err(|_| VerifyTokenError::Unknown)?;
+    }
+
+    let verified_token =
+        VerifiedToken::new(pending_token.email, pending_token.analytics_id);
+
+    let verified_token_bytes = serde_json::to_vec(&verified_token)?;
+
+    let _ = db
+        .put(&entries_key, &verified_token_bytes)
+        .await
+        .map_err(|_| VerifyTokenError::Unknown)?;
+
+    let item = LookupItem { id: id.into() };
+    let item_bytes = serde_json::to_vec(&item)?;
+
+    let _ = db
+        .put(&lookup_key, &item_bytes)
+        .await
+        .map_err(|_| VerifyTokenError::Unknown)?;
+
+    return Ok(verified_token);
 }
 
 #[cfg(test)]
@@ -232,68 +215,50 @@ mod tests
         let id = "some id";
         let encoded_id = base64::encode_config(id, base64::URL_SAFE_NO_PAD);
 
-        let email = VerifyMethod::Email("user@example.com".to_string());
+        let email = "user@example.com";
 
-        match verify(&db, &encoded_id, "secret").await {
-            Err(VerifyTokenError::NotFound) => {},
-            _ => {
-                assert!(false);
-            },
-        }
+        let result = verify(&db, &encoded_id, "secret").await;
+
+        assert_eq!(
+            VerifyTokenError::NotFound.to_string(),
+            result.err().unwrap().to_string()
+        );
 
         let mut u = create(
             &db,
             &encoded_id,
-            "analytics_id".to_string(),
-            email.clone(),
+            "analytics_id",
+            email,
             Utc::now() - Duration::days(1),
         )
         .await
         .unwrap();
 
-        match verify(&db, &encoded_id, &u.secret).await {
-            Err(VerifyTokenError::Expired) => {},
-            _ => {
-                assert!(false);
-            },
-        }
+        let result = verify(&db, &encoded_id, &u.secret).await;
+
+        assert_eq!(
+            VerifyTokenError::Expired.to_string(),
+            result.err().unwrap().to_string()
+        );
 
         u = create(
             &db,
             &encoded_id,
-            "analytics_id".to_string(),
-            email.clone(),
+            "analytics_id",
+            email,
             Utc::now() + Duration::days(1),
         )
         .await
         .unwrap();
 
-        match verify(&db, &encoded_id, "some other secret").await {
-            Err(VerifyTokenError::Secret) => {},
-            _ => {
-                assert!(false);
-            },
-        }
+        let result = verify(&db, &encoded_id, "some other secret").await;
 
-        let v = verify(&db, &encoded_id, &u.secret).await.unwrap();
         assert_eq!(
-            v.method,
-            VerifyMethod::Email("user@example.com".to_string())
+            VerifyTokenError::Secret.to_string(),
+            result.err().unwrap().to_string()
         );
 
-        match create(
-            &db,
-            &encoded_id,
-            "analytics_id".to_string(),
-            email,
-            Utc::now() + Duration::days(1),
-        )
-        .await
-        {
-            Err(VerifyTokenError::Done) => {},
-            _ => {
-                assert!(false);
-            },
-        }
+        let result = verify(&db, &encoded_id, &u.secret).await.unwrap();
+        assert_eq!(result.email, "user@example.com");
     }
 }

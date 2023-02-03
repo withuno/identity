@@ -20,8 +20,6 @@ pub mod mailbox;
 
 pub mod verify_token;
 
-use uno::VerifyMethod;
-
 use anyhow::bail;
 
 pub mod auth;
@@ -351,12 +349,15 @@ where
     T: Database,
 {
     let db = &req.state().db;
-    let id = &req.ext::<VaultId>().unwrap().0;
+
+    let uid = &req.ext::<UserId>().unwrap().0;
+    let user_b64url =
+        base64::encode_config(uid.as_bytes(), base64::URL_SAFE_NO_PAD);
 
     let response = Response::builder(StatusCode::Ok)
         .header("content-type", "application/json");
 
-    match verify_token::get(db, id).await.map_err(server_err) {
+    match verify_token::get(db, &user_b64url).await.map_err(server_err) {
         Ok(verify_token::PossibleToken::Verified) => {
             Ok(response.body("true").build())
         },
@@ -397,43 +398,37 @@ where
     Ok(response.body(json!(result).to_string()).build())
 }
 
+#[derive(Serialize, Deserialize, Debug)]
+pub struct VerifyCreateForm
+{
+    pub analytics_id: String,
+    pub email: String,
+}
+
 async fn create_verification_token<T>(
     mut req: Request<State<T>>,
 ) -> Result<StatusCode>
 where
     T: Database,
 {
-    #[derive(Deserialize)]
-    struct VerifyCreateBody
-    {
-        analytics_id: String,
-        email: Option<String>,
-        phone: Option<String>,
-    }
-
-    let body: VerifyCreateBody = req.body_json().await.map_err(bad_request)?;
-
-    if body.email.is_none() && body.phone.is_none() {
-        return Err(bad_request("missing verification method"));
-    }
-
-    // XXX: temporarily we do not support phone numbers
-    if body.phone.is_some() {
-        return Err(bad_request("unsupported verification method"));
-    }
+    let body: VerifyCreateForm = req.body_json().await.map_err(bad_request)?;
 
     let db = &req.state().db;
-    let id = &req.ext::<VaultId>().unwrap().0;
 
-    let unverified = match verify_token::create(
+    let uid = &req.ext::<UserId>().unwrap().0;
+    let uid_b64url =
+        base64::encode_config(uid.as_bytes(), base64::URL_SAFE_NO_PAD);
+
+    let result = verify_token::create(
         db,
-        id,
-        body.analytics_id,
-        VerifyMethod::Email(body.email.unwrap()),
+        &uid_b64url,
+        &body.analytics_id,
+        &body.email,
         Utc::now() + Duration::hours(24),
     )
-    .await
-    {
+    .await;
+
+    let unverified = match result {
         Ok(v) => v,
         Err(verify_token::VerifyTokenError::Done) => {
             return Err(Error::from_str(StatusCode::Conflict, "done"));
@@ -443,90 +438,72 @@ where
         },
     };
 
-    // If the email fails to send, we should return Ok anyway because
-    // the user can ask for a new email in the extension...
-    match possibly_email_link(id, unverified).await {
-        Ok(_) => Ok(StatusCode::Created),
-        Err(_e) => Ok(StatusCode::Ok),
-    }
+    let _ = possibly_email_link(&uid_b64url, unverified)
+        .await
+        .map_err(server_err)?;
+
+    Ok(StatusCode::Created)
 }
 
 async fn possibly_email_link(
-    vault_id: &str,
+    user_id: &str,
     token: uno::UnverifiedToken,
 ) -> Result<StatusCode>
 {
-    let query = format!("{}::{}", token.secret, vault_id);
+    let query = format!("{}::{}", token.secret, user_id);
     let encoded_query = base64::encode_config(query, base64::URL_SAFE_NO_PAD);
 
-    let verify_link = match std::env::var("VERIFY_EMAIL_DOMAIN") {
-        Ok(domain) => {
-            format!("{}?s={}", domain, encoded_query)
+    let base_url = std::env::var("VERIFY_EMAIL_DOMAIN").map_err(server_err)?;
+    let verify_link = format!("{}?s={}", base_url, encoded_query);
+
+    let api_key = std::env::var("CUSTOMER_IO_API_KEY").map_err(server_err)?;
+    let api_endpoint =
+        std::env::var("CUSTOMER_IO_API_ENDPOINT").map_err(server_err)?;
+    let message_id =
+        std::env::var("CUSTOMER_IO_MESSAGE_ID").map_err(server_err)?;
+
+    #[allow(non_snake_case)]
+    #[derive(Serialize)]
+    struct MessageData
+    {
+        emailConfirmationURL: String,
+        customer_email: String,
+    }
+
+    #[derive(Serialize)]
+    struct Identifiers
+    {
+        id: String,
+    }
+
+    #[derive(Serialize)]
+    struct Body
+    {
+        to: String,
+        transactional_message_id: String,
+        message_data: MessageData,
+        identifiers: Identifiers,
+    }
+
+    let body = Body {
+        to: token.email.clone(),
+        transactional_message_id: message_id,
+        message_data: MessageData {
+            emailConfirmationURL: verify_link,
+            customer_email: token.email,
         },
-        Err(_) => encoded_query,
+        identifiers: Identifiers { id: token.analytics_id },
     };
 
-    if let (
-        Ok(api_key),
-        Ok(api_endpoint),
-        Ok(message_id),
-        VerifyMethod::Email(email),
-    ) = (
-        std::env::var("CUSTOMER_IO_API_KEY"),
-        std::env::var("CUSTOMER_IO_API_ENDPOINT"),
-        std::env::var("CUSTOMER_IO_MESSAGE_ID"),
-        token.method,
-    ) {
-        #[allow(non_snake_case)]
-        #[derive(Serialize)]
-        struct MessageData
-        {
-            emailConfirmationURL: String,
-            customer_email: String,
-        }
+    let req = reqwest::blocking::Client::new()
+        .post(api_endpoint)
+        .json(&body)
+        .header(reqwest::header::AUTHORIZATION, format!("Bearer {}", api_key));
 
-        #[derive(Serialize)]
-        struct Identifiers
-        {
-            id: String,
-        }
-
-        #[derive(Serialize)]
-        struct Body
-        {
-            to: String,
-            transactional_message_id: String,
-            message_data: MessageData,
-            identifiers: Identifiers,
-        }
-
-        let body = Body {
-            to: email.clone(),
-            transactional_message_id: message_id,
-            message_data: MessageData {
-                emailConfirmationURL: verify_link,
-                customer_email: email,
-            },
-            identifiers: Identifiers { id: token.analytics_id },
-        };
-
-        let req = reqwest::blocking::Client::new()
-            .post(api_endpoint)
-            .json(&body)
-            .header(
-                reqwest::header::AUTHORIZATION,
-                format!("Bearer {}", api_key),
-            );
-
-        match req.send() {
-            Ok(_) => {},
-            Err(e) => {
-                println!("{:?}", e);
-            },
-        }
-    } else {
-        println!("verify link: {}", verify_link);
-    }
+    req.send().map_err(|e| {
+        println!("{:?}", e);
+        server_err(e)
+    })?;
 
     Ok(StatusCode::Created)
 }
