@@ -1056,6 +1056,18 @@ where
             let cid = cid_from_phone(&phone);
             let lookup_key = format!("lookup/{}", phone);
 
+            let lookup_exists =
+                db.exists(&lookup_key).await.map_err(server_err)?;
+            if lookup_exists {
+                let old_bytes =
+                    db.get(&lookup_key).await.map_err(server_err)?;
+                let old_item: LookupItem =
+                    serde_json::from_slice(&old_bytes).map_err(server_err)?;
+                let old_key = format!("entries/{}", old_item.cid);
+                db.del(&old_key).await.map_err(server_err)?;
+                db.del(&lookup_key).await.map_err(server_err)?;
+            }
+
             let lookup_item = LookupItem { cid: cid.clone() };
             let lookup_bytes =
                 serde_json::to_vec(&lookup_item).map_err(server_err)?;
