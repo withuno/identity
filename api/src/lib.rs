@@ -341,7 +341,6 @@ where
     }
 }
 
-
 #[derive(Serialize, Deserialize, Debug)]
 pub struct GetVerificationStatusResponse
 {
@@ -349,7 +348,6 @@ pub struct GetVerificationStatusResponse
     pub email: Option<String>,
     pub previous_status: Option<GetVerificationStatusPrevious>,
 }
-
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct GetVerificationStatusPrevious
@@ -1214,7 +1212,6 @@ where
     }
 }
 
-
 async fn validate_phone(phone: &str, country: &str) -> Result<String>
 {
     let validated_phone = match cfg!(all(feature = "twilio", not(test))) {
@@ -1618,7 +1615,12 @@ where
             .with(cors.clone())
             .options(option_ok)
             .get(get_verification_status)
-            .post(create_verification_token)
+            .post(create_verification_token);
+        verify_tokens_legacy
+            .at(":id")
+            .with(ensure_vault_id)
+            .with(cors.clone())
+            .options(option_ok)
             .put(verify_verification_token);
 
         api.at("verify_tokens").nest(verify_tokens_legacy);
