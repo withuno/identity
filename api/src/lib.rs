@@ -1594,21 +1594,6 @@ where
     }
 
     {
-        // Verification tokens legacy endpoint. Remove for API v3.
-        let mut verify_tokens_legacy =
-            tide::with_state(State::new(verify_db.clone(), token_db.clone()));
-
-        verify_tokens_legacy
-            .at(":id")
-            .with(ensure_vault_id)
-            .with(cors.clone())
-            .options(option_ok)
-            .get(get_verification_status)
-            .post(create_verification_token)
-            .put(verify_verification_token);
-
-        api.at("verify_tokens").nest(verify_tokens_legacy);
-
         // Verification tokens
         let mut verify =
             tide::with_state(State::new(verify_db.clone(), token_db.clone()));
@@ -1616,11 +1601,20 @@ where
         verify
             .at("entries/:id")
             .with(ensure_vault_id)
-            .with(cors)
             .options(option_ok)
-            .get(get_verification_status)
-            .post(create_verification_token)
+            .with(cors)
             .put(verify_verification_token);
+        verify
+            .at("entries/:id")
+            .with(ensure_vault_id)
+            .with(signed_pow_auth)
+            .with(add_auth_info)
+            .get(get_verification_status);
+        verify
+            .at("entries")
+            .with(signed_pow_auth)
+            .with(add_auth_info)
+            .post(create_verification_token);
         verify
             .at("lookup")
             .get(get_verification_status_by_email)
