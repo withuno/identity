@@ -70,7 +70,7 @@ enum SubCommand
     Share(Share),
 
     #[clap(display_order = 90)]
-    VerifyToken(VerifyToken),
+    Account(Account),
 
     #[clap(display_order = 80)]
     Session(Session),
@@ -502,7 +502,7 @@ fn do_mu(_: Context, _: Mu) -> Result<String>
 }
 
 ///
-/// Print the session id derived from Mu entropy.
+/// Print the session ID derived from Mu entropy.
 ///
 #[derive(Parser)]
 struct Session
@@ -519,45 +519,52 @@ fn do_session(_: Context, c: Session) -> Result<String>
     Ok(base64::encode_config(&sid.0, base64::URL_SAFE_NO_PAD))
 }
 
+///
+/// Create and verify an account (email address).
+///
 #[derive(Parser)]
-struct VerifyToken
+struct Account
 {
     #[clap(subcommand)]
-    subcmd: VerifyTokenCmd,
+    subcmd: AccountCmd,
     #[clap(flatten)]
-    opts: VerifyTokenOpts,
+    opts: AccountOpts,
 }
 
 #[derive(Parser)]
-struct VerifyTokenOpts
+struct AccountOpts
 {
     #[clap(long, value_name = "endpoint", display_order = 1)]
     url: Option<String>,
 }
 
 #[derive(Parser)]
-enum VerifyTokenCmd
+enum AccountCmd
 {
     #[clap(display_order = 1)]
-    Create(VerifyTokenCreate),
+    Create(AccountCreate),
 
     #[clap(display_order = 2)]
-    Verify(VerifyTokenVerify),
+    Verify(AccountVerify),
 }
 
-fn do_verify_token(ctx: Context, h: VerifyToken) -> Result<String>
+fn do_account(ctx: Context, h: Account) -> Result<String>
 {
     match h.subcmd {
-        VerifyTokenCmd::Create(t) => do_verify_token_create(ctx, h.opts, t),
-        VerifyTokenCmd::Verify(t) => do_verify_token_verify(ctx, h.opts, t),
+        AccountCmd::Create(t) => do_verify_token_create(ctx, h.opts, t),
+        AccountCmd::Verify(t) => do_verify_token_confirm(ctx, h.opts, t),
     }
 }
 
+///
+/// Associate an email with an Uno ID. Sends a verification email.
+///
 #[derive(Parser)]
-struct VerifyTokenCreate
+struct AccountCreate
 {
+    /// Email address to use for this account.
     #[clap(long, value_name = "email", display_order = 1)]
-    email: Option<String>,
+    email: String,
 
     /// Identity seed to use. If specified, supersedes the configured value.
     #[clap(long, value_name = "b64", display_order = 1)]
@@ -566,8 +573,8 @@ struct VerifyTokenCreate
 
 fn do_verify_token_create(
     ctx: Context,
-    opt: VerifyTokenOpts,
-    c: VerifyTokenCreate,
+    opt: AccountOpts,
+    c: AccountCreate,
 ) -> Result<String>
 {
     let cfg = load_conf(&ctx)?;
@@ -578,15 +585,19 @@ fn do_verify_token_create(
         None => cli::load_seed(&cfg)?,
     };
 
-    let v = cli::create_verify_token(url, id, c.email)
+    let v = cli::create_verify_token(url, id, &c.email)
         .context("cannot create verify token")?;
 
     Ok(v)
 }
 
+///
+/// Respond with the secret from a verification email.
+///
 #[derive(Parser)]
-struct VerifyTokenVerify
+struct AccountVerify
 {
+    /// Secret sent to the email being verified.
     #[clap(long, value_name = "secret", display_order = 1)]
     secret: String,
 
@@ -595,10 +606,10 @@ struct VerifyTokenVerify
     seed: Option<String>,
 }
 
-fn do_verify_token_verify(
+fn do_verify_token_confirm(
     ctx: Context,
-    opt: VerifyTokenOpts,
-    v: VerifyTokenVerify,
+    opt: AccountOpts,
+    v: AccountVerify,
 ) -> Result<String>
 {
     let cfg = load_conf(&ctx)?;
@@ -609,7 +620,7 @@ fn do_verify_token_verify(
         None => cli::load_seed(&cfg)?,
     };
 
-    let c = cli::verify_verify_token(url, id, v.secret)
+    let c = cli::confirm_verify_token(url, id, &v.secret)
         .context("cannot verify verify token")?;
 
     Ok(c)
@@ -1177,7 +1188,7 @@ fn main() -> Result<()>
         SubCommand::Ssss(cmd) => do_ssss(ctx, cmd),
         SubCommand::Share(cmd) => do_share(ctx, cmd),
         SubCommand::S39(cmd) => do_s39(ctx, cmd),
-        SubCommand::VerifyToken(cmd) => do_verify_token(ctx, cmd),
+        SubCommand::Account(cmd) => do_account(ctx, cmd),
         SubCommand::Directory(cmd) => do_directory(ctx, cmd),
     }?;
 

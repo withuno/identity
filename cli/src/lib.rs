@@ -310,7 +310,7 @@ pub fn post_share(
     let envelope = MagicShare {
         id: base64::encode_config(keypair.public, base64::URL_SAFE_NO_PAD),
         schema_version: 0,
-        expires_at: expires_at,
+        expires_at,
         encrypted_credential: base64::encode(encrypted),
     };
 
@@ -332,7 +332,7 @@ pub fn post_share(
 pub fn create_verify_token(
     host: &str,
     id: uno::Id,
-    email: Option<String>,
+    email: &str,
 ) -> Result<String>
 {
     let keypair = uno::KeyPair::from(id);
@@ -341,44 +341,37 @@ pub fn create_verify_token(
     #[derive(Serialize)]
     struct VerifyCreateBody
     {
-        email: Option<String>,
+        email: String,
     }
 
     let json =
-        serde_json::to_string(&VerifyCreateBody { email: email.clone() })?;
+        serde_json::to_string(&VerifyCreateBody { email: email.into() })?;
 
     let req = surf::post(url.as_str()).body(json).build();
 
-    async_std::task::block_on(do_http_signed(req, &id))
+    async_std::task::block_on(do_http_signed_asym(req, &id))
         .map_err(|e| anyhow!("{}", e))?;
 
-    Ok(format!(
-        "verify token created at {} for email: {}",
-        url,
-        email.unwrap_or("(empty)".to_string())
-    ))
+    Ok(format!("verify token created at {} for email: {}", url, email))
 }
 
-pub fn verify_verify_token(
+pub fn confirm_verify_token(
     host: &str,
     id: uno::Id,
-    secret: String,
+    secret: &str,
 ) -> Result<String>
 {
     let keypair = uno::KeyPair::from(id);
     let url = verify_token_url_from_public_key(host, &keypair.public)?;
 
     #[derive(Serialize)]
-    struct VerifyVerifyBody
+    struct ConfirmVerifyBody
     {
         secret: String,
-        method: uno::VerifyMethod,
     }
 
-    let json = serde_json::to_string(&VerifyVerifyBody {
-        secret: secret,
-        method: uno::VerifyMethod::Cli,
-    })?;
+    let json =
+        serde_json::to_string(&ConfirmVerifyBody { secret: secret.into() })?;
 
     let req = surf::put(url.as_str()).body(json).build();
 
@@ -742,6 +735,7 @@ async fn do_http_simple(req: surf::Request) -> Result<Vec<u8>>
     }
 }
 
+#[allow(dead_code)]
 async fn do_http_signed(req: surf::Request, id: &uno::Id) -> Result<Vec<u8>>
 {
     let client = surf::client()
