@@ -328,6 +328,13 @@ where
 
     let db = &req.state().db;
     let id = &req.ext::<VaultId>().unwrap().0;
+    // NOTE: this ID is not bound to any signature on the request. The security
+    // of this request depends on knowledge of the shared secret emailed to the
+    // recipient. We may upgrade this in the future.
+    //
+    // If the user specifies some other vault/user ID in the URL path, then the
+    // request will fail because no pending entry would be present, and if it
+    // were, the secrets would have to match, which is statistically improbable.
 
     match verify_token::verify(db, id, &body.secret).await {
         Ok(_) => Ok(StatusCode::Ok),
@@ -1629,19 +1636,20 @@ where
         let mut verify =
             tide::with_state(State::new(verify_db.clone(), token_db.clone()));
 
-        verify
+        verify // authed by knowledge of shared secret
             .at("entries/:id")
             .with(ensure_vault_id)
             .with(cors)
             .options(option_ok)
             .put(verify_verification_token);
-        verify
+        verify // signature auth, id in url is a convenience/formality
             .at("entries/:id")
-            .with(ensure_vault_id)
             .with(signed_pow_auth)
             .with(add_auth_info)
+            .with(ensure_vault_id)
+            .with(check_vault_ownership)
             .get(get_verification_status);
-        verify
+        verify // signature auth
             .at("entries")
             .with(signed_pow_auth)
             .with(add_auth_info)
