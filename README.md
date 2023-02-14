@@ -19,7 +19,7 @@ If you're intersted in a full-featured open source rust CLI password manager lik
 There are two binaries:
 
 * [`uno`](cli) is the cli for interacting with libuno and with the API.
-* [`api`](api) is the server used for storage, messaging, and ephemeral sessions.
+* [`api`](api) is the server used for storage, messaging, email verification, phone directory, and ephemeral sessions.
 
 Supporting crates include:
 
@@ -61,15 +61,22 @@ cargo test -p <pkg>
 
 For example, `cargo test -p lib` or `cargo test -p uno`.
 
-When possible it's nice to use the `--release` flag.
-Argon2 runs noticably faster with optimizations.
+If something feels slow, remember by default you're running a debug configuration.
+Try the `--release` flag, the hash functions run noticably faster with optimizations.
 
 # Style
 
 Code should read like a book.
-The singular style goal is to structure code such that it grows vertically instead of horizontally.
+The style goal in this repo is to structure code such that it grows vertically instead of horizontally.
+Prefer pulling expressions into local variables over deeply nested matching.
+Lines that are consistently the same length and shape are easier to reason about.
 To that end, we have an arbitrary column limit of 80 chars.
 If your lines are under the limit, you're probably doing it right.
+Everything else is handled by the Rust formatter.
+```
+cargo +nightly fmt
+```
+We use format options only available in nightly, so be sure to run with `+nightly`.
 
 The README is sentence lines.
 Since we're writing prose that gets formatted by whatever is rendering it, we don't care about manually formatting the README.

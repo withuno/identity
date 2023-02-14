@@ -3,6 +3,13 @@ uno cli
 
 A command-line interface for working with uno data and services.
 
+At a high level, the CLI allows you to generate entropy for an Uno ID and perform useful operations with it.
+For example, you can use the CLI to sign and encrypt messages, split and recombine your ID, and post ephemeral sessions.
+You can also add your info to the Uno directory, and verify an email.
+
+The CLI stores working information like your ID and config options in the `~/.uno` directory.
+
+
 # Overview
 
 The `uno` CLI program supports performing basic crypto operations with an uno identity (such as deriving keys and performing key split and recombination logic) as well as interfacing with the API server. The CLI is not a fully functional Uno client at the moment. Consult the [issue tracker][issues] for details.
