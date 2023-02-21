@@ -2,12 +2,12 @@ Uno Identity Manager
 ===
 
 The [Uno][uno] identity platform is a modern <strike>password</strike> identity manager.
-We have full featured clients on iOS/macOS ([join the waitlist][waitlist]) with an accompanying [browser extension][chrome-ext] for Safari and the Chrome family of browsers.
+We have full featured clients on [iOS/macOS][apple-apps] with an accompanying [browser extension][chrome-ext] for Safari and the Chrome family of browsers.
 This is our Rust reference implementation with a CLI and associated API server.
 You can read more about our project and design on [our blog][blog].
 
 [uno]: https://www.uno.app
-[waitlist]: https://www.uno.app/join-waitlist.html
+[apple-apps]: https://testflight.apple.com/join/LyQml0cF
 [chrome-ext]: https://chrome.google.com/webstore/detail/uno-password-manager/aedmcpfnnmbdobnjpglgjkhdpljdcfmh
 [blog]: https://www.uno.app/blog
 
