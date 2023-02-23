@@ -350,7 +350,7 @@ where
         Err(err) => {
             eprintln!("verify_verification_token: {}", err);
             Err(server_err("internal server error"))
-        }
+        },
     }
 }
 
