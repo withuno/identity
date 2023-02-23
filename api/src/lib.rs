@@ -344,7 +344,13 @@ where
         Err(verify_token::VerifyTokenError::Secret) => {
             Err(Error::from_str(StatusCode::Forbidden, "forbidden"))
         },
-        Err(_) => Err(server_err("internal server error")),
+        Err(verify_token::VerifyTokenError::NotFound) => {
+            Err(Error::from_str(StatusCode::NotFound, "not found"))
+        },
+        Err(err) => {
+            eprintln!("verify_verification_token: {}", err);
+            Err(server_err("internal server error"))
+        }
     }
 }
 
