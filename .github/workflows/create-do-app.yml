@@ -17,18 +17,6 @@ jobs:
           echo "::set-output name=branch::$(cat head.ref)"
         id: extract
 
-      - name: Transform Branch Name
-        shell: bash
-        env:
-          BRANCH_NAME: ${{ steps.extract.outputs.branch }}
-        run: |
-          echo $BRANCH_NAME \
-             | tr '_./' '-' \
-             | tr -Cd '[:alnum:]-\n' \
-             | tee branch.name
-          echo "::set-output name=app_name::$(cat branch.name)"
-        id: tr
-
       - name: Install doctl
         uses: digitalocean/action-doctl@v2
         with:
@@ -36,18 +24,18 @@ jobs:
 
       - name: Write App Spec
         env:
-          APP_NAME: ${{ steps.tr.outputs.app_name }}
+          PR_NUM: ${{ github.event.number }}
           BRANCH_NAME: ${{ steps.extract.outputs.branch }}
         run: |
           cat <<EOF >app.yaml
-          name: pr-$APP_NAME
+          name: identity-pr-${PR_NUM}
           region: nyc
           services:
             - name: api
               dockerfile_path: api/Dockerfile
               github:
                 repo: ${{ github.repository }}
-                branch: $BRANCH_NAME
+                branch: ${BRANCH_NAME}
                 deploy_on_push: true
               health_check:
                 http_path: /v2/health
@@ -106,11 +94,17 @@ jobs:
                   scope: RUN_TIME
           EOF
 
+      - name: Validate App Spec
+        run: |
+          doctl apps spec validate app.yaml
+        id: validate
+
       - name: Create New App
         run: |
-          doctl app create --spec app.yaml --no-header --format ID 2>/dev/null \
+          doctl apps create --spec app.yaml --no-header --format ID 2>errors \
              | tee app.id
           echo "::set-output name=id::$(cat app.id)"
+          cat errors
         id: app
 
       - name: Add PR Comment
