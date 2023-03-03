@@ -428,7 +428,7 @@ where
 pub struct GetVerificationByEmailForm
 {
     pub email: String,
-    pub pubkey: Option<String>,
+    pub include_pending: Option<bool>,
 }
 
 async fn get_verification_status_by_email<T>(
@@ -447,7 +447,7 @@ where
         .header("content-type", "application/json");
 
     let result =
-        verify_token::get_by_email(db, &form.email, form.pubkey.as_deref())
+        verify_token::get_by_email(db, &form.email, form.include_pending)
             .await
             .map_err(server_err)?;
 
