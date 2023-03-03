@@ -17,6 +17,7 @@ use serde_json::Error as SerdeError;
 use thiserror::Error;
 
 use serde::{Deserialize, Serialize};
+use serde_json::json;
 
 #[derive(Error, Debug)]
 pub enum VerifyTokenError
@@ -120,22 +121,20 @@ pub struct LookupItem
 pub async fn get_by_email(
     db: &impl Database,
     email: &str,
-    pubkey: Option<&str>,
+    include_pending: Option<bool>,
 ) -> Result<bool>
 {
     let key = format!("lookup/{}", email);
 
     if db.exists(&key).await.map_err(|_| VerifyTokenError::Unknown)? {
-        if let Some(pk) = pubkey {
-            let bytes =
-                db.get(&key).await.map_err(|_| VerifyTokenError::Unknown)?;
-            let item: LookupItem = serde_json::from_slice(&bytes)?;
-            if pk != item.id {
-                return Ok(false);
-            }
-        }
         Ok(true)
     } else {
+        if let Some(true) = include_pending {
+            let key = format!("pending/email-cache/{}", email);
+            if db.exists(&key).await.map_err(|_| VerifyTokenError::Unknown)? {
+                return Ok(true);
+            }
+        }
         Ok(false)
     }
 }
@@ -162,6 +161,14 @@ pub async fn create(
 
     let _ =
         db.put(&key, &bytes).await.map_err(|_| VerifyTokenError::Unknown)?;
+
+    let cache_key = format!("pending/email-cache/{}", email);
+    let cbytes = serde_json::to_vec(&json!(true))
+        .map_err(|e| VerifyTokenError::Serde { source: e })?;
+    let _ = db
+        .put(&cache_key, &cbytes)
+        .await
+        .map_err(|_| VerifyTokenError::Unknown)?;
 
     Ok(token)
 }
@@ -207,6 +214,13 @@ pub async fn verify(
 
     let _ =
         db.del(&pending_key).await.map_err(|_| VerifyTokenError::Unknown)?;
+
+    let pending_cache_key =
+        format!("pending/email-cache/{}", pending_token.email);
+    let _ = db
+        .del(&pending_cache_key)
+        .await
+        .map_err(|_| VerifyTokenError::Unknown)?;
 
     let lookup_key = format!("lookup/{}", pending_token.email);
 

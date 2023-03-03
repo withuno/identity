@@ -2264,14 +2264,17 @@ mod requests
             res1.take_body().into_string().await.map_err(|e| anyhow!(e))?;
         assert_eq!("false", actual_res_body1);
 
+
         let item = api::verify_token::LookupItem { id: String::from(&uid) };
         let item_data = serde_json::to_vec(&item)?;
         let key = format!("lookup/{}", email);
-        let _ = dbs.verify.put(key, &item_data).await?;
+        let _ = dbs.verify.put(&key, &item_data).await?;
+
 
         //let req2 = req1.clone();
+        let body2 = json!({ "email": email.clone(), "include_pending": null });
         let req2: Request = surf::get(&resource)
-            .body_json(&json!({ "email": email.clone(), "pubkey": null }))
+            .body_json(&body2)
             .map_err(|e| anyhow!(e))?
             .build();
 
@@ -2284,8 +2287,10 @@ mod requests
             res2.take_body().into_string().await.map_err(|e| anyhow!(e))?;
         assert_eq!("true", actual_res_body2);
 
+
+        let body3 = json!({ "email": email.clone(), "include_pending": false });
         let req3: Request = surf::get(&resource)
-            .body_json(&json!({ "email": email.clone(), "pubkey": uid }))
+            .body_json(&body3)
             .map_err(|e| anyhow!(e))?
             .build();
 
@@ -2298,8 +2303,10 @@ mod requests
             res3.take_body().into_string().await.map_err(|e| anyhow!(e))?;
         assert_eq!("true", actual_res_body3);
 
+
+        let body4 = json!({ "email": email.clone(), "include_pending": true });
         let req4: Request = surf::get(&resource)
-            .body_json(&json!({ "email": email.clone(), "pubkey": "xxx" }))
+            .body_json(&body4)
             .map_err(|e| anyhow!(e))?
             .build();
 
@@ -2310,7 +2317,116 @@ mod requests
 
         let actual_res_body4 =
             res4.take_body().into_string().await.map_err(|e| anyhow!(e))?;
-        assert_eq!("false", actual_res_body4);
+        assert_eq!("true", actual_res_body4);
+
+
+        // now add a pending entry
+        let cache_entry = json!(true);
+        let cache_data = serde_json::to_vec(&cache_entry)?;
+        let cache_key = format!("pending/email-cache/{}", email);
+        let _ = dbs.verify.put(cache_key, &cache_data).await?;
+
+
+        // test again
+        let body5 = json!({ "email": email.clone(), "include_pending": false });
+        let req5: Request = surf::get(&resource)
+            .body_json(&body5)
+            .map_err(|e| anyhow!(e))?
+            .build();
+
+        let mut res5: Response =
+            api.respond(req5).await.map_err(|_| anyhow!("request failed"))?;
+
+        assert_eq!(StatusCode::Ok, res5.status());
+
+        let actual_res_body5 =
+            res5.take_body().into_string().await.map_err(|e| anyhow!(e))?;
+        assert_eq!("true", actual_res_body5);
+
+
+        let body6 = json!({ "email": email.clone(), "include_pending": true });
+        let req6: Request = surf::get(&resource)
+            .body_json(&body6)
+            .map_err(|e| anyhow!(e))?
+            .build();
+
+        let mut res6: Response =
+            api.respond(req6).await.map_err(|_| anyhow!("request failed"))?;
+
+        assert_eq!(StatusCode::Ok, res6.status());
+
+        let actual_res_body6 =
+            res6.take_body().into_string().await.map_err(|e| anyhow!(e))?;
+        assert_eq!("true", actual_res_body6);
+
+
+        // delete the verified entry
+        let _ = dbs.verify.del(&key).await?;
+
+
+        let body7 = json!({ "email": email.clone(), "include_pending": true });
+        let req7: Request = surf::get(&resource)
+            .body_json(&body7)
+            .map_err(|e| anyhow!(e))?
+            .build();
+
+        let mut res7: Response =
+            api.respond(req7).await.map_err(|_| anyhow!("request failed"))?;
+
+        assert_eq!(StatusCode::Ok, res7.status());
+
+        let actual_res_body7 =
+            res7.take_body().into_string().await.map_err(|e| anyhow!(e))?;
+        assert_eq!("true", actual_res_body7);
+
+
+        let body8 = json!({ "email": email.clone(), "include_pending": false });
+        let req8: Request = surf::get(&resource)
+            .body_json(&body8)
+            .map_err(|e| anyhow!(e))?
+            .build();
+
+        let mut res8: Response =
+            api.respond(req8).await.map_err(|_| anyhow!("request failed"))?;
+
+        assert_eq!(StatusCode::Ok, res8.status());
+
+        let actual_res_body8 =
+            res8.take_body().into_string().await.map_err(|e| anyhow!(e))?;
+        assert_eq!("false", actual_res_body8);
+
+
+        let body9 = json!({ "email": email.clone(), "include_pending": null });
+        let req9: Request = surf::get(&resource)
+            .body_json(&body9)
+            .map_err(|e| anyhow!(e))?
+            .build();
+
+        let mut res9: Response =
+            api.respond(req9).await.map_err(|_| anyhow!("request failed"))?;
+
+        assert_eq!(StatusCode::Ok, res9.status());
+
+        let actual_res_body9 =
+            res9.take_body().into_string().await.map_err(|e| anyhow!(e))?;
+        assert_eq!("false", actual_res_body9);
+
+
+        let body10 = json!({ "email": email.clone() });
+        let req10: Request = surf::get(&resource)
+            .body_json(&body10)
+            .map_err(|e| anyhow!(e))?
+            .build();
+
+        let mut res10: Response =
+            api.respond(req10).await.map_err(|_| anyhow!("request failed"))?;
+
+        assert_eq!(StatusCode::Ok, res10.status());
+
+        let actual_res_body10 =
+            res10.take_body().into_string().await.map_err(|e| anyhow!(e))?;
+        assert_eq!("false", actual_res_body10);
+
 
         Ok(())
     }
