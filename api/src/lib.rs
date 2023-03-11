@@ -11,7 +11,6 @@ use std::fmt;
 use std::fmt::{Debug, Display};
 
 pub mod store;
-use anyhow::Result;
 use futures::stream::FuturesUnordered;
 use futures::StreamExt;
 pub use store::Database;
@@ -509,7 +508,10 @@ where
     Ok(StatusCode::Created)
 }
 
-async fn publish_new_user(email: String, agent: Option<String>) -> Result<()>
+async fn publish_new_user(
+    email: String,
+    agent: Option<String>,
+) -> anyhow::Result<()>
 {
     let url = env::var("SIGNUP_PUBLISH_URL").map(|s| s.parse::<surf::Url>())?;
 
