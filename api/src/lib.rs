@@ -20,6 +20,7 @@ pub mod mailbox;
 
 pub mod verify_token;
 
+use anyhow::anyhow;
 use anyhow::bail;
 
 pub mod auth;
@@ -498,8 +499,52 @@ where
         .await
         .map_err(server_err)?;
 
+    // don't care if this fails and shouldn't block hot path
+    async_std::task::spawn(publish_new_user(
+        body.email,
+        req.header("User-Agent")
+            .map(http_types::headers::HeaderValues::to_string),
+    ));
+
     Ok(StatusCode::Created)
 }
+
+async fn publish_new_user(
+    email: String,
+    agent: Option<String>,
+) -> anyhow::Result<()>
+{
+    let url: surf::Url =
+        env::var("SIGNUP_PUBLISH_URL").map(|s| s.parse())??;
+
+    let platform = agent
+        .map(|s| {
+            if s.to_string().contains("Mozilla") { "browser" } else { "native" }
+        })
+        .unwrap_or("unknown");
+
+    let message = indoc::formatdoc! {"
+        **New User Signup**
+        email: `{}`
+        platform: `{}`
+        ",
+        email,
+        platform,
+    };
+
+    let _ = surf::post(url)
+        .body_json(&json!({ "content": message }))
+        .map_err(|e| anyhow!(e))?
+        .await
+        .map(|r| {
+            if r.status() != StatusCode::NoContent {
+                tide::log::warn!("Error posting new user to Discord");
+            }
+        });
+
+    Ok(())
+}
+
 
 async fn possibly_email_link(
     user_id: &str,
