@@ -498,8 +498,55 @@ where
         .await
         .map_err(server_err)?;
 
+    // don't care if this fails and shouldn't block hot path
+    async_std::task::spawn(publish_new_user(
+        body.email,
+        req.header("User-Agent")
+            .map(http_types::headers::HeaderValues::to_string),
+    ));
+
     Ok(StatusCode::Created)
 }
+
+async fn publish_new_user(email: String, agent: Option<String>)
+{
+    let url = match env::var("SIGNUP_PUBLISH_URL") {
+        Ok(s) => match s.parse::<surf::Url>() {
+            Ok(u) => u,
+            Err(_) => return,
+        },
+        Err(_) => return,
+    };
+    let platform = match agent {
+        Some(h) => {
+            if h.to_string().contains("Mozilla") {
+                "browser"
+            } else {
+                "native"
+            }
+        },
+        None => "unknown",
+    };
+    let message = indoc::formatdoc! {"
+        **New User Signup**
+        email: `{}`
+        platform: `{}`
+        ",
+        email,
+        platform,
+    };
+
+    let _ = surf::post(url)
+        .body_json(&json!({ "content": message }))
+        .unwrap()
+        .await
+        .map(|r| {
+            if r.status() != StatusCode::NoContent {
+                tide::log::warn!("Error posting new user to Discord");
+            }
+        });
+}
+
 
 async fn possibly_email_link(
     user_id: &str,
