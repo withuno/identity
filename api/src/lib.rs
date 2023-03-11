@@ -20,6 +20,7 @@ pub mod mailbox;
 
 pub mod verify_token;
 
+use anyhow::anyhow;
 use anyhow::bail;
 
 pub mod auth;
@@ -513,11 +514,12 @@ async fn publish_new_user(
     agent: Option<String>,
 ) -> anyhow::Result<()>
 {
-    let url = env::var("SIGNUP_PUBLISH_URL").map(|s| s.parse::<surf::Url>())?;
+    let url: surf::Url =
+        env::var("SIGNUP_PUBLISH_URL").map(|s| s.parse())??;
 
     let platform = agent
         .map(|s| {
-            if h.to_string().contains("Mozilla") { "browser" } else { "native" }
+            if s.to_string().contains("Mozilla") { "browser" } else { "native" }
         })
         .unwrap_or("unknown");
 
@@ -531,7 +533,8 @@ async fn publish_new_user(
     };
 
     let _ = surf::post(url)
-        .body_json(&json!({ "content": message }))?
+        .body_json(&json!({ "content": message }))
+        .map_err(|e| anyhow!(e))?
         .await
         .map(|r| {
             if r.status() != StatusCode::NoContent {
