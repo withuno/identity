@@ -11,6 +11,7 @@ use std::fmt;
 use std::fmt::{Debug, Display};
 
 pub mod store;
+use anyhow::Result;
 use futures::stream::FuturesUnordered;
 use futures::StreamExt;
 pub use store::Database;
@@ -508,25 +509,16 @@ where
     Ok(StatusCode::Created)
 }
 
-async fn publish_new_user(email: String, agent: Option<String>)
+async fn publish_new_user(email: String, agent: Option<String>) -> Result<()>
 {
-    let url = match env::var("SIGNUP_PUBLISH_URL") {
-        Ok(s) => match s.parse::<surf::Url>() {
-            Ok(u) => u,
-            Err(_) => return,
-        },
-        Err(_) => return,
-    };
-    let platform = match agent {
-        Some(h) => {
-            if h.to_string().contains("Mozilla") {
-                "browser"
-            } else {
-                "native"
-            }
-        },
-        None => "unknown",
-    };
+    let url = env::var("SIGNUP_PUBLISH_URL").map(|s| s.parse::<surf::Url>())?;
+
+    let platform = agent
+        .map(|s| {
+            if h.to_string().contains("Mozilla") { "browser" } else { "native" }
+        })
+        .unwrap_or("unknown");
+
     let message = indoc::formatdoc! {"
         **New User Signup**
         email: `{}`
@@ -537,14 +529,15 @@ async fn publish_new_user(email: String, agent: Option<String>)
     };
 
     let _ = surf::post(url)
-        .body_json(&json!({ "content": message }))
-        .unwrap()
+        .body_json(&json!({ "content": message }))?
         .await
         .map(|r| {
             if r.status() != StatusCode::NoContent {
                 tide::log::warn!("Error posting new user to Discord");
             }
         });
+
+    Ok(())
 }
 
 
