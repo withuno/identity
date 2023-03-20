@@ -481,7 +481,7 @@ where
         &uid_b64url,
         &body.analytics_id,
         &body.email,
-        Utc::now() + Duration::hours(24),
+        Utc::now() + Duration::hours(48),
     )
     .await;
 
