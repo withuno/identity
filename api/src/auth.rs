@@ -464,7 +464,10 @@ where
         .build();
 
     response.append_header("WWW-Authenticate", auth);
-    response.append_header("WWW-Authenticate", asym_auth);
+    response.append_header("WWW-Authenticate", asym_auth.clone());
+
+    // Firefox doesn't let JS access WWW-Authenticate
+    response.append_header("uno-www-authn", asym_auth);
 
     response
 }
@@ -519,7 +522,10 @@ where
         asym_info.push_str("scopes");
         asym_info.push('=');
         asym_info.push_str(&actions.join(","));
-        response.append_header("authentication-info", asym_info);
+        response.append_header("authentication-info", asym_info.clone());
+
+        // TODO: does Firefox need this too?
+        response.append_header("uno-authn-info", asym_info);
     }
 
     return response;
