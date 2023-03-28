@@ -270,6 +270,52 @@ mod tests
 
     #[cfg(not(feature = "s3"))]
     #[async_std::test]
+    async fn test_by_email()
+    {
+        let dir = tempfile::TempDir::new().unwrap();
+        let db = FileStore::new(dir.path(), "test", "v0").await.unwrap();
+
+        let id = "some id";
+        let encoded_id = base64::encode_config(id, base64::URL_SAFE_NO_PAD);
+
+        assert_eq!(
+            get_by_email(&db, "email", Some(false)).await.unwrap(),
+            false
+        );
+
+        assert_eq!(
+            get_by_email(&db, "email", Some(true)).await.unwrap(),
+            false
+        );
+
+        let token = create(
+            &db,
+            &encoded_id,
+            "analytics_id",
+            "email",
+            Utc::now() + Duration::days(30),
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(
+            get_by_email(&db, "email", Some(false)).await.unwrap(),
+            false
+        );
+
+        assert_eq!(get_by_email(&db, "email", Some(true)).await.unwrap(), true);
+
+
+        verify(&db, &encoded_id, &token.secret).await.unwrap();
+
+        assert_eq!(
+            get_by_email(&db, "email", Some(false)).await.unwrap(),
+            true,
+        );
+    }
+
+    #[cfg(not(feature = "s3"))]
+    #[async_std::test]
     async fn test_statuses()
     {
         let dir = tempfile::TempDir::new().unwrap();
