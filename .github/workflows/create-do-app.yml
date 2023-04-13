@@ -63,7 +63,7 @@ jobs:
                   scope: RUN_TIME
                 - key: TWILIO_SERVICE_SID
                   value: ${{ secrets.TWILIO_SERVICE_SID }}
-                  scope: RUN_TIME                
+                  scope: RUN_TIME
                   type: SECRET
                 - key: TWILIO_ACCOUNT_SID
                   value: ${{ secrets.TWILIO_ACCOUNT_SID }}
@@ -92,6 +92,14 @@ jobs:
                 - key: PUBLIC_URL
                   value: \${_self.PUBLIC_URL}
                   scope: RUN_TIME
+                - key: OPENAI_API_KEY
+                  value: ${{ secrets.OPENAI_API_KEY }}
+                  type: SECRET
+                  scope: RUN_TIME
+                - key: ASSISTANT_ENDPOINT
+                  value: ${{ secrets.ASSISTANT_ENDPOINT }}
+                  type: SECRET
+                  scope: RUN_TIME
           EOF
 
       - name: Validate App Spec
@@ -112,4 +120,3 @@ jobs:
         with:
           repo-token: ${{ secrets.GITHUB_TOKEN }}
           message: "Started deployment https://cloud.digitalocean.com/apps/${{ steps.app.outputs.id }}/deployments"
-

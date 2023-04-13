@@ -8,6 +8,7 @@ edition = "2021"
 [features]
 s3 = []
 twilio = []
+openai = []
 
 [dependencies]
 anyhow = "1.0"

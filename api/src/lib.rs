@@ -11,6 +11,7 @@ use std::fmt;
 use std::fmt::{Debug, Display};
 
 pub mod store;
+
 use futures::stream::FuturesUnordered;
 use futures::StreamExt;
 pub use store::Database;
@@ -41,6 +42,8 @@ use http_types::Method;
 use tide::{Body, Error, Next, Request, Response, Result, StatusCode};
 
 mod twilio;
+
+mod assistant;
 
 /// Enforce a global size limit on the body of requests
 ///
@@ -1433,6 +1436,26 @@ where
     }
 }
 
+async fn assist_topic<T>(mut req: Request<State<T>>) -> Result<Response>
+where
+    T: Database,
+{
+    let bytes = req.body_bytes().await.map_err(server_err)?;
+    let one_kb = 1024;
+    if bytes.len() > one_kb {
+        return Ok(StatusCode::BadRequest.into());
+    }
+    let response = if cfg!(feature = "openai") && cfg!(not(test)) {
+        assistant::passthrough(bytes).await?
+    } else {
+        Response::builder(StatusCode::Ok)
+            .body(json!({"message": "assistant is not configured"}))
+            .build()
+    };
+    Ok(response)
+}
+
+
 fn bad_request<M>(msg: M) -> Error
 where
     M: Display + Debug + Send + Sync + 'static,
@@ -1552,6 +1575,7 @@ pub fn build_routes<T>(
     share_db: T,
     verify_db: T,
     directory_db: T,
+    assist_db: T,
 ) -> anyhow::Result<tide::Server<()>>
 where
     T: Database + 'static,
@@ -1737,6 +1761,18 @@ where
             // need to ensure that the pubkey on the request owns the cid in question
             .get(get_directory_entry);
         api.at("directory").nest(directory);
+    }
+
+    {
+        let mut assist =
+            tide::with_state(State::new(assist_db, token_db.clone()));
+        assist
+            .at("topics")
+            .with(signed_pow_auth)
+            .with(add_auth_info)
+            .get(assist_topic)
+            .post(assist_topic); // some things don't like get w/ body
+        api.at("assist").nest(assist);
     }
 
     Ok(api)

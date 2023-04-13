@@ -69,6 +69,7 @@ mod requests
         shares: T,
         verify: T,
         directory: T,
+        assistant: T,
     }
 
     #[cfg(not(feature = "s3"))]
@@ -88,6 +89,7 @@ mod requests
             shares: FileStore::new(dir.path(), "shrs", "v0").await?,
             verify: FileStore::new(dir.path(), "vdb", "v0").await?,
             directory: FileStore::new(dir.path(), "directory", "v0").await?,
+            assistant: FileStore::new(dir.path(), "assistant", "v0").await?,
         };
         // we don't include objects db here because its only used in tests
         // todo: I don't understand this comment ^
@@ -100,6 +102,7 @@ mod requests
             dbs.shares.clone(),
             dbs.verify.clone(),
             dbs.directory.clone(),
+            dbs.assistant.clone(),
         )?;
         Ok((api, dbs))
     }
@@ -207,6 +210,15 @@ mod requests
                 "v0",
             )
             .await?,
+            assistant: S3Store::new(
+                "http://localhost:9000",
+                "minio",
+                "minioadmin",
+                "minioadmin",
+                &tmpname(32),
+                "v0",
+            )
+            .await?,
         };
 
         dbs.objects.create_bucket_if_not_exists().await?;
@@ -217,6 +229,7 @@ mod requests
         dbs.mailboxes.create_bucket_if_not_exists().await?;
         dbs.shares.create_bucket_if_not_exists().await?;
         dbs.directory.create_bucket_if_not_exists().await?;
+        dbs.assistant.create_bucket_if_not_exists().await?;
 
         dbs.objects.empty_bucket().await?;
         dbs.tokens.empty_bucket().await?;
@@ -226,6 +239,7 @@ mod requests
         dbs.mailboxes.empty_bucket().await?;
         dbs.shares.empty_bucket().await?;
         dbs.directory.empty_bucket().await?;
+        dbs.assistant.empty_bucket().await?;
 
         Ok(dbs)
     }
@@ -243,6 +257,7 @@ mod requests
             dbs.mailboxes.clone(),
             dbs.shares.clone(),
             dbs.directory.clone(),
+            dbs.assistant.clone(),
         )?;
         Ok((api, dbs))
     }
@@ -2427,6 +2442,31 @@ mod requests
             res10.take_body().into_string().await.map_err(|e| anyhow!(e))?;
         assert_eq!("false", actual_res_body10);
 
+
+        Ok(())
+    }
+
+    #[async_std::test]
+    async fn assist_topic_post() -> Result<()>
+    {
+        let (api, dbs) = setup_tmp_api().await?;
+        let n64_1 = init_nonce(&dbs.tokens, &["update"]).await?;
+        let id = Id([0u8; ID_LENGTH]); // use the zero id
+
+        let resource = "http://example.com/assist/topics";
+        let json = json!({ "topic": "password-reset", "domain": "foo.bar" });
+
+        let mut req1: Request = surf::post(&resource)
+            .body_json(&json)
+            .map_err(|e| anyhow!(e))?
+            .build();
+
+        blake3_sign_req(&mut req1, &n64_1, MIN_COST, &id)?;
+
+        let res1: Response =
+            api.respond(req1).await.map_err(|_| anyhow!("request failed"))?;
+
+        assert_eq!(StatusCode::Ok, res1.status());
 
         Ok(())
     }
