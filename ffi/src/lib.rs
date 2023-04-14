@@ -446,7 +446,7 @@ pub extern "C" fn uno_free_group_split(group_split: UnoGroupSplit)
     // SAFETY: we generated these values ourself, mbs is opaque
     unsafe {
         Vec::from_raw_parts(mbs.ptr.as_ptr(), mbs.len, mbs.cap);
-        Box::from_raw(raw);
+        drop(Box::from_raw(raw));
     };
 }
 
