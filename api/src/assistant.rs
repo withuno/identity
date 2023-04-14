@@ -38,7 +38,7 @@ pub async fn passthrough(req_bytes: Vec<u8>) -> Result<Response>
     let lambda = std::env::var("ASSISTANT_ENDPOINT")
         .status(StatusCode::InternalServerError)?;
 
-    let mut surf_response = surf::post(lambda).body_bytes(req_bytes).await?;
+    let mut surf_response = surf::get(lambda).body_bytes(req_bytes).await?;
     let tide_response = Response::builder(surf_response.status())
         .body(surf_response.body_bytes().await?)
         .build();
