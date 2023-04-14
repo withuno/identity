@@ -5,24 +5,33 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 //
 
-use anyhow::Context;
 use http_types::Status;
 use http_types::StatusCode;
 use serde::{Deserialize, Serialize};
 
+use strum_macros::AsRefStr;
+use strum_macros::EnumString;
+
 use tide::Response;
 use tide::Result;
 
-// unused
 #[derive(Serialize, Deserialize, Debug)]
 pub struct AssistTopicLookup
 {
-    // enum one of: password-reset, enable-2fa
+    // Topic enum one of: reset-password, enable-2fa
     pub topic: String,
     pub domain: String,
 }
 
-// unused
+#[derive(Debug, PartialEq, AsRefStr, EnumString)]
+pub enum Topic
+{
+    #[strum(serialize = "reset-password")]
+    ResetPassword,
+    #[strum(serialize = "enable-2fa")]
+    Enable2FA,
+}
+
 #[derive(Serialize, Deserialize, Debug)]
 pub struct AssistTopicResponse
 {

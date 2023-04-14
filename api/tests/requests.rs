@@ -2454,10 +2454,10 @@ mod requests
         let id = Id([0u8; ID_LENGTH]); // use the zero id
 
         let resource = "http://example.com/assist/topics";
-        let json = json!({ "topic": "password-reset", "domain": "foo.bar" });
+        let json1 = json!({ "topic": "reset-password", "domain": "foo.bar" });
 
         let mut req1: Request = surf::post(&resource)
-            .body_json(&json)
+            .body_json(&json1)
             .map_err(|e| anyhow!(e))?
             .build();
 
@@ -2467,6 +2467,19 @@ mod requests
             api.respond(req1).await.map_err(|_| anyhow!("request failed"))?;
 
         assert_eq!(StatusCode::Ok, res1.status());
+
+        let json2 = json!({ "topic": "enable-2fa", "domain": "baz.qux" });
+        let mut req2: Request = surf::get(&resource)
+            .body_json(&json2)
+            .map_err(|e| anyhow!(e))?
+            .build();
+
+        asym_sign_req_using_res_with_id(&res1, &mut req2, &id)?;
+
+        let res2: Response =
+            api.respond(req2).await.map_err(|_| anyhow!("request failed"))?;
+
+        assert_eq!(StatusCode::Ok, res2.status());
 
         Ok(())
     }

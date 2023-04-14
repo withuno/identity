@@ -43,7 +43,7 @@ use tide::{Body, Error, Next, Request, Response, Result, StatusCode};
 
 mod twilio;
 
-mod assistant;
+pub mod assistant;
 
 /// Enforce a global size limit on the body of requests
 ///
