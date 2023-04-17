@@ -746,7 +746,25 @@ pub fn get_assistance(
 
     let body =
         async_std::task::block_on(res.body_string()).map_err(|e| anyhow!(e))?;
-    let output = serde_json::to_string_pretty(&body)?;
+    let json: Value = serde_json::from_str(&body)?;
+    let content = json["choices"][0]["message"]["content"]
+        .as_str()
+        .ok_or(anyhow!("malformed response `{}`", json))?;
+    let items: Value = serde_json::from_str(content)?;
+    let action_url = items["action_url"]
+        .as_str()
+        .ok_or(anyhow!("malformed content `{}`", items))?;
+    let steps = serde_json::to_string_pretty(&items["steps"])?;
+
+    use ansi_term::Color::{Green, Yellow};
+    let output = format!(
+        "{}\n{} {}\n{} {}",
+        Green.bold().paint("INSTRUCTIONS"),
+        Yellow.bold().paint("Visit:"),
+        action_url,
+        Yellow.bold().paint("Then:"),
+        steps
+    );
 
     Ok(output)
 }

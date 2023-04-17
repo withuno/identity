@@ -1240,8 +1240,10 @@ fn do_assistant_resetpw(
         None => cli::load_seed(&cfg)?,
     };
     let url = opts.url.as_ref().unwrap_or(&cfg.api_host);
-
     let topic = api::assistant::Topic::ResetPassword;
+
+    assistant_thinking();
+
     let result = cli::get_assistance(url, &id, &c.domain, topic)?;
 
     Ok(result)
@@ -1270,11 +1272,19 @@ fn do_assistant_enable2fa(
         None => cli::load_seed(&cfg)?,
     };
     let url = opts.url.as_ref().unwrap_or(&cfg.api_host);
-
     let topic = api::assistant::Topic::Enable2FA;
+
+    assistant_thinking();
+
     let result = cli::get_assistance(url, &id, &c.domain, topic)?;
 
     Ok(result)
+}
+
+fn assistant_thinking()
+{
+    use ansi_term::Style;
+    println!("{}", Style::new().italic().paint("Thinking..."));
 }
 
 fn main() -> Result<()>
