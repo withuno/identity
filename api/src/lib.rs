@@ -520,19 +520,45 @@ async fn publish_new_user(
     let url: surf::Url =
         env::var("SIGNUP_PUBLISH_URL").map(|s| s.parse())??;
 
-    let platform = agent
-        .map(|s| {
-            if s.to_string().contains("Mozilla") { "browser" } else { "native" }
-        })
-        .unwrap_or("unknown");
+    use user_agent_parser::UserAgentParser;
+    let ua_parser = match UserAgentParser::from_path("./res/regexes.yaml") {
+        Ok(p) => p,
+        Err(_) => UserAgentParser::from_path("/usr/local/lib/api/regexes.yaml")
+            .map_err(|e| {
+                tide::log::error!("ua_parser init");
+                e
+            })?,
+    };
+
+    let agent_str = &agent.as_deref().unwrap_or("unknown");
+    let product = ua_parser.parse_product(agent_str);
+    let os = ua_parser.parse_os(agent_str);
+    let device = ua_parser.parse_device(agent_str);
+
+    let class =
+        if agent_str.contains("Mozilla") { "browser" } else { "native" };
 
     let message = indoc::formatdoc! {"
         **New User Signup**
+        environment: `{}`
         email: `{}`
-        platform: `{}`
+        device: `{} {}`
+        platform: `{} ({}.{}.{}) [{}]`
+        os: `{} ({}.{}.{})`
         ",
+        env::var("PUBLIC_URL").as_deref().unwrap_or("local"),
         email,
-        platform,
+        device.brand.as_deref().unwrap_or("unknown"),
+        device.name.as_deref().unwrap_or("unknown"),
+        product.name.as_deref().unwrap_or("unknown"),
+        product.major.as_deref().unwrap_or("0"),
+        product.minor.as_deref().unwrap_or("0"),
+        product.patch.as_deref().unwrap_or("0"),
+        class,
+        os.name.as_deref().unwrap_or("unknown"),
+        os.major.as_deref().unwrap_or("0"),
+        os.minor.as_deref().unwrap_or("0"),
+        os.patch.as_deref().unwrap_or("0"),
     };
 
     let _ = surf::post(url)

@@ -35,6 +35,7 @@ surf = "2.2.0"
 tempfile = "3.2"
 thiserror = "1.0"
 tide = "0.16"
+user-agent-parser = "0.3"
 uno = { path = "../lib" }
 vclock = "0.2"
 walkdir = "2"
