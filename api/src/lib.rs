@@ -45,6 +45,8 @@ mod twilio;
 
 pub mod assistant;
 
+mod brandfetch;
+
 /// Enforce a global size limit on the body of requests
 ///
 pub fn body_size_limit<'a, T>(
@@ -1481,6 +1483,21 @@ where
     Ok(response)
 }
 
+async fn brand_fetch<T>(req: Request<State<T>>) -> Result<Response>
+where
+    T: Database,
+{
+    let domain = req.param("domain")?;
+    let response = if cfg!(feature = "brandfetch") && cfg!(not(test)) {
+        brandfetch::get(domain, &req.state().db).await?
+    } else {
+        Response::builder(StatusCode::Ok)
+            .body(json!({"message": "brandfetch is not configured"}))
+            .build()
+    };
+    Ok(response)
+}
+
 
 fn bad_request<M>(msg: M) -> Error
 where
@@ -1602,6 +1619,7 @@ pub fn build_routes<T>(
     verify_db: T,
     directory_db: T,
     assist_db: T,
+    brands_db: T,
 ) -> anyhow::Result<tide::Server<()>>
 where
     T: Database + 'static,
@@ -1799,6 +1817,17 @@ where
             .get(assist_topic)
             .post(assist_topic); // some things don't like get w/ body
         api.at("assist").nest(assist);
+    }
+
+    {
+        let mut brands =
+            tide::with_state(State::new(brands_db, token_db.clone()));
+        brands
+            .at(":domain")
+            .with(signed_pow_auth)
+            .with(add_auth_info)
+            .get(brand_fetch);
+        api.at("brands").nest(brands);
     }
 
     Ok(api)

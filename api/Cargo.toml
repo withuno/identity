@@ -9,6 +9,7 @@ edition = "2021"
 s3 = []
 twilio = []
 openai = []
+brandfetch = []
 
 [dependencies]
 anyhow = "1.0"
