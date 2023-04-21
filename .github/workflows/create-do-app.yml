@@ -100,6 +100,10 @@ jobs:
                   value: ${{ secrets.ASSISTANT_ENDPOINT }}
                   type: SECRET
                   scope: RUN_TIME
+                - key: BRANDFETCH_API_KEY
+                  value: ${{ secrets.BRANDFETCH_API_KEY }}
+                  type: SECRET
+                  scope: RUN_TIME
           EOF
 
       - name: Validate App Spec

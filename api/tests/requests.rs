@@ -70,6 +70,7 @@ mod requests
         verify: T,
         directory: T,
         assistant: T,
+        brands: T,
     }
 
     #[cfg(not(feature = "s3"))]
@@ -90,6 +91,7 @@ mod requests
             verify: FileStore::new(dir.path(), "vdb", "v0").await?,
             directory: FileStore::new(dir.path(), "directory", "v0").await?,
             assistant: FileStore::new(dir.path(), "assistant", "v0").await?,
+            brands: FileStore::new(dir.path(), "brands", "v0").await?,
         };
         // we don't include objects db here because its only used in tests
         // todo: I don't understand this comment ^
@@ -103,6 +105,7 @@ mod requests
             dbs.verify.clone(),
             dbs.directory.clone(),
             dbs.assistant.clone(),
+            dbs.brands.clone(),
         )?;
         Ok((api, dbs))
     }
@@ -219,6 +222,15 @@ mod requests
                 "v0",
             )
             .await?,
+            brands: S3Store::new(
+                "http://localhost:9000",
+                "minio",
+                "minioadmin",
+                "minioadmin",
+                &tmpname(32),
+                "v0",
+            )
+            .await?,
         };
 
         dbs.objects.create_bucket_if_not_exists().await?;
@@ -230,6 +242,7 @@ mod requests
         dbs.shares.create_bucket_if_not_exists().await?;
         dbs.directory.create_bucket_if_not_exists().await?;
         dbs.assistant.create_bucket_if_not_exists().await?;
+        dbs.brands.create_bucket_if_not_exists().await?;
 
         dbs.objects.empty_bucket().await?;
         dbs.tokens.empty_bucket().await?;
@@ -240,6 +253,7 @@ mod requests
         dbs.shares.empty_bucket().await?;
         dbs.directory.empty_bucket().await?;
         dbs.assistant.empty_bucket().await?;
+        dbs.brands.empty_bucket().await?;
 
         Ok(dbs)
     }
@@ -2484,6 +2498,39 @@ mod requests
         Ok(())
     }
 
+    #[async_std::test]
+    async fn brands_info_get() -> Result<()>
+    {
+        let (api, _) = setup_tmp_api().await?;
+
+        let resource = "http://example.com/brands/info/foo.com";
+
+        let req1: Request = surf::get(&resource).build();
+
+        let res1: Response =
+            api.respond(req1).await.map_err(|_| anyhow!("request failed"))?;
+
+        assert_eq!(StatusCode::Ok, res1.status());
+
+        Ok(())
+    }
+
+    #[async_std::test]
+    async fn brands_assets_get() -> Result<()>
+    {
+        let (api, _) = setup_tmp_api().await?;
+
+        let resource = "http://example.com/brands/assets/bar.jpeg";
+
+        let req1: Request = surf::get(&resource).build();
+
+        let res1: Response =
+            api.respond(req1).await.map_err(|_| anyhow!("request failed"))?;
+
+        assert_eq!(StatusCode::Ok, res1.status());
+
+        Ok(())
+    }
 
     fn id_to_b64url(id: &Id) -> String
     {
