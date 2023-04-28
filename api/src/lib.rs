@@ -14,7 +14,6 @@ pub mod store;
 
 use futures::stream::FuturesUnordered;
 use futures::StreamExt;
-use http_types::headers::IF_NONE_MATCH;
 pub use store::Database;
 
 pub mod magic_share;
@@ -1484,7 +1483,7 @@ where
     Ok(response)
 }
 
-async fn brand_info_domain<T>(req: Request<State<T>>) -> Result<Response>
+async fn brand_by_domain<T>(req: Request<State<T>>) -> Result<Response>
 where
     T: Database,
 {
@@ -1494,21 +1493,6 @@ where
     } else {
         Response::builder(StatusCode::Ok)
             .body(json!({"message": "brandfetch info is not configured"}))
-            .build()
-    };
-    Ok(response)
-}
-
-async fn brand_asset_filename<T>(req: Request<State<T>>) -> Result<Response>
-where
-    T: Database,
-{
-    let filepath = req.param("filepath")?;
-    let response = if cfg!(feature = "brandfetch") && cfg!(not(test)) {
-        brandfetch::get_asset(filepath, req.header(IF_NONE_MATCH)).await?
-    } else {
-        Response::builder(StatusCode::Ok)
-            .body(json!({"message": "brandfetch assets is not configured"}))
             .build()
     };
     Ok(response)
@@ -1838,8 +1822,7 @@ where
     {
         let mut brands =
             tide::with_state(State::new(brands_db, token_db.clone()));
-        brands.at("info/:domain").get(brand_info_domain);
-        brands.at("assets/*filepath").get(brand_asset_filename);
+        brands.at(":domain").get(brand_by_domain);
         api.at("brands").nest(brands);
     }
 

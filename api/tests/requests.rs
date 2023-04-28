@@ -2503,24 +2503,7 @@ mod requests
     {
         let (api, _) = setup_tmp_api().await?;
 
-        let resource = "http://example.com/brands/info/foo.com";
-
-        let req1: Request = surf::get(&resource).build();
-
-        let res1: Response =
-            api.respond(req1).await.map_err(|_| anyhow!("request failed"))?;
-
-        assert_eq!(StatusCode::Ok, res1.status());
-
-        Ok(())
-    }
-
-    #[async_std::test]
-    async fn brands_assets_get() -> Result<()>
-    {
-        let (api, _) = setup_tmp_api().await?;
-
-        let resource = "http://example.com/brands/assets/bar.jpeg";
+        let resource = "http://example.com/brands/foo.com";
 
         let req1: Request = surf::get(&resource).build();
 
