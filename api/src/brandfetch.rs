@@ -21,11 +21,12 @@ where
     T: Database,
 {
     // check cache
+    let cache_key = format!("info/{}", &domain);
     let cache_control = "private, immutable, max-age=604800, \
                          stale-while-revalidate=86400, stale-if-error=86400";
     // the brands cache db has a 30 day object expiration policy
-    if db.exists(domain).await? {
-        let data = db.get(domain).await?;
+    if db.exists(&cache_key).await? {
+        let data = db.get(&cache_key).await?;
         let response = Response::builder(StatusCode::Ok)
             .header(CONTENT_TYPE, "application/json")
             .header(CACHE_CONTROL, cache_control)
@@ -43,7 +44,7 @@ where
 
     // if successful, cache the brand data
     if let StatusCode::Ok = bf.status() {
-        let _ = db.put(domain, &bf_bytes).await?;
+        let _ = db.put(&cache_key, &bf_bytes).await?;
         builder = builder.header(CACHE_CONTROL, cache_control);
     }
 
