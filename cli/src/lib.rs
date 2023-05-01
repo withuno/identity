@@ -716,6 +716,67 @@ fn directory_entry_url_from_cid(endpoint: &str, cid: &[u8]) -> Result<Url>
     Ok(base.join(&cid)?)
 }
 
+pub fn get_assistance(
+    host: &str,
+    id: &uno::Id,
+    domain: &str,
+    topic: api::assistant::Topic,
+) -> Result<String>
+{
+    let url = assistant_topics_url(host)?;
+
+    let form = api::assistant::AssistTopicLookup {
+        topic: topic.as_ref().into(),
+        domain: domain.into(),
+    };
+    let form_bytes = serde_json::to_vec(&form)?;
+    let req = surf::post(url.as_str()).body_bytes(&form_bytes).build();
+
+    let mut res = async_std::task::block_on(do_http_signed_asym(req, id))
+        .map_err(|e| anyhow!("{}", e))?;
+
+    if res.status() != StatusCode::Ok {
+        let mut body = async_std::task::block_on(res.body_string())
+            .map_err(|e| anyhow!(e))?;
+        if body.len() == 0 {
+            body = "(empty)".into();
+        }
+        bail!("unexpected status {}\nbody: {}", res.status(), body);
+    }
+
+    let body =
+        async_std::task::block_on(res.body_string()).map_err(|e| anyhow!(e))?;
+    let json: Value = serde_json::from_str(&body)?;
+    let content = json["choices"][0]["message"]["content"]
+        .as_str()
+        .ok_or(anyhow!("malformed response `{}`", json))?;
+    let items: Value = serde_json::from_str(content)?;
+    let action_url = items["action_url"]
+        .as_str()
+        .ok_or(anyhow!("malformed content `{}`", items))?;
+    let steps = serde_json::to_string_pretty(&items["steps"])?;
+
+    use ansi_term::Color::{Green, Yellow};
+    let output = format!(
+        "{}\n{} {}\n{} {}",
+        Green.bold().paint("INSTRUCTIONS"),
+        Yellow.bold().paint("Visit:"),
+        action_url,
+        Yellow.bold().paint("Then:"),
+        steps
+    );
+
+    Ok(output)
+}
+
+
+fn assistant_topics_url(endpoint: &str) -> Result<Url>
+{
+    let host = Url::parse(&endpoint)?;
+
+    Ok(host.join("v2/assist/topics")?)
+}
+
 
 async fn do_http_simple(req: surf::Request) -> Result<Vec<u8>>
 {

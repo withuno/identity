@@ -61,6 +61,22 @@ async fn main() -> Result<()>
             .context("twilio API endpoint must be a url")?;
     }
 
+    if cfg!(feature = "openai") && cfg!(not(test)) {
+        let _ = std::env::var("OPENAI_API_KEY")
+            .context("Must specify OPENAI_API_KEY")?;
+    }
+    if cfg!(feature = "openai") && cfg!(not(test)) {
+        let _: surf::Url = std::env::var("ASSISTANT_ENDPOINT")
+            .context("Must specify ASSISTANT_ENDPOINT")?
+            .parse()
+            .context("ASSISTANT_ENDPOINT must be a valid URL")?;
+    }
+
+    if cfg!(feature = "brandfetch") && cfg!(not(test)) {
+        let _ = std::env::var("BRANDFETCH_API_KEY")
+            .context("Must specify BRANDFETCH_API_KEY")?;
+    }
+
     let tok2 = make_db("tokens", "v2").await?;
     let vau2 = make_db("vaults", "v2").await?;
     let srv2 = make_db("services", "").await?; // not (yet) versioned
@@ -69,9 +85,13 @@ async fn main() -> Result<()>
     let shr2 = make_db("shares", "v2").await?;
     let vdb2 = make_db("verify", "v2").await?;
     let dir2 = make_db("directory", "v2").await?;
+    let ast2 = make_db("assistant", "v2").await?; // db is empty right now
+    let brn2 = make_db("brands", "v2").await?; // brand cache
 
-    let api_v2 =
-        api::build_routes(tok2, vau2, srv2, ses2, mbx2, shr2, vdb2, dir2)?;
+
+    let api_v2 = api::build_routes(
+        tok2, vau2, srv2, ses2, mbx2, shr2, vdb2, dir2, ast2, brn2,
+    )?;
 
     let mut srv = tide::new();
 

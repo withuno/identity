@@ -83,6 +83,9 @@ enum SubCommand
 
     #[clap(display_order = 90)]
     Directory(DirectoryCmd),
+
+    #[clap(display_order = 100)]
+    Assistant(AssistantCmd),
 }
 
 ///
@@ -1168,6 +1171,121 @@ fn do_directory_verify(
     Ok(result)
 }
 
+///
+/// Get help from the Uno assistant.
+///
+#[derive(Parser)]
+struct AssistantCmd
+{
+    #[clap(subcommand)]
+    subcmd: Assistant,
+    #[clap(flatten)]
+    opts: AssistantOpts,
+}
+
+#[derive(Parser)]
+struct AssistantOpts
+{
+    /// Assistant service API endpoint. If specified, supersedes the configured
+    /// value.
+    #[clap(long, value_name = "endpoint", display_order = 1)]
+    url: Option<String>,
+
+    /// Identity seed to use. If specified, supersedes the configured value.
+    #[clap(long, value_name = "b64", display_order = 1)]
+    seed: Option<String>,
+}
+
+///
+/// Assistant subcommands
+///
+#[derive(Parser)]
+enum Assistant
+{
+    #[clap(display_order = 1)]
+    ResetPassword(AssistantResetPassword),
+
+    #[clap(display_order = 2, name = "enable-2fa")]
+    Enable2FA(AssistantEnable2FA),
+}
+
+fn do_assistant(ctx: Context, s: AssistantCmd) -> Result<String>
+{
+    match s.subcmd {
+        Assistant::ResetPassword(c) => do_assistant_resetpw(ctx, s.opts, c),
+        Assistant::Enable2FA(c) => do_assistant_enable2fa(ctx, s.opts, c),
+    }
+}
+
+///
+/// Get password reset instructions for the requested website.
+///
+#[derive(Parser)]
+struct AssistantResetPassword
+{
+    /// The website's domain or host name.
+    #[clap(long, value_name = "example.com", display_order = 1)]
+    domain: String,
+}
+
+fn do_assistant_resetpw(
+    ctx: Context,
+    opts: AssistantOpts,
+    c: AssistantResetPassword,
+) -> Result<String>
+{
+    let cfg = load_conf(&ctx)?;
+    let id = match opts.seed {
+        Some(s) => id_from_b64(s)?,
+        None => cli::load_seed(&cfg)?,
+    };
+    let url = opts.url.as_ref().unwrap_or(&cfg.api_host);
+    let topic = api::assistant::Topic::ResetPassword;
+
+    assistant_thinking();
+
+    let result = cli::get_assistance(url, &id, &c.domain, topic)?;
+
+    Ok(result)
+}
+
+///
+/// Get 2FA setup instructions for the requested website.
+///
+#[derive(Parser)]
+struct AssistantEnable2FA
+{
+    /// The website's domain or host name.
+    #[clap(long, value_name = "example.com", display_order = 1)]
+    domain: String,
+}
+
+fn do_assistant_enable2fa(
+    ctx: Context,
+    opts: AssistantOpts,
+    c: AssistantEnable2FA,
+) -> Result<String>
+{
+    let cfg = load_conf(&ctx)?;
+    let id = match opts.seed {
+        Some(s) => id_from_b64(s)?,
+        None => cli::load_seed(&cfg)?,
+    };
+    let url = opts.url.as_ref().unwrap_or(&cfg.api_host);
+    let topic = api::assistant::Topic::Enable2FA;
+
+    assistant_thinking();
+
+    let result = cli::get_assistance(url, &id, &c.domain, topic)?;
+
+    Ok(result)
+}
+
+fn assistant_thinking()
+{
+    use ansi_term::Style;
+    println!("{}", Style::new().italic().paint("Thinking..."));
+}
 
 fn main() -> Result<()>
 {
@@ -1190,6 +1308,7 @@ fn main() -> Result<()>
         SubCommand::S39(cmd) => do_s39(ctx, cmd),
         SubCommand::Account(cmd) => do_account(ctx, cmd),
         SubCommand::Directory(cmd) => do_directory(ctx, cmd),
+        SubCommand::Assistant(cmd) => do_assistant(ctx, cmd),
     }?;
 
     println!("{}", out);
