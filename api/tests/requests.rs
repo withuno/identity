@@ -2461,6 +2461,48 @@ mod requests
     }
 
     #[async_std::test]
+    async fn verify_roundtrip() -> Result<()>
+    {
+        let (api, dbs) = setup_tmp_api().await?;
+
+        let read_nonce_b64 = init_nonce(&dbs.tokens, &["read"]).await?;
+
+        let id = Id([0u8; ID_LENGTH]); // use the zero id
+        let uid = id_to_b64url(&id);
+
+        let resource = "http://example.com/verify/entries";
+
+        // 1. T = 0
+        let get_endpoint = Url::parse(resource)?.join(&uid)?;
+        let mut req1: Request = surf::get(get_endpoint.to_string()).into();
+        blake3_sign_req(&mut req1, &read_nonce_b64, MIN_COST, &id)?;
+
+        let res1: Response =
+            api.respond(req1).await.map_err(|_| anyhow!("request failed"))?;
+
+        assert_eq!(StatusCode::NotFound, res1.status());
+
+        // fresh nonce for valid requests
+        let nonce_b64 =
+            init_nonce(&dbs.tokens, &["read", "create", "update"]).await?;
+
+        // 2. Create token
+        let mut req2 = surf::post(resource)
+            .body_json(&json!({ "analytics_id": "analytics", "email": "email@example.com"}))
+            .map_err(|_| anyhow!("req2 body json"))?
+            .build();
+
+        blake3_sign_req(&mut req2, &nonce_b64, MIN_COST, &id)?;
+
+        let res2: Response =
+            api.respond(req2).await.map_err(|_| anyhow!("request failed"))?;
+
+        assert_eq!(StatusCode::Created, res2.status());
+
+        Ok(())
+    }
+
+    #[async_std::test]
     async fn assist_topic_post() -> Result<()>
     {
         let (api, dbs) = setup_tmp_api().await?;

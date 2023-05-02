@@ -582,6 +582,14 @@ async fn possibly_email_link(
     token: uno::UnverifiedToken,
 ) -> Result<StatusCode>
 {
+    if std::env::var("VERIFY_EMAIL_DOMAIN").is_err()
+        || std::env::var("CUSTOMER_IO_API_KEY").is_err()
+        || std::env::var("CUSTOMER_IO_API_ENDPOINT").is_err()
+        || std::env::var("CUSTOMER_IO_MESSAGE_ID").is_err()
+    {
+        return Ok(StatusCode::Created);
+    }
+
     let query = format!("{}::{}", token.secret, user_id);
     let encoded_query = base64::encode_config(query, base64::URL_SAFE_NO_PAD);
 
