@@ -44,6 +44,7 @@ mod requests
     use uno::Mu;
     use uno::Session;
     use uno::Signer;
+    use uno::UnverifiedToken;
     use uno::ID_LENGTH;
     use uno::MU_LENGTH;
 
@@ -52,6 +53,7 @@ mod requests
     use api::Database;
     use api::DirectoryEntry;
     use api::DirectoryEntryInternal;
+    use api::GetVerificationStatusResponse;
     use api::LookupItem;
     use api::PendingItem;
 
@@ -2473,14 +2475,16 @@ mod requests
         let resource = "http://example.com/verify/entries";
 
         // 1. T = 0
-        let get_endpoint = Url::parse(resource)?.join(&uid)?;
-        let mut req1: Request = surf::get(get_endpoint.to_string()).into();
+        let get_put_endpoint =
+            Url::parse(resource)?.join(&format!("entries/{}", uid))?;
+
+        let mut req1: Request = surf::get(get_put_endpoint.to_string()).into();
         blake3_sign_req(&mut req1, &read_nonce_b64, MIN_COST, &id)?;
 
         let res1: Response =
             api.respond(req1).await.map_err(|_| anyhow!("request failed"))?;
 
-        assert_eq!(StatusCode::NotFound, res1.status());
+        assert_eq!(StatusCode::Ok, res1.status());
 
         // fresh nonce for valid requests
         let nonce_b64 =
@@ -2498,6 +2502,56 @@ mod requests
             api.respond(req2).await.map_err(|_| anyhow!("request failed"))?;
 
         assert_eq!(StatusCode::Created, res2.status());
+
+        // 3. Get unverified
+        let mut req3 = surf::get(get_put_endpoint.to_string()).into();
+        asym_sign_req_using_res_with_id(&res2, &mut req3, &id)?;
+
+        let mut res3: Response =
+            api.respond(req3).await.map_err(|_| anyhow!("request failed"))?;
+
+        let body_bytes1 =
+            res3.take_body().into_bytes().await.map_err(|e| anyhow!(e))?;
+        let body1: GetVerificationStatusResponse =
+            serde_json::from_slice(&body_bytes1)?;
+
+        assert_eq!(body1.status, "pending");
+        assert_eq!(body1.email, Some("email@example.com".to_string()));
+
+        // 4. Verify token
+        let entry_bytes = dbs.verify.get(format!("pending/{}", uid)).await?;
+
+        let token_entry: UnverifiedToken =
+            serde_json::from_slice(&entry_bytes)?;
+
+        let secret = token_entry.secret;
+
+        let mut req4: Request = surf::put(get_put_endpoint.to_string())
+            .body_json(&json!({ "secret": secret }))
+            .map_err(|e| anyhow!(e))?
+            .build();
+
+        asym_sign_req_using_res_with_id(&res3, &mut req4, &id)?;
+
+        let res4: Response =
+            api.respond(req4).await.map_err(|_| anyhow!("request failed"))?;
+
+        assert_eq!(StatusCode::Ok, res4.status());
+
+        // 5. Get verified
+        let mut req5 = surf::get(get_put_endpoint.to_string()).into();
+        asym_sign_req_using_res_with_id(&res4, &mut req5, &id)?;
+
+        let mut res5: Response =
+            api.respond(req5).await.map_err(|_| anyhow!("request failed"))?;
+
+        let body_bytes2 =
+            res5.take_body().into_bytes().await.map_err(|e| anyhow!(e))?;
+        let body2: GetVerificationStatusResponse =
+            serde_json::from_slice(&body_bytes2)?;
+
+        assert_eq!(body2.status, "verified");
+        assert_eq!(body2.email, Some("email@example.com".to_string()));
 
         Ok(())
     }

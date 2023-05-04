@@ -1765,6 +1765,7 @@ where
 
         verify // authed by knowledge of shared secret
             .at("entries/:id")
+            .with(add_auth_info)
             .with(ensure_vault_id)
             .with(cors)
             .options(option_ok)
