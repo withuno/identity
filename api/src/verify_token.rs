@@ -44,6 +44,7 @@ pub enum VerifyTokenError
 
 type Result<T> = result::Result<T, VerifyTokenError>;
 
+#[derive(PartialEq, Debug)]
 pub enum VerificationStatus
 {
     Verified(String),
@@ -51,6 +52,7 @@ pub enum VerificationStatus
     Unverified,
 }
 
+#[derive(PartialEq, Debug)]
 pub enum PreviousStatus
 {
     Verified(String),
@@ -265,6 +267,131 @@ mod tests
 
     #[cfg(not(feature = "s3"))]
     use crate::store::FileStore;
+
+    #[cfg(not(feature = "s3"))]
+    #[async_std::test]
+    async fn test_by_email()
+    {
+        let dir = tempfile::TempDir::new().unwrap();
+        let db = FileStore::new(dir.path(), "test", "v0").await.unwrap();
+
+        let id = "some id";
+        let encoded_id = base64::encode_config(id, base64::URL_SAFE_NO_PAD);
+
+        assert_eq!(
+            get_by_email(&db, "email", Some(false)).await.unwrap(),
+            false
+        );
+
+        assert_eq!(
+            get_by_email(&db, "email", Some(true)).await.unwrap(),
+            false
+        );
+
+        let token = create(
+            &db,
+            &encoded_id,
+            "analytics_id",
+            "email",
+            Utc::now() + Duration::days(30),
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(
+            get_by_email(&db, "email", Some(false)).await.unwrap(),
+            false
+        );
+
+        assert_eq!(get_by_email(&db, "email", Some(true)).await.unwrap(), true);
+
+
+        verify(&db, &encoded_id, &token.secret).await.unwrap();
+
+        assert_eq!(
+            get_by_email(&db, "email", Some(false)).await.unwrap(),
+            true,
+        );
+    }
+
+    #[cfg(not(feature = "s3"))]
+    #[async_std::test]
+    async fn test_statuses()
+    {
+        let dir = tempfile::TempDir::new().unwrap();
+        let db = FileStore::new(dir.path(), "test", "v0").await.unwrap();
+
+        let id = "some id";
+        let encoded_id = base64::encode_config(id, base64::URL_SAFE_NO_PAD);
+
+        // no token
+        assert_eq!(
+            get(&db, &encoded_id).await.unwrap(),
+            VerificationStatus::Unverified
+        );
+
+        let token = create(
+            &db,
+            &encoded_id,
+            "analytics_id",
+            "email",
+            Utc::now() + Duration::days(30),
+        )
+        .await
+        .unwrap();
+
+        // pending token, no previous
+        assert_eq!(
+            get(&db, &encoded_id).await.unwrap(),
+            VerificationStatus::Pending(
+                "email".to_string(),
+                PreviousStatus::Unverified
+            )
+        );
+
+        // verified token
+        verify(&db, &encoded_id, &token.secret).await.unwrap();
+        assert_eq!(
+            get(&db, &encoded_id).await.unwrap(),
+            VerificationStatus::Verified("email".to_string())
+        );
+
+        // re-verify, same email
+        create(
+            &db,
+            &encoded_id,
+            "analytics_id",
+            "email",
+            Utc::now() + Duration::days(30),
+        )
+        .await
+        .unwrap();
+        assert_eq!(
+            get(&db, &encoded_id).await.unwrap(),
+            VerificationStatus::Pending(
+                "email".to_string(),
+                PreviousStatus::Verified("email".to_string())
+            )
+        );
+
+        // re-verify, different email
+        create(
+            &db,
+            &encoded_id,
+            "analytics_id",
+            "email2",
+            Utc::now() + Duration::days(30),
+        )
+        .await
+        .unwrap();
+        assert_eq!(
+            get(&db, &encoded_id).await.unwrap(),
+            VerificationStatus::Pending(
+                "email2".to_string(),
+                PreviousStatus::Verified("email".to_string())
+            )
+        );
+    }
 
     #[cfg(not(feature = "s3"))]
     #[async_std::test]
