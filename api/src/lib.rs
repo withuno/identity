@@ -815,6 +815,13 @@ where
     let vault = Vault { data: body.to_vec(), vclock: vclock_new };
     let vault_bytes = serde_json::to_vec(&vault).map_err(server_err)?;
 
+    if vault.data.len() == 0 {
+        let res = Response::builder(StatusCode::BadRequest)
+            .body("you probably didn't mean to put an empty body")
+            .build();
+        return Ok(res);
+    }
+
     db.put(&id, &vault_bytes).await.map_err(server_err)?;
 
     // Read our own write...

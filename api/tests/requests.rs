@@ -1663,6 +1663,29 @@ mod requests
 
         assert_eq!(StatusCode::BadRequest, res9.status());
 
+        // empty body is bad request
+
+        vc.incr("c3");
+
+        let mut req10: Request = surf::put(url.to_string())
+            .header("vclock", api::write_vclock(&vc)?)
+            .body("")
+            .into();
+        sign_req_using_res_with_id(&res9, &mut req10, &id)?;
+
+        let mut res10: Response =
+            api.respond(req10).await.map_err(|_| anyhow!("request failed"))?;
+
+        assert_eq!(StatusCode::BadRequest, res10.status());
+
+        let expected_body10 = "you probably didn't mean to put an empty body";
+        let actual_body10 = res10
+            .take_body()
+            .into_bytes()
+            .await
+            .map_err(|_| anyhow!("body read failed"))?;
+        assert_eq!(expected_body10.as_bytes(), actual_body10);
+
         Ok(())
     }
 
