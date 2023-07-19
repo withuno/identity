@@ -8,6 +8,7 @@
 # The following is a list of all the projects to include.
 [workspace]
 members = ["adi", "api", "cli", "djb", "ffi", "s39", "lib", "xcf", "wsm"]
+resolver = "2"
 
 # We make use of expensive slow hashes and the DX benefits greatly from
 # optimizations.
@@ -24,7 +25,7 @@ opt-level = 0
 # upon anybody working independently in an isolated project. Patching the deps
 # in the virtual manifest allows for the projects to be published without any
 # required structure (in other words without ugly `../` paths, which also
-# fail if the repo is checked out individually). 
+# fail if the repo is checked out individually).
 
 # Each member should also be patched so that building happens from the local
 # filesystem.
