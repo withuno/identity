@@ -1,8 +1,8 @@
 FROM rustlang/rust:nightly as builder
 WORKDIR /app
 COPY . .
-RUN cargo +nightly test --release
-RUN cargo +nightly install --path api --root . --features "s3 twilio openai brandfetch"
+RUN cargo test --release
+RUN cargo install --path api --root . --features "s3 twilio openai brandfetch"
 
 FROM debian:stable-slim
 RUN apt update && apt install -y libcurl4
