@@ -7,7 +7,7 @@ edition = "2021"
 
 [dependencies]
 chacha20poly1305 = { version = "0.7.1", features = ["std"] }
-ed25519-dalek = "1.0.1"
+ed25519-dalek = "2.0"
 rand = "0.8.3"
 strum = "0.20"
 strum_macros = "0.20"

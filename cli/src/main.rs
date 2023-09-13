@@ -10,6 +10,7 @@ use api::DirectoryEntryCreate;
 /// The uno utility is a cli frontend to operations that can be performed with
 /// an uno identity.
 use clap::{Args, Parser};
+use cli::pubkey_bytes_from_keypair;
 use uno::Binding;
 
 use std::convert::TryFrom;
@@ -188,8 +189,9 @@ fn do_pubkey(ctx: Context, c: Pubkey) -> Result<String>
         None => cli::load_seed(&load_conf(&ctx)?)?,
     };
     let key = uno::KeyPair::from(id);
+    let pk_bytes = pubkey_bytes_from_keypair(&key);
 
-    Ok(base64::encode(&key.public.as_bytes()))
+    Ok(base64::encode(&pk_bytes))
 }
 
 ///
@@ -384,12 +386,18 @@ fn do_verify(_: Context, c: Verify) -> Result<String>
 
     let raw =
         base64::decode(c.pubkey).context("pubkey must be base64 encoded")?;
-    let pubkey =
-        uno::PublicKey::from_bytes(&raw[..]).context("invalid public key")?;
+    let pk_bytes =
+        raw.try_into().map_err(|_| anyhow!("pubkey should be 32 bytes"))?;
+    let pubkey = uno::PublicKey::from_bytes(&pk_bytes)
+        .context("public key decompression")?;
+
+
     let bytes = base64::decode(c.signature)
         .context("signature must be base64 encoded")?;
-
-    let sig = uno::Signature::from_bytes(&bytes)?;
+    let sig_bytes = bytes
+        .try_into()
+        .map_err(|_| anyhow!("signature should be 64 bytes"))?;
+    let sig = uno::Signature::from_bytes(&sig_bytes);
 
     let mut message = String::new();
     let _ = stdin().read_to_string(&mut message)?;
@@ -1153,8 +1161,9 @@ fn do_directory_verify(
     let url = opts.url.as_ref().unwrap_or(&cfg.api_host);
 
     let key = uno::KeyPair::from(id);
+    let pk_bytes = pubkey_bytes_from_keypair(&key);
 
-    let signing_key_b64 = base64::encode(key.public.as_bytes());
+    let signing_key_b64 = base64::encode(&pk_bytes);
     let encryption_key_b64 = "TODO: XXX".into();
     // TODO: I don't think we have dh lib support yet.
 

@@ -315,10 +315,11 @@ mod requests
         let response = format!("blake3${}${}", n, n64);
 
         let kp: uno::KeyPair = KeyPair::from(id);
-        let pub_bytes = kp.public.to_bytes();
+        let pub_bytes = pubkey_bytes_from_keypair(&kp);
         let pub64 = base64::encode_config(&pub_bytes, base64::STANDARD_NO_PAD);
         let sig = kp.sign(&response.as_bytes());
-        let sig64 = base64::encode_config(sig, base64::STANDARD_NO_PAD);
+        let sig64 =
+            base64::encode_config(sig.to_bytes(), base64::STANDARD_NO_PAD);
 
         let i = format!("identity={}", pub64);
         let n = format!("nonce={}", n64);
@@ -381,10 +382,11 @@ mod requests
         let response = format!("{}${}", s64, pow.hash.unwrap());
 
         let kp: uno::KeyPair = KeyPair::from(id);
-        let pub_bytes = kp.public.to_bytes();
+        let pub_bytes = pubkey_bytes_from_keypair(&kp);
         let pub64 = base64::encode_config(&pub_bytes, base64::STANDARD_NO_PAD);
         let sig = kp.sign(&response.as_bytes());
-        let sig64 = base64::encode_config(sig, base64::STANDARD_NO_PAD);
+        let sig64 =
+            base64::encode_config(sig.to_bytes(), base64::STANDARD_NO_PAD);
 
         let i = format!("identity={}", pub64);
         let n = format!("nonce={}", n64);
@@ -1217,7 +1219,7 @@ mod requests
 
         let recipient_id = Id([0u8; ID_LENGTH]);
         let recipient_keypair = KeyPair::from(&recipient_id);
-        let recipient_pk = recipient_keypair.public.as_bytes();
+        let recipient_pk = pubkey_bytes_from_keypair(&recipient_keypair);
 
         let urlenc_rec_pk =
             base64::encode_config(recipient_pk, base64::URL_SAFE_NO_PAD);
@@ -1263,10 +1265,13 @@ mod requests
         let (api, dbs) = setup_tmp_api().await?;
 
         let recipient_id = Id([0u8; ID_LENGTH]);
-        let recipient_pk = KeyPair::from(&recipient_id).public;
+
+        let recipient_kp = KeyPair::from(&recipient_id);
+        let recipient_pk = pubkey_bytes_from_keypair(&recipient_kp);
 
         let sender_id = Id([2u8; ID_LENGTH]);
-        let sender_pk = KeyPair::from(&sender_id).public;
+        let sender_kp = KeyPair::from(&sender_id);
+        let sender_pk = pubkey_bytes_from_keypair(&sender_kp);
         let sender_pk_b64 = base64::encode(sender_pk);
 
         let urlenc_rec_pk =
@@ -1365,7 +1370,7 @@ mod requests
 
         let id = Id([0u8; ID_LENGTH]);
         let keypair = KeyPair::from(&id);
-        let pubkey = keypair.public.as_bytes();
+        let pubkey = pubkey_bytes_from_keypair(&keypair);
         let vid = base64::encode_config(&pubkey, base64::URL_SAFE_NO_PAD);
         let base = Url::parse("http://example.com/vaults/")?;
         let url = base.join(&vid)?;
@@ -1465,7 +1470,7 @@ mod requests
 
         let id = Id([0u8; ID_LENGTH]);
         let keypair = KeyPair::from(&id);
-        let pubkey = keypair.public.as_bytes();
+        let pubkey = pubkey_bytes_from_keypair(&keypair);
         let vid = base64::encode_config(&pubkey, base64::URL_SAFE_NO_PAD);
         let base = Url::parse("http://example.com/vaults/")?;
         let url = base.join(&vid)?;
@@ -1700,7 +1705,7 @@ mod requests
 
         let id = Id([0u8; ID_LENGTH]);
         let keypair = KeyPair::from(&id);
-        let pubkey = keypair.public.as_bytes();
+        let pubkey = pubkey_bytes_from_keypair(&keypair);
         let vid = base64::encode_config(&pubkey, base64::URL_SAFE_NO_PAD);
         let base = Url::parse("http://example.com/vaults/")?;
         let url = base.join(&vid)?;
@@ -1787,7 +1792,7 @@ mod requests
 
         let id = Id([0u8; ID_LENGTH]);
         let keypair = KeyPair::from(&id);
-        let pubkey = keypair.public.as_bytes();
+        let pubkey = pubkey_bytes_from_keypair(&keypair);
         let sid = base64::encode_config(&pubkey, base64::URL_SAFE_NO_PAD);
         let base = Url::parse("https://example.com/shares/")?;
         let url = base.join(&sid)?;
@@ -1819,7 +1824,7 @@ mod requests
 
         let id = Id([0u8; ID_LENGTH]);
         let keypair = KeyPair::from(&id);
-        let pubkey = keypair.public.as_bytes();
+        let pubkey = pubkey_bytes_from_keypair(&keypair);
         let vid = base64::encode_config(&pubkey, base64::URL_SAFE_NO_PAD);
         let base = Url::parse("http://example.com/vaults/")?;
         let url = base.join(&vid)?;
@@ -2637,7 +2642,7 @@ mod requests
     fn id_to_b64url(id: &Id) -> String
     {
         let keypair = KeyPair::from(id);
-        let pubkey = keypair.public.as_bytes();
+        let pubkey = pubkey_bytes_from_keypair(&keypair);
 
         base64::encode_config(&pubkey, base64::URL_SAFE_NO_PAD)
     }
@@ -2645,9 +2650,16 @@ mod requests
     fn id_to_b64(id: &Id) -> String
     {
         let keypair = KeyPair::from(id);
-        let pubkey = keypair.public.as_bytes();
+        let pubkey = pubkey_bytes_from_keypair(&keypair);
 
         base64::encode_config(&pubkey, base64::STANDARD)
+    }
+
+    fn pubkey_bytes_from_keypair(kp: &KeyPair) -> Vec<u8>
+    {
+        let start = uno::PRIVATE_KEY_LENGTH;
+        let end = uno::KEYPAIR_LENGTH;
+        kp.to_keypair_bytes()[start..end].to_vec()
     }
 
     #[allow(dead_code)]

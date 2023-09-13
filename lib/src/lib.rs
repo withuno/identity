@@ -121,6 +121,9 @@ pub use djb::Signature;
 pub use djb::Signer;
 pub use djb::Verifier;
 
+pub const PRIVATE_KEY_LENGTH: usize = djb::PRIVATE_KEY_LENGTH;
+pub const PUBLIC_KEY_LENGTH: usize = djb::PUBLIC_KEY_LENGTH;
+pub const KEYPAIR_LENGTH: usize = djb::KEYPAIR_LENGTH;
 pub const SIGNATURE_LENGTH: usize = djb::SIGNATURE_LENGTH;
 
 pub type SymmetricKey = djb::SymmetricKey;
@@ -162,9 +165,7 @@ impl From<&Id> for KeyPair
         blake3::derive_key(ctx, &id.0, &mut secret);
         // This only panics if we use the wrong keys size, and we use the right
         // one so there's no point in propagating the error.
-        let private = djb::PrivateKey::from_bytes(&secret).unwrap();
-        let public: djb::PublicKey = (&private).into();
-        KeyPair { secret: private, public: public }
+        djb::KeyPair::from_bytes(&secret)
     }
 }
 

@@ -5,17 +5,19 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 //
 
-pub use ed25519_dalek::PublicKey;
 pub use ed25519_dalek::Signature;
 pub use ed25519_dalek::Signer;
 pub use ed25519_dalek::Verifier;
+pub type PublicKey = ed25519_dalek::VerifyingKey;
 pub type PrivateKey = ed25519_dalek::SecretKey;
-pub type KeyPair = ed25519_dalek::Keypair;
+pub type KeyPair = ed25519_dalek::SigningKey;
 
 pub type SymmetricKey = chacha20poly1305::Key;
 pub type Error = aead::Error;
 
 pub const PRIVATE_KEY_LENGTH: usize = ed25519_dalek::SECRET_KEY_LENGTH;
+pub const PUBLIC_KEY_LENGTH: usize = ed25519_dalek::PUBLIC_KEY_LENGTH;
+pub const KEYPAIR_LENGTH: usize = ed25519_dalek::KEYPAIR_LENGTH;
 pub const SIGNATURE_LENGTH: usize = ed25519_dalek::SIGNATURE_LENGTH;
 
 use chacha20poly1305::aead;

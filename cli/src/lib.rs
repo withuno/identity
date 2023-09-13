@@ -21,6 +21,7 @@ use chrono::{Duration, Utc};
 use http_types::headers::HeaderValues;
 use http_types::StatusCode;
 use rand::RngCore;
+use uno::KeyPair;
 
 use surf::middleware::{Middleware, Next};
 use surf::Url;
@@ -28,6 +29,7 @@ use surf::{Client, Request, Response};
 
 use uno::Binding;
 use uno::MagicShare;
+use uno::PublicKey;
 use uno::Signer;
 
 use std::convert::From;
@@ -262,14 +264,23 @@ fn vault_url_from_key(endpoint: &str, key: &uno::KeyPair) -> Result<Url>
     let host = Url::parse(&endpoint)?;
     let base = host.join("v2/vaults/")?;
     let cfg = base64::URL_SAFE_NO_PAD;
-    let vid = base64::encode_config(key.public.as_bytes(), cfg);
+    let pk = pubkey_bytes_from_keypair(key);
+    let vid = base64::encode_config(&pk, cfg);
     Ok(base.join(&vid)?)
+}
+
+pub fn pubkey_bytes_from_keypair(kp: &KeyPair) -> Vec<u8>
+{
+    let start = uno::PRIVATE_KEY_LENGTH;
+    let end = uno::KEYPAIR_LENGTH;
+    kp.to_keypair_bytes()[start..end].to_vec()
 }
 
 pub fn get_share(host: &str, seed: uno::Id) -> Result<String>
 {
     let keypair = uno::KeyPair::from(&seed);
-    let url = share_url_from_public_key(&host, &keypair.public)?;
+    let pk = PublicKey::from(&keypair);
+    let url = share_url_from_public_key(&host, &pk)?;
 
     let req = surf::get(url.as_str()).build();
     let result = async_std::task::block_on(do_http_simple(req))
@@ -307,14 +318,16 @@ pub fn post_share(
     let expires_in = expire_seconds.parse::<i64>().unwrap();
     let expires_at = Utc::now() + Duration::seconds(expires_in);
 
+    let pk_bytes = pubkey_bytes_from_keypair(&keypair);
     let envelope = MagicShare {
-        id: base64::encode_config(keypair.public, base64::URL_SAFE_NO_PAD),
+        id: base64::encode_config(pk_bytes, base64::URL_SAFE_NO_PAD),
         schema_version: 0,
         expires_at,
         encrypted_credential: base64::encode(encrypted),
     };
 
-    let url = share_url_from_public_key(&host, &keypair.public)?;
+    let pk = PublicKey::from(&keypair);
+    let url = share_url_from_public_key(&host, &pk)?;
     let json_envelope = serde_json::to_string(&envelope)?;
 
     let req = surf::post(url.as_str()).body(json_envelope).build();
@@ -336,7 +349,8 @@ pub fn create_verify_token(
 ) -> Result<String>
 {
     let keypair = uno::KeyPair::from(id);
-    let url = verify_token_url_from_public_key(host, &keypair.public)?;
+    let pk = PublicKey::from(&keypair);
+    let url = verify_token_url_from_public_key(host, &pk)?;
 
     #[derive(Serialize)]
     struct VerifyCreateBody
@@ -362,7 +376,8 @@ pub fn confirm_verify_token(
 ) -> Result<String>
 {
     let keypair = uno::KeyPair::from(id);
-    let url = verify_token_url_from_public_key(host, &keypair.public)?;
+    let pk = PublicKey::from(&keypair);
+    let url = verify_token_url_from_public_key(host, &pk)?;
 
     #[derive(Serialize)]
     struct ConfirmVerifyBody
@@ -884,8 +899,6 @@ impl Middleware for AuthClient
     }
 }
 
-use uno::KeyPair;
-
 /// Sign a request using the www-authenticate info specfied in the provided
 /// www-authenticate header. Consume body and attach it to the request (the
 /// body is required independent because the request signature contains the
@@ -931,10 +944,10 @@ fn sign(
     let response = format!("{}${}", s64, pow.hash.unwrap());
 
     let kp: uno::KeyPair = KeyPair::from(id);
-    let pub_bytes = kp.public.to_bytes();
+    let pub_bytes = pubkey_bytes_from_keypair(&kp);
     let pub64 = base64::encode_config(&pub_bytes, base64::STANDARD_NO_PAD);
     let sig = kp.sign(&response.as_bytes());
-    let sig64 = base64::encode_config(sig, base64::STANDARD_NO_PAD);
+    let sig64 = base64::encode_config(sig.to_bytes(), base64::STANDARD_NO_PAD);
 
     let i = format!("identity={}", pub64);
     let n = format!("nonce={}", n64);
@@ -1046,10 +1059,10 @@ fn blake3_sign(
     let response = format!("blake3${}${}", n, n64);
 
     let kp: KeyPair = KeyPair::from(id);
-    let pub_bytes = kp.public.to_bytes();
+    let pub_bytes = pubkey_bytes_from_keypair(&kp);
     let pub64 = base64::encode_config(&pub_bytes, base64::STANDARD_NO_PAD);
     let sig = kp.sign(&response.as_bytes());
-    let sig64 = base64::encode_config(sig, base64::STANDARD_NO_PAD);
+    let sig64 = base64::encode_config(sig.to_bytes(), base64::STANDARD_NO_PAD);
 
     let i = format!("identity={}", pub64);
     let n = format!("nonce={}", n64);

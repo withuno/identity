@@ -41,6 +41,8 @@ use chrono::{Duration, Utc};
 use http_types::Method;
 use tide::{Body, Error, Next, Request, Response, Result, StatusCode};
 
+use uno::PUBLIC_KEY_LENGTH;
+
 mod twilio;
 
 pub mod assistant;
@@ -161,25 +163,43 @@ impl fmt::Display for ApiError
     }
 }
 
+pub fn pubkey_from_bytes(
+    vec: Vec<u8>,
+) -> anyhow::Result<uno::PublicKey, ApiError>
+{
+    let pk_bytes = match vec[0..PUBLIC_KEY_LENGTH].try_into() {
+        Ok(b) => b,
+        Err(_) => {
+            return Err(ApiError::BadRequest(
+                "pubkey wrong length".to_string(),
+            ));
+        },
+    };
+    let pk = match uno::PublicKey::from_bytes(&pk_bytes) {
+        Ok(pk) => pk,
+        Err(_) => {
+            return Err(ApiError::BadRequest(
+                "pubkey decompression".to_string(),
+            ));
+        },
+    };
+
+    Ok(pk)
+}
+
 pub fn pubkey_from_b64(id: &str) -> anyhow::Result<uno::PublicKey, ApiError>
 {
     let v = base64::decode(id)?;
-    let pk = uno::PublicKey::from_bytes(&v);
-    if pk.is_err() {
-        return Err(ApiError::BadRequest("pubkey wrong length".to_string()));
-    }
-    Ok(pk.unwrap())
+
+    Ok(pubkey_from_bytes(v)?)
 }
 
 pub fn pubkey_from_url_b64(id: &str)
 -> anyhow::Result<uno::PublicKey, ApiError>
 {
     let v = base64::decode_config(id, base64::URL_SAFE)?;
-    let pk = uno::PublicKey::from_bytes(&v);
-    if pk.is_err() {
-        return Err(ApiError::BadRequest("pubkey wrong length".to_string()));
-    }
-    Ok(pk.unwrap())
+
+    Ok(pubkey_from_bytes(v)?)
 }
 
 pub fn signature_from_b64(
@@ -187,9 +207,17 @@ pub fn signature_from_b64(
 ) -> anyhow::Result<uno::Signature, ApiError>
 {
     let decoded_sig = base64::decode(bytes)?;
+    use uno::SIGNATURE_LENGTH;
+    let sig_bytes = match decoded_sig[0..SIGNATURE_LENGTH].try_into() {
+        Ok(b) => b,
+        Err(_) => {
+            return Err(ApiError::BadRequest(
+                "signature wrong length".to_string(),
+            ));
+        },
+    };
 
-    uno::Signature::from_bytes(&decoded_sig)
-        .map_err(|_| ApiError::BadRequest("bad signature".to_string()))
+    Ok(uno::Signature::from_bytes(&sig_bytes))
 }
 
 async fn health(_req: Request<()>) -> Result<Response>
